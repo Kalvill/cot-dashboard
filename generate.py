@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""COT Dashboard Generator v7"""
+"""COT Dashboard Generator v8"""
 
 import pandas as pd
 import json
@@ -16,6 +16,11 @@ SKIP_SHEETS  = {'overview', 'info'}
 CHART_WEEKS  = 260
 SPARK_WEEKS  = 26
 HISTORY      = 52
+
+# ── Кольори учасників ─────────────────────────────────────────
+COLOR_LS = '#4a9eff'   # Large Spec  — синій
+COLOR_CM = '#20d483'   # Commercials — зелений
+COLOR_ST = '#f0515a'   # Small Traders — червоний
 
 DISPLAY = {
     'SP500':'S&P 500','DOW_30':'DOW 30','RUSSELL2K':'RUSSELL 2K',
@@ -93,7 +98,6 @@ def fv(n, short=False, sign=False):
     return body
 
 def fv_full(n, sign=False):
-    """Повне число з пробілом-роздільником тисяч: +78 560"""
     try: n=int(round(float(n)))
     except: return '—'
     body=f"{abs(n):,}".replace(',','\u202f')
@@ -145,7 +149,7 @@ def find_oi_col(df):
 # ================================================================
 # 🎨  SVG SPARKLINE
 # ================================================================
-def make_sparkline(series, h=38):
+def make_sparkline(series, color, h=38):
     data=[float(v) for v in (series or [])[-SPARK_WEEKS:]]
     n=len(data)
     if n<3: return ''
@@ -159,7 +163,6 @@ def make_sparkline(series, h=38):
     zy=max(0,min(H,py(0)))
     area=f"0,{zy} "+line+f" {W},{zy}"
     lx,ly=pts[-1]
-    color='#20d483'if data[-1]>=0 else'#f0515a'
     return(
         f'<svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" '
         f'xmlns="http://www.w3.org/2000/svg" '
@@ -205,7 +208,7 @@ def read_overview(xl):
 # ================================================================
 # 📥  ОСНОВНИЙ АРКУШ
 # ================================================================
-def read_sheet(xl,name,overview):
+def read_sheet(xl, name, overview):
     try:
         raw=xl.parse(name,header=None)
         if raw.shape[0]<DATA_START_ROW+2 or raw.shape[1]<20: return None
@@ -289,6 +292,7 @@ def read_sheet(xl,name,overview):
                 'date':  all_dates[i0],
                 'ls_net':ls_net[i0],'cm_net':cm_net[i0],'st_net':st_net[i0],
                 'ls_pct':ls_pct[i0],'cm_pct':cm_pct[i0],'st_pct':st_pct[i0],
+                # CHG зберігаємо як є (знак з Excel)
                 'ls_cl': ls_cl[i0], 'ls_cs': ls_cs[i0],
                 'cm_cl': cm_cl[i0], 'cm_cs': cm_cs[i0],
                 'oi':    oi_cur,'oi_pct':oi_pct,
@@ -326,7 +330,7 @@ def load_all():
 
 
 # ================================================================
-# 🎨  ТАБЛИЦЯ (без % NET, повні числа, інтенсивність кольору)
+# 🎨  ІНТЕНСИВНІСТЬ ФОНУ ДЛЯ ТАБЛИЦІ
 # ================================================================
 def intensity_bg(val, max_abs):
     if max_abs==0: return ''
@@ -339,6 +343,11 @@ def intensity_bg(val, max_abs):
     except: pass
     return ''
 
+
+# ================================================================
+# 🃏  ТАБЛИЦЯ
+# Заголовки груп — кольорові фони: LS=синій, CM=зелений, ST=червоний
+# ================================================================
 def make_hist_table(hist):
     n=len(hist['dates'])
     if n==0: return '<p style="padding:12px;color:#8090b0">Немає даних</p>'
@@ -376,20 +385,25 @@ def make_hist_table(hist):
         )
         rows.append(row)
 
+    # Заголовки з кольоровими фонами
+    ls_hdr = f'background:rgba(74,158,255,.25);color:#fff'
+    cm_hdr = f'background:rgba(32,212,131,.25);color:#fff'
+    st_hdr = f'background:rgba(240,81,90,.25);color:#fff'
+
     return(
         '<table class="ht">'
         '<thead>'
         '<tr>'
         '<th rowspan="2" class="th-left th-date">ДАТА</th>'
-        '<th colspan="3" class="th-group">LARGE SPECULATORS</th>'
-        '<th colspan="3" class="th-group">COMMERCIALS</th>'
-        '<th colspan="3" class="th-group">SMALL TRADERS</th>'
+        f'<th colspan="3" class="th-group" style="{ls_hdr}">LARGE SPECULATORS</th>'
+        f'<th colspan="3" class="th-group" style="{cm_hdr}">COMMERCIALS</th>'
+        f'<th colspan="3" class="th-group" style="{st_hdr}">SMALL TRADERS</th>'
         '<th class="th-group">OI</th>'
         '</tr>'
         '<tr>'
-        '<th>CHG L</th><th>CHG S</th><th class="sep-r">NET POS</th>'
-        '<th>CHG L</th><th>CHG S</th><th class="sep-r">NET POS</th>'
-        '<th>CHG L</th><th>CHG S</th><th class="sep-r">NET POS</th>'
+        f'<th style="{ls_hdr}">CHG L</th><th style="{ls_hdr}">CHG S</th><th class="sep-r" style="{ls_hdr}">NET POS</th>'
+        f'<th style="{cm_hdr}">CHG L</th><th style="{cm_hdr}">CHG S</th><th class="sep-r" style="{cm_hdr}">NET POS</th>'
+        f'<th style="{st_hdr}">CHG L</th><th style="{st_hdr}">CHG S</th><th class="sep-r" style="{st_hdr}">NET POS</th>'
         '<th></th>'
         '</tr>'
         '</thead>'
@@ -420,8 +434,8 @@ def sm_bar(val,label):
 # ================================================================
 # 🃏  METRIC CARD
 # ================================================================
-def make_metric_card(lbl,val,chg_str,chg_cls,sub,spark_series):
-    spark=make_sparkline(spark_series)
+def make_metric_card(lbl,val,chg_str,chg_cls,sub,spark_series,spark_color):
+    spark=make_sparkline(spark_series, spark_color)
     return(
         f'<div class="mc">'
         f'<div class="mc-lbl">{lbl}</div>'
@@ -434,14 +448,21 @@ def make_metric_card(lbl,val,chg_str,chg_cls,sub,spark_series):
 
 
 # ================================================================
-# 🃏  АНАЛІЗ ПОЗИЦІОНУВАННЯ (повні числа, рівномірно)
+# 🃏  АНАЛІЗ ПОЗИЦІОНУВАННЯ
+# CHG SHORT відображається як є з Excel (знак не міняємо)
 # ================================================================
-def analysis_row(lbl, net, cl, cs, chg):
+def analysis_row(group_label, group_color, net, cl, cs, chg):
+    """
+    cl  = Change(Long)  — знак із Excel
+    cs  = Change(Short) — знак із Excel (НЕ негуємо)
+    chg = delta net position
+    """
     dw='ЛОНГ'if net>0 else'ШОРТ'
     dc='g'   if net>0 else'r'
     return(
         f'<div class="arow">'
-        f'<div class="arow-lbl">{lbl}</div>'
+        # Назва групи замість "АНАЛІЗ ПОЗИЦІОНУВАННЯ"
+        f'<div class="arow-group-lbl" style="color:{group_color}">{group_label}</div>'
         f'<div class="arow-dir {dc}">{dw}'
         f'<span class="arow-net">{fv_full(net,sign=True)}</span>'
         f'</div>'
@@ -452,7 +473,8 @@ def analysis_row(lbl, net, cl, cs, chg):
         f'</div>'
         f'<div class="ag-item">'
         f'<span class="ag-lbl">CHG SHORT</span>'
-        f'<span class="{cc(-cs)} ag-val">{fv_full(-cs,sign=True)}</span>'
+        # cs береться як є — знак вже правильний з Excel
+        f'<span class="{cc(cs)} ag-val">{fv_full(cs,sign=True)}</span>'
         f'</div>'
         f'<div class="ag-item">'
         f'<span class="ag-lbl">Δ NET</span>'
@@ -471,23 +493,27 @@ def make_instrument_view(d):
 
     mc_ls=make_metric_card('LARGE SPEC (NETTO)',   c['ls_net'],
         f'{ar(c["ls_chg"])} {fv(abs(int(c["ls_chg"])),True)}',
-        cc(c['ls_chg']),f'COT Index: {fp(d["cot_idx"]["ls"]["all"])}',d['spark']['ls'])
+        cc(c['ls_chg']),f'COT Index: {fp(d["cot_idx"]["ls"]["all"])}',
+        d['spark']['ls'], COLOR_LS)
     mc_cm=make_metric_card('COMMERCIALS (NETTO)',  c['cm_net'],
         f'{ar(c["cm_chg"])} {fv(abs(int(c["cm_chg"])),True)}',
-        cc(c['cm_chg']),f'COT Index: {fp(d["cot_idx"]["cm"]["all"])}',d['spark']['cm'])
+        cc(c['cm_chg']),f'COT Index: {fp(d["cot_idx"]["cm"]["all"])}',
+        d['spark']['cm'], COLOR_CM)
     mc_st=make_metric_card('SMALL TRADERS (NETTO)',c['st_net'],
         f'{ar(c["st_chg"])} {fv(abs(int(c["st_chg"])),True)}',
-        cc(c['st_chg']),f'COT Index: {fp(d["cot_idx"]["st"]["all"])}',d['spark']['st'])
+        cc(c['st_chg']),f'COT Index: {fp(d["cot_idx"]["st"]["all"])}',
+        d['spark']['st'], COLOR_ST)
     mc_oi=make_metric_card('OPEN INTEREST',        c['oi'],
         f'{ar(c["oi_pct"])} {fp(c["oi_pct"])}',
-        cc(c['oi_pct']),f'зміна: {fv(int(c["oi_chg"]),True,sign=True)}',d['spark']['oi'])
+        cc(c['oi_pct']),f'зміна: {fv(int(c["oi_chg"]),True,sign=True)}',
+        d['spark']['oi'], '#a0aac0')
 
+    # АНАЛІЗ — без заголовку панелі, назва групи всередині кожного рядка
     analysis_panel=(
         f'<div class="panel">'
-        f'<div class="plbl">АНАЛІЗ ПОЗИЦІОНУВАННЯ</div>'
-        +analysis_row('LARGE SPEC',  c['ls_net'],c['ls_cl'],c['ls_cs'],c['ls_chg'])
-        +analysis_row('COMMERCIALS', c['cm_net'],c['cm_cl'],c['cm_cs'],c['cm_chg'])
-        +f'</div>'
+        + analysis_row('LARGE SPEC',   COLOR_LS, c['ls_net'], c['ls_cl'], c['ls_cs'], c['ls_chg'])
+        + analysis_row('COMMERCIALS',  COLOR_CM, c['cm_net'], c['cm_cl'], c['cm_cs'], c['cm_chg'])
+        + f'</div>'
     )
 
     sm_panel=(
@@ -561,9 +587,10 @@ def make_instrument_view(d):
         f'<button class="per-btn" data-per="5y" onclick="setChartPer(this,\'{s}\')">5 років</button>'
         f'</div>'
         f'<div class="chart-leg">'
-        f'<span><span class="ll" style="background:#20d483"></span>Large Spec</span>'
-        f'<span><span class="ll" style="background:#f0515a"></span>Commercials</span>'
-        f'<span class="ll-dash"></span><span style="margin-left:4px">Small Traders</span>'
+        f'<span><span class="ll" style="background:{COLOR_LS}"></span>Large Spec</span>'
+        f'<span><span class="ll" style="background:{COLOR_CM}"></span>Commercials</span>'
+        f'<span class="ll-dash" style="border-top-color:{COLOR_ST}"></span>'
+        f'<span style="margin-left:4px">Small Traders</span>'
         f'</div></div>'
         f'</div>'
         f'<div class="cw"><canvas id="cv_{s}"></canvas></div>'
@@ -574,15 +601,15 @@ def make_instrument_view(d):
     bar_block=(
         f'<div class="bar-charts-grid chartbox">'
         f'<div class="bar-wrap">'
-        f'<div class="bar-lbl">LARGE SPEC — WEEKLY ΔNet</div>'
+        f'<div class="bar-lbl" style="color:{COLOR_LS}">LARGE SPEC — WEEKLY ΔNet</div>'
         f'<div class="bar-cw"><canvas id="barcv_ls_{s}"></canvas></div>'
         f'</div>'
         f'<div class="bar-wrap">'
-        f'<div class="bar-lbl">COMMERCIALS — WEEKLY ΔNet</div>'
+        f'<div class="bar-lbl" style="color:{COLOR_CM}">COMMERCIALS — WEEKLY ΔNet</div>'
         f'<div class="bar-cw"><canvas id="barcv_cm_{s}"></canvas></div>'
         f'</div>'
         f'<div class="bar-wrap">'
-        f'<div class="bar-lbl">SMALL TRADERS — WEEKLY ΔNet</div>'
+        f'<div class="bar-lbl" style="color:{COLOR_ST}">SMALL TRADERS — WEEKLY ΔNet</div>'
         f'<div class="bar-cw"><canvas id="barcv_st_{s}"></canvas></div>'
         f'</div>'
         f'</div>'
@@ -655,7 +682,6 @@ def generate_html(data):
         +f'<div class="hdr-s">COMMITMENTS OF TRADERS — CFTC LEGACY REPORT</div></div>'
         +f'<div class="hdr-r">Звіт: <b>{report_date}</b><br>Оновлено: {updated}</div>'
         +f'</header>'
-        # Категорії — НЕ sticky, прокручуються разом зі сторінкою
         +f'<div class="ctabs">'+''.join(cat_tabs)+f'</div>'
         +''.join(cat_sects)
         +f'<div class="footer">COT DASHBOARD &bull; CFTC LEGACY &bull; {updated}</div>'
@@ -664,9 +690,9 @@ def generate_html(data):
 
 
 # ================================================================
-# 🖼️  CSS + HEAD
+# 🖼️  CSS
 # ================================================================
-HTML_HEAD="""<!DOCTYPE html>
+HTML_HEAD=f"""<!DOCTYPE html>
 <html lang="uk">
 <head>
 <meta charset="UTF-8">
@@ -674,240 +700,204 @@ HTML_HEAD="""<!DOCTYPE html>
 <title>COT Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
-:root{
+:root{{
   --bg:#1a1e2d;--bg2:#21263a;--bg3:#282f47;--bd:#343d5a;
   --g:#20d483;--r:#f0515a;--b:#4a9eff;
   --t:#dde2ee;--d:#8090b0;
   --f:'Courier New',Courier,monospace;
   --hdr-h:50px;
-}
-*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
-html,body{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13px;}
+  --c-ls:{COLOR_LS};
+  --c-cm:{COLOR_CM};
+  --c-st:{COLOR_ST};
+}}
+*,*::before,*::after{{margin:0;padding:0;box-sizing:border-box;}}
+html,body{{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13px;}}
 
-/* ── HEADER ── sticky завжди */
-.hdr{
-  height:var(--hdr-h);padding:0 24px;
-  background:var(--bg2);border-bottom:1px solid var(--bd);
-  display:flex;align-items:center;justify-content:space-between;
-  position:sticky;top:0;z-index:300;
-}
-.hdr-t{font-size:17px;font-weight:bold;color:#fff;letter-spacing:2px;}
-.hdr-t em{color:var(--g);font-style:normal;}
-.hdr-s{font-size:10px;color:var(--d);margin-top:2px;letter-spacing:1px;}
-.hdr-r{text-align:right;font-size:11px;color:var(--d);line-height:2;}
-.hdr-r b{color:var(--t);}
+.hdr{{height:var(--hdr-h);padding:0 24px;background:var(--bg2);
+  border-bottom:1px solid var(--bd);display:flex;align-items:center;
+  justify-content:space-between;position:sticky;top:0;z-index:300;}}
+.hdr-t{{font-size:17px;font-weight:bold;color:#fff;letter-spacing:2px;}}
+.hdr-t em{{color:var(--g);font-style:normal;}}
+.hdr-s{{font-size:10px;color:var(--d);margin-top:2px;letter-spacing:1px;}}
+.hdr-r{{text-align:right;font-size:11px;color:var(--d);line-height:2;}}
+.hdr-r b{{color:var(--t);}}
 
-/* ── CATEGORY TABS ── НЕ sticky, прокручуються */
-.ctabs{
-  display:flex;gap:5px;padding:8px 24px;
-  background:var(--bg2);border-bottom:1px solid var(--bd);flex-wrap:wrap;
-}
-.ctab{padding:5px 14px;border:1px solid var(--bd);border-radius:3px;
+/* Category tabs — НЕ sticky */
+.ctabs{{display:flex;gap:5px;padding:8px 24px;background:var(--bg2);
+  border-bottom:1px solid var(--bd);flex-wrap:wrap;}}
+.ctab{{padding:5px 14px;border:1px solid var(--bd);border-radius:3px;
   cursor:pointer;color:var(--d);font-family:var(--f);font-size:12px;
-  background:transparent;transition:all .15s;}
-.ctab:hover{border-color:var(--g);color:var(--t);}
-.ctab.active{background:var(--g);color:#000;border-color:var(--g);font-weight:bold;}
-.tc{opacity:.4;font-size:9px;margin-left:3px;}
+  background:transparent;transition:all .15s;}}
+.ctab:hover{{border-color:var(--g);color:var(--t);}}
+.ctab.active{{background:var(--g);color:#000;border-color:var(--g);font-weight:bold;}}
+.tc{{opacity:.4;font-size:9px;margin-left:3px;}}
 
-/* ── INSTRUMENT TABS ── sticky одразу під header */
-.catsec{display:none;}.catsec.active{display:block;}
-.itabs{
-  display:flex;gap:4px;padding:7px 24px;
-  background:var(--bg);border-bottom:1px solid var(--bd);flex-wrap:wrap;
-  position:sticky;top:var(--hdr-h);z-index:200;
-}
-.itab{padding:4px 12px;border:1px solid var(--bd);border-radius:3px;
+/* Instrument tabs — sticky під header */
+.catsec{{display:none;}}.catsec.active{{display:block;}}
+.itabs{{display:flex;gap:4px;padding:7px 24px;background:var(--bg);
+  border-bottom:1px solid var(--bd);flex-wrap:wrap;
+  position:sticky;top:var(--hdr-h);z-index:200;}}
+.itab{{padding:4px 12px;border:1px solid var(--bd);border-radius:3px;
   cursor:pointer;color:var(--d);font-family:var(--f);font-size:11px;
-  background:transparent;transition:all .12s;}
-.itab:hover{border-color:var(--b);color:var(--t);}
-.itab.active{background:var(--bg3);color:#fff;border-color:var(--b);}
+  background:transparent;transition:all .12s;}}
+.itab:hover{{border-color:var(--b);color:var(--t);}}
+.itab.active{{background:var(--bg3);color:#fff;border-color:var(--b);}}
 
-/* ── VIEWS ── */
-.iviews{padding:16px 24px;}
-.iview{display:none;}.iview.active{display:block;}
+.iviews{{padding:16px 24px;}}
+.iview{{display:none;}}.iview.active{{display:block;}}
 
-/* ── REPORT BUTTONS ── */
-.report-tabs{display:flex;align-items:center;gap:6px;margin-bottom:14px;flex-wrap:wrap;}
-.rtab-lbl{font-size:9px;color:var(--d);letter-spacing:1px;}
-.rtab{padding:4px 12px;border:1px solid var(--bd);border-radius:3px;
+.report-tabs{{display:flex;align-items:center;gap:6px;margin-bottom:14px;flex-wrap:wrap;}}
+.rtab-lbl{{font-size:9px;color:var(--d);letter-spacing:1px;}}
+.rtab{{padding:4px 12px;border:1px solid var(--bd);border-radius:3px;
   cursor:pointer;color:var(--d);font-family:var(--f);font-size:11px;
-  background:transparent;transition:all .12s;}
-.rtab.active{background:var(--g);color:#000;border-color:var(--g);font-weight:bold;}
-.rtab.disabled{opacity:.3;cursor:not-allowed;}
+  background:transparent;transition:all .12s;}}
+.rtab.active{{background:var(--g);color:#000;border-color:var(--g);font-weight:bold;}}
+.rtab.disabled{{opacity:.3;cursor:not-allowed;}}
 
-/* ── METRIC CARDS ── */
-.mcards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px;}
-.mc{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:14px 16px;overflow:hidden;min-width:0;}
-.mc-lbl{font-size:9px;color:#fff;letter-spacing:.5px;margin-bottom:6px;white-space:nowrap;}
-.mc-val{font-size:clamp(16px,2.5vw,26px);font-weight:bold;letter-spacing:.3px;
-  word-break:break-all;line-height:1.15;}
-.mc-chg{font-size:11px;margin-top:5px;}
-.mc-sub{font-size:10px;color:var(--d);margin-top:3px;}
+/* Metric cards */
+.mcards{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px;}}
+.mc{{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:14px 16px;overflow:hidden;min-width:0;}}
+.mc-lbl{{font-size:9px;color:#fff;letter-spacing:.5px;margin-bottom:6px;white-space:nowrap;}}
+.mc-val{{font-size:clamp(16px,2.5vw,26px);font-weight:bold;letter-spacing:.3px;word-break:break-all;line-height:1.15;}}
+.mc-chg{{font-size:11px;margin-top:5px;}}
+.mc-sub{{font-size:10px;color:var(--d);margin-top:3px;}}
 
-/* ── MID 3-COL ── */
-.mid{display:grid;grid-template-columns:1fr 200px 1fr;gap:10px;margin-bottom:12px;}
-.panel{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:14px 16px;}
-.plbl{font-size:9px;color:#fff;letter-spacing:.5px;margin-bottom:10px;}
+/* Mid 3-col */
+.mid{{display:grid;grid-template-columns:1fr 200px 1fr;gap:10px;margin-bottom:12px;}}
+.panel{{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:14px 16px;}}
+.plbl{{font-size:9px;color:#fff;letter-spacing:.5px;margin-bottom:10px;}}
 
-/* ── АНАЛІЗ ── рівномірна сітка 3 колонки */
-.arow{margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--bd);}
-.arow:last-child{margin:0;padding:0;border:none;}
-.arow-lbl{font-size:8px;color:var(--d);letter-spacing:.5px;margin-bottom:4px;}
-.arow-dir{font-size:14px;font-weight:bold;margin-bottom:8px;}
-.arow-net{font-size:12px;margin-left:8px;opacity:.85;font-weight:normal;}
+/* Аналіз позиціонування */
+.arow{{margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--bd);}}
+.arow:last-child{{margin:0;padding:0;border:none;}}
+/* Назва групи — виділений заголовок */
+.arow-group-lbl{{font-size:10px;font-weight:bold;letter-spacing:.8px;margin-bottom:5px;}}
+.arow-dir{{font-size:15px;font-weight:bold;margin-bottom:10px;}}
+.arow-net{{font-size:13px;margin-left:8px;opacity:.9;font-weight:normal;}}
 /* Сітка 3 рівні колонки */
-.arow-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;}
-.ag-item{display:flex;flex-direction:column;gap:2px;}
-.ag-lbl{font-size:8px;color:#fff;letter-spacing:.3px;}
-.ag-val{font-size:11px;font-weight:bold;}
+.arow-grid{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;}}
+.ag-item{{display:flex;flex-direction:column;gap:3px;}}
+.ag-lbl{{font-size:8px;color:#fff;letter-spacing:.4px;}}
+/* Великі цифри — рівні числам у картках */
+.ag-val{{font-size:clamp(14px,1.8vw,20px);font-weight:bold;line-height:1.1;}}
 
-/* ── SM DIV ── */
-.sm-panel{display:flex;flex-direction:column;justify-content:space-between;}
-.sm-row{margin-bottom:10px;}
-.sm-lbl{font-size:9px;color:var(--d);margin-bottom:3px;}
-.sm-bar-bg{background:var(--bg3);border-radius:10px;height:8px;position:relative;overflow:hidden;}
-.sm-mk{position:absolute;top:1px;width:8px;height:6px;border-radius:3px;transform:translateX(-50%);}
-.sm-val{font-size:12px;font-weight:bold;margin-top:3px;}
-.sm-hint{font-size:8px;color:var(--d);margin-top:8px;line-height:1.5;
-  border-top:1px solid var(--bd);padding-top:8px;}
+/* SM DIV */
+.sm-panel{{display:flex;flex-direction:column;justify-content:space-between;}}
+.sm-row{{margin-bottom:10px;}}
+.sm-lbl{{font-size:9px;color:var(--d);margin-bottom:3px;}}
+.sm-bar-bg{{background:var(--bg3);border-radius:10px;height:8px;position:relative;overflow:hidden;}}
+.sm-mk{{position:absolute;top:1px;width:8px;height:6px;border-radius:3px;transform:translateX(-50%);}}
+.sm-val{{font-size:12px;font-weight:bold;margin-top:3px;}}
+.sm-hint{{font-size:8px;color:var(--d);margin-top:8px;line-height:1.5;
+  border-top:1px solid var(--bd);padding-top:8px;}}
 
-/* ── COT PERCENTILE ── */
-.pct-sel-row{display:flex;gap:5px;align-items:center;margin-bottom:10px;flex-wrap:wrap;}
-.psel-group{display:flex;gap:3px;}
-.psel-sep{width:1px;height:16px;background:var(--bd);margin:0 3px;}
-.psel,.pper{padding:2px 8px;border:1px solid var(--bd);border-radius:3px;
+/* COT Percentile */
+.pct-sel-row{{display:flex;gap:5px;align-items:center;margin-bottom:10px;flex-wrap:wrap;}}
+.psel-group{{display:flex;gap:3px;}}
+.psel-sep{{width:1px;height:16px;background:var(--bd);margin:0 3px;}}
+.psel,.pper{{padding:2px 8px;border:1px solid var(--bd);border-radius:3px;
   cursor:pointer;color:var(--d);font-family:var(--f);font-size:10px;
-  background:transparent;transition:all .1s;}
-.psel:hover,.pper:hover{border-color:var(--b);color:var(--t);}
-.psel.active,.pper.active{background:var(--bg3);color:#fff;border-color:var(--b);}
-.pct-val-row{margin-bottom:8px;}
-.pbar-wrap{position:relative;margin-bottom:3px;}
-.pbar-bg{background:var(--bg3);border-radius:3px;height:18px;position:relative;overflow:hidden;}
-.pbar-lo{position:absolute;left:0;top:0;height:100%;background:rgba(240,81,90,.3);width:15%;}
-.pbar-hi{position:absolute;right:0;top:0;height:100%;background:rgba(32,212,131,.3);width:15%;}
-.ptick{position:absolute;top:0;width:2px;height:100%;background:rgba(255,255,255,.25);}
-.pbar-mk{position:absolute;top:2px;width:4px;height:14px;background:var(--g);border-radius:2px;transform:translateX(-50%);transition:left .3s;}
-.ptick-labels{position:relative;height:16px;margin-top:2px;}
-.ptlbl{position:absolute;transform:translateX(-50%);font-size:8px;color:var(--d);transition:left .3s;}
-.ptlbl-cur{color:var(--t);font-weight:bold;}
-.pbar-lb{display:flex;justify-content:space-between;font-size:8px;color:var(--d);margin-top:12px;}
+  background:transparent;transition:all .1s;}}
+.psel:hover,.pper:hover{{border-color:var(--b);color:var(--t);}}
+.psel.active,.pper.active{{background:var(--bg3);color:#fff;border-color:var(--b);}}
+.pct-val-row{{margin-bottom:8px;}}
+.pbar-wrap{{position:relative;margin-bottom:3px;}}
+.pbar-bg{{background:var(--bg3);border-radius:3px;height:18px;position:relative;overflow:hidden;}}
+.pbar-lo{{position:absolute;left:0;top:0;height:100%;background:rgba(240,81,90,.3);width:15%;}}
+.pbar-hi{{position:absolute;right:0;top:0;height:100%;background:rgba(32,212,131,.3);width:15%;}}
+.ptick{{position:absolute;top:0;width:2px;height:100%;background:rgba(255,255,255,.25);}}
+.pbar-mk{{position:absolute;top:2px;width:4px;height:14px;background:var(--g);border-radius:2px;transform:translateX(-50%);transition:left .3s;}}
+.ptick-labels{{position:relative;height:16px;margin-top:2px;}}
+.ptlbl{{position:absolute;transform:translateX(-50%);font-size:8px;color:var(--d);transition:left .3s;}}
+.ptlbl-cur{{color:var(--t);font-weight:bold;}}
+.pbar-lb{{display:flex;justify-content:space-between;font-size:8px;color:var(--d);margin-top:12px;}}
 
-/* ── CHART ── */
-.chartbox{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:14px 16px;margin-bottom:12px;}
-.chartbox-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px;}
-.period-btns{display:flex;gap:3px;}
-.per-btn{padding:2px 9px;border:1px solid var(--bd);border-radius:3px;
+/* Chart */
+.chartbox{{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:14px 16px;margin-bottom:12px;}}
+.chartbox-hdr{{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px;}}
+.period-btns{{display:flex;gap:3px;}}
+.per-btn{{padding:2px 9px;border:1px solid var(--bd);border-radius:3px;
   cursor:pointer;color:var(--d);font-family:var(--f);font-size:10px;
-  background:transparent;transition:all .1s;}
-.per-btn:hover{border-color:var(--b);color:var(--t);}
-.per-btn.active{background:var(--bg3);color:#fff;border-color:var(--b);}
-.chart-leg{display:flex;gap:10px;font-size:10px;color:var(--d);align-items:center;flex-wrap:wrap;}
-.ll{display:inline-block;width:14px;height:2px;border-radius:1px;vertical-align:middle;margin-right:4px;}
-.ll-dash{display:inline-block;width:14px;height:0;border-top:2px dashed #4a9eff;vertical-align:middle;}
-.cw{height:140px;position:relative;}
+  background:transparent;transition:all .1s;}}
+.per-btn:hover{{border-color:var(--b);color:var(--t);}}
+.per-btn.active{{background:var(--bg3);color:#fff;border-color:var(--b);}}
+.chart-leg{{display:flex;gap:10px;font-size:10px;color:var(--d);align-items:center;flex-wrap:wrap;}}
+.ll{{display:inline-block;width:14px;height:2px;border-radius:1px;vertical-align:middle;margin-right:4px;}}
+.ll-dash{{display:inline-block;width:14px;height:0;border-top:2px dashed;vertical-align:middle;}}
+.cw{{height:140px;position:relative;}}
 
-/* ── BAR CHARTS ── */
-.bar-charts-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
-.bar-lbl{font-size:8px;color:#fff;letter-spacing:.5px;margin-bottom:6px;}
-.bar-cw{height:80px;position:relative;}
+/* Bar charts */
+.bar-charts-grid{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}}
+.bar-lbl{{font-size:8px;letter-spacing:.5px;margin-bottom:6px;}}
+.bar-cw{{height:80px;position:relative;}}
 
-/* ── HISTORY TABLE ── */
-.htable-wrap{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;overflow:hidden;margin-bottom:12px;}
-.htable-hdr{padding:8px 14px;border-bottom:1px solid var(--bd);
+/* History table */
+.htable-wrap{{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;overflow:hidden;margin-bottom:12px;}}
+.htable-hdr{{padding:8px 14px;border-bottom:1px solid var(--bd);
   font-size:10px;color:#fff;letter-spacing:.5px;
-  display:flex;align-items:center;justify-content:space-between;}
-.hsel{display:flex;gap:4px;}
-.hbtn{padding:2px 10px;border:1px solid var(--bd);border-radius:3px;cursor:pointer;
-  color:var(--d);font-family:var(--f);font-size:11px;background:transparent;}
-.hbtn.active{background:var(--bg3);color:#fff;border-color:var(--b);}
-.htable-scroll{overflow-x:auto;}
-table.ht{width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap;}
-table.ht th{padding:5px 9px;background:var(--bg3);border-bottom:1px solid var(--bd);
-  color:#fff;font-weight:normal;font-size:9px;letter-spacing:.5px;text-align:right;}
-table.ht .th-left{text-align:left;}
-table.ht .th-date{min-width:80px;max-width:90px;width:88px;}
-table.ht .th-group{text-align:center;border-left:1px solid var(--bd);}
-table.ht td{padding:5px 9px;border-bottom:1px solid var(--bg3);text-align:right;}
-table.ht .date-col{text-align:left;color:var(--d);width:88px;}
-table.ht tr:hover td{background:rgba(52,61,90,.5)!important;}
-table.ht .sep-r{border-right:1px solid var(--bd);}
+  display:flex;align-items:center;justify-content:space-between;}}
+.hsel{{display:flex;gap:4px;}}
+.hbtn{{padding:2px 10px;border:1px solid var(--bd);border-radius:3px;cursor:pointer;
+  color:var(--d);font-family:var(--f);font-size:11px;background:transparent;}}
+.hbtn.active{{background:var(--bg3);color:#fff;border-color:var(--b);}}
+.htable-scroll{{overflow-x:auto;}}
+table.ht{{width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap;}}
+table.ht th{{padding:5px 9px;background:var(--bg3);border-bottom:1px solid var(--bd);
+  font-weight:normal;font-size:9px;letter-spacing:.5px;text-align:right;}}
+table.ht .th-left{{text-align:left;}}
+table.ht .th-date{{min-width:80px;max-width:90px;width:88px;}}
+table.ht .th-group{{text-align:center;border-left:1px solid rgba(255,255,255,.1);}}
+table.ht td{{padding:5px 9px;border-bottom:1px solid var(--bg3);text-align:right;}}
+table.ht .date-col{{text-align:left;color:var(--d);width:88px;}}
+table.ht tr:hover td{{background:rgba(52,61,90,.5)!important;}}
+table.ht .sep-r{{border-right:1px solid var(--bd);}}
 
-.g{color:var(--g);}.r{color:var(--r);}.d{color:var(--d);}
-.footer{text-align:center;padding:14px;color:var(--d);font-size:9px;
-  letter-spacing:1px;border-top:1px solid var(--bd);margin-top:4px;}
+.g{{color:var(--g);}}.r{{color:var(--r);}}.d{{color:var(--d);}}
+.footer{{text-align:center;padding:14px;color:var(--d);font-size:9px;
+  letter-spacing:1px;border-top:1px solid var(--bd);margin-top:4px;}}
 
-/* ──────── MOBILE ──────── */
-@media(max-width:640px){
-  :root{--hdr-h:56px;}
-  body{font-size:12px;}
-  .hdr{padding:8px 12px;flex-wrap:wrap;height:auto;min-height:var(--hdr-h);}
-  .hdr-t{font-size:14px;}
-  .hdr-r{font-size:10px;}
-
-  .ctabs{padding:6px 12px;gap:4px;}
-  .ctab{padding:4px 10px;font-size:11px;}
-
-  .itabs{padding:5px 12px;top:var(--hdr-h);}
-  .itab{padding:3px 9px;font-size:10px;}
-
-  .iviews{padding:10px 12px;}
-  /* Картки: 2 колонки на мобілці */
-  .mcards{grid-template-columns:1fr 1fr;gap:8px;}
-  .mc{padding:10px 12px;}
-  .mc-lbl{font-size:8px;}
-  .mc-val{font-size:clamp(14px,5vw,22px);}
-  .mc-chg{font-size:10px;}
-  .mc-sub{font-size:9px;}
-
-  /* Середня секція: одна колонка */
-  .mid{grid-template-columns:1fr;gap:8px;}
-  .sm-panel{order:3;}
-  .pct-panel{order:2;}
-
-  /* Bar charts: одна колонка */
-  .bar-charts-grid{grid-template-columns:1fr;}
-
-  /* Рядок аналізу */
-  .arow-grid{grid-template-columns:1fr 1fr 1fr;}
-  .ag-val{font-size:10px;}
-
-  /* Легенда графіку */
-  .chart-leg{font-size:9px;gap:6px;}
-  .period-btns .per-btn{font-size:9px;padding:2px 7px;}
-
-  /* Таблиця: менший шрифт */
-  table.ht{font-size:10px;}
-  table.ht th{padding:4px 6px;font-size:8px;}
-  table.ht td{padding:4px 6px;}
-  .date-col{width:72px!important;}
-
-  .report-tabs{flex-wrap:wrap;gap:4px;}
-  .rtab{font-size:10px;padding:3px 9px;}
-}
-@media(max-width:380px){
-  .mcards{grid-template-columns:1fr 1fr;}
-  .mc-val{font-size:clamp(12px,6vw,18px);}
-}
+/* ── MOBILE ── */
+@media(max-width:640px){{
+  :root{{--hdr-h:56px;}}
+  .hdr{{padding:8px 12px;height:auto;min-height:var(--hdr-h);flex-wrap:wrap;}}
+  .hdr-t{{font-size:14px;}}
+  .ctabs{{padding:6px 12px;}}
+  .ctab{{padding:4px 10px;font-size:11px;}}
+  .itabs{{padding:5px 12px;}}
+  .itab{{padding:3px 9px;font-size:10px;}}
+  .iviews{{padding:10px 12px;}}
+  .mcards{{grid-template-columns:1fr 1fr;gap:8px;}}
+  .mc{{padding:10px 12px;}}
+  .mc-val{{font-size:clamp(14px,5vw,22px);}}
+  .mid{{grid-template-columns:1fr;gap:8px;}}
+  .bar-charts-grid{{grid-template-columns:1fr;}}
+  .arow-grid{{grid-template-columns:1fr 1fr 1fr;}}
+  .ag-val{{font-size:clamp(12px,4vw,16px);}}
+  table.ht{{font-size:10px;}}
+  table.ht th{{padding:4px 5px;font-size:8px;}}
+  table.ht td{{padding:4px 5px;}}
+}}
 </style>
 </head>
 <body>
-<script>const _cd={}; const _ci={}; const Charts={}; const BarChts={};</script>
+<script>const _cd={{}};const _ci={{}};const Charts={{}};const BarChts={{}};</script>
 """
 
-HTML_FOOT="""
+HTML_FOOT=f"""
 <script>
-const CurPer={};
+const CL_LS='{COLOR_LS}', CL_CM='{COLOR_CM}', CL_ST='{COLOR_ST}';
+const CurPer={{}};
 
-function selCat(cat){
+function selCat(cat){{
   document.querySelectorAll('.ctab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.catsec').forEach(s=>s.classList.remove('active'));
   document.querySelector('[data-c="'+cat+'"]').classList.add('active');
   document.getElementById('cs_'+cat).classList.add('active');
   const first=document.querySelector('[data-cat="'+cat+'"]');
   if(first) selInst(cat,first.dataset.i);
-}
+}}
 
-function selInst(cat,key){
+function selInst(cat,key){{
   document.querySelectorAll('[data-cat="'+cat+'"]').forEach(b=>b.classList.remove('active'));
   const btn=document.querySelector('[data-cat="'+cat+'"][data-i="'+key+'"]');
   if(btn) btn.classList.add('active');
@@ -915,114 +905,113 @@ function selInst(cat,key){
   container.querySelectorAll('.iview').forEach(v=>v.classList.remove('active'));
   const sid=key.replaceAll(' ','_').replaceAll('&','n').replaceAll('/','_');
   const view=document.getElementById('iv_'+sid);
-  if(view){
+  if(view){{
     view.classList.add('active');
     filterRows(sid,10);
     const n=CurPer[sid]||52;
-    setTimeout(()=>{drawMainChart(sid,n);drawBarsFor(sid,n);},30);
-  }
-}
+    setTimeout(()=>{{drawMainChart(sid,n);drawBarsFor(sid,n);}},30);
+  }}
+}}
 
-function setChartPer(btn,sid){
+function setChartPer(btn,sid){{
   btn.closest('.period-btns').querySelectorAll('.per-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   const per=btn.dataset.per;
   const n=per==='1y'?52:per==='3y'?156:9999;
   CurPer[sid]=n;
-  drawMainChart(sid,n);
-  drawBarsFor(sid,n);
-}
+  drawMainChart(sid,n); drawBarsFor(sid,n);
+}}
 
-function drawMainChart(sid,nWeeks){
+function drawMainChart(sid,nWeeks){{
   const cv=document.getElementById('cv_'+sid); if(!cv) return;
-  if(Charts[sid]){Charts[sid].destroy();delete Charts[sid];}
+  if(Charts[sid]){{Charts[sid].destroy();delete Charts[sid];}}
   const d=_cd[sid]; if(!d) return;
   const n=Math.min(nWeeks,d.dates.length);
-  Charts[sid]=new Chart(cv.getContext('2d'),{
+  Charts[sid]=new Chart(cv.getContext('2d'),{{
     type:'line',
-    data:{
+    data:{{
       labels:d.dates.slice(-n),
       datasets:[
-        {label:'Large Spec',   data:d.ls.slice(-n),borderColor:'#20d483',backgroundColor:'rgba(32,212,131,.07)',borderWidth:1.5,pointRadius:0,tension:.3,fill:true},
-        {label:'Commercials',  data:d.cm.slice(-n),borderColor:'#f0515a',backgroundColor:'transparent',borderWidth:1.5,pointRadius:0,tension:.3},
-        {label:'Small Traders',data:d.st.slice(-n),borderColor:'#4a9eff',backgroundColor:'transparent',borderWidth:1,  pointRadius:0,tension:.3,borderDash:[3,3]},
+        {{label:'Large Spec',   data:d.ls.slice(-n),borderColor:CL_LS,backgroundColor:CL_LS+'22',borderWidth:1.5,pointRadius:0,tension:.3,fill:true}},
+        {{label:'Commercials',  data:d.cm.slice(-n),borderColor:CL_CM,backgroundColor:'transparent',borderWidth:1.5,pointRadius:0,tension:.3}},
+        {{label:'Small Traders',data:d.st.slice(-n),borderColor:CL_ST,backgroundColor:'transparent',borderWidth:1,  pointRadius:0,tension:.3,borderDash:[3,3]}},
       ]
-    },
-    options:{
+    }},
+    options:{{
       responsive:true,maintainAspectRatio:false,animation:false,
-      interaction:{mode:'index',intersect:false},
-      plugins:{
-        legend:{display:false},
-        tooltip:{
+      interaction:{{mode:'index',intersect:false}},
+      plugins:{{
+        legend:{{display:false}},
+        tooltip:{{
           backgroundColor:'#21263a',borderColor:'#343d5a',borderWidth:1,
           titleColor:'#dde2ee',bodyColor:'#dde2ee',
-          titleFont:{family:'Courier New',size:10},bodyFont:{family:'Courier New',size:10},
-          callbacks:{label:ctx=>' '+ctx.dataset.label+': '+fmtFull(ctx.parsed.y)}
-        }
-      },
-      scales:{
-        x:{display:true,
-          ticks:{color:'#8090b0',font:{family:'Courier New',size:8},
-            maxTicksLimit:8,
-            callback:function(v,i){return i%Math.ceil(n/8)===0?this.getLabelForValue(v):'';}},
-          grid:{display:false},border:{display:false}},
-        y:{display:true,
-          grid:{color:'rgba(52,61,90,.8)',lineWidth:.5},
-          ticks:{color:'#8090b0',font:{family:'Courier New',size:9},maxTicksLimit:4,callback:v=>fmtV(v,true)},
-          border:{display:false}}
-      }
-    }
-  });
-}
+          titleFont:{{family:'Courier New',size:10}},bodyFont:{{family:'Courier New',size:10}},
+          callbacks:{{label:ctx=>' '+ctx.dataset.label+': '+fmtFull(ctx.parsed.y)}}
+        }}
+      }},
+      scales:{{
+        x:{{display:true,
+          ticks:{{color:'#8090b0',font:{{family:'Courier New',size:8}},maxTicksLimit:8,
+            callback:function(v,i){{return i%Math.ceil(n/8)===0?this.getLabelForValue(v):'';}}}},
+          grid:{{display:false}},border:{{display:false}}}},
+        y:{{display:true,
+          grid:{{color:'rgba(52,61,90,.8)',lineWidth:.5}},
+          ticks:{{color:'#8090b0',font:{{family:'Courier New',size:9}},maxTicksLimit:4,callback:v=>fmtV(v,true)}},
+          border:{{display:false}}}}
+      }}
+    }}
+  }});
+}}
 
-function drawBarsFor(sid,nWeeks){
+function drawBarsFor(sid,nWeeks){{
   const d=_cd[sid]; if(!d) return;
   const n=Math.min(nWeeks,d.dates.length);
   const dates=d.dates.slice(-n);
-  drawOneBar('barcv_ls_'+sid,dates,d.ld.slice(-n));
-  drawOneBar('barcv_cm_'+sid,dates,d.cd.slice(-n));
-  drawOneBar('barcv_st_'+sid,dates,d.sd.slice(-n));
-}
+  drawOneBar('barcv_ls_'+sid,dates,d.ld.slice(-n),CL_LS);
+  drawOneBar('barcv_cm_'+sid,dates,d.cd.slice(-n),CL_CM);
+  drawOneBar('barcv_st_'+sid,dates,d.sd.slice(-n),CL_ST);
+}}
 
-function drawOneBar(cvId,dates,data){
+function drawOneBar(cvId,dates,data,baseColor){{
   const cv=document.getElementById(cvId); if(!cv) return;
   const key='b_'+cvId;
-  if(BarChts[key]){BarChts[key].destroy();delete BarChts[key];}
-  const colors=data.map(v=>v>=0?'rgba(32,212,131,.75)':'rgba(240,81,90,.75)');
-  BarChts[key]=new Chart(cv.getContext('2d'),{
+  if(BarChts[key]){{BarChts[key].destroy();delete BarChts[key];}}
+  // Позитивні — колір групи, негативні — темніша версія
+  const colors=data.map(v=>v>=0?baseColor+'cc':'rgba(240,81,90,.7)');
+  BarChts[key]=new Chart(cv.getContext('2d'),{{
     type:'bar',
-    data:{labels:dates,datasets:[{data:data,backgroundColor:colors,borderWidth:0,borderRadius:1}]},
-    options:{
+    data:{{labels:dates,datasets:[{{data:data,backgroundColor:colors,borderWidth:0,borderRadius:1}}]}},
+    options:{{
       responsive:true,maintainAspectRatio:false,animation:false,
-      plugins:{
-        legend:{display:false},
-        tooltip:{
+      plugins:{{
+        legend:{{display:false}},
+        tooltip:{{
           backgroundColor:'#21263a',borderColor:'#343d5a',borderWidth:1,
           titleColor:'#dde2ee',bodyColor:'#dde2ee',
-          titleFont:{family:'Courier New',size:9},bodyFont:{family:'Courier New',size:9},
-          callbacks:{label:ctx=>fmtFull(ctx.parsed.y)}
-        }
-      },
-      scales:{
-        x:{display:false},
-        y:{display:true,
-          grid:{color:'rgba(52,61,90,.6)',lineWidth:.5},
-          ticks:{color:'#8090b0',font:{family:'Courier New',size:8},maxTicksLimit:3,callback:v=>fmtV(v,true)},
-          border:{display:false}}
-      }
-    }
-  });
-}
+          titleFont:{{family:'Courier New',size:9}},bodyFont:{{family:'Courier New',size:9}},
+          callbacks:{{label:ctx=>fmtFull(ctx.parsed.y)}}
+        }}
+      }},
+      scales:{{
+        x:{{display:false}},
+        y:{{display:true,
+          grid:{{color:'rgba(52,61,90,.6)',lineWidth:.5}},
+          ticks:{{color:'#8090b0',font:{{family:'Courier New',size:8}},maxTicksLimit:3,callback:v=>fmtV(v,true)}},
+          border:{{display:false}}}}
+      }}
+    }}
+  }});
+}}
 
-function pctSel(btn,sid){
+function pctSel(btn,sid){{
   btn.closest('.psel-group').querySelectorAll('.psel').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active'); updatePctBar(sid);
-}
-function pperSel(btn,sid){
+}}
+function pperSel(btn,sid){{
   btn.closest('.psel-group').querySelectorAll('.pper').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active'); updatePctBar(sid);
-}
-function updatePctBar(sid){
+}}
+function updatePctBar(sid){{
   const view=document.getElementById('iv_'+sid); if(!view) return;
   const p  =view.querySelector('.psel.active')?.dataset.p  ||'ls';
   const per=view.querySelector('.pper.active')?.dataset.per||'all';
@@ -1035,40 +1024,40 @@ function updatePctBar(sid){
   const lblEl=document.getElementById('pctlbl_'+sid);
   const curEl=document.getElementById('pctcur_'+sid);
   if(mk)    mk.style.left=pos+'%';
-  if(valEl){valEl.style.color=col;valEl.textContent=val.toFixed(1)+'%';}
+  if(valEl){{valEl.style.color=col;valEl.textContent=val.toFixed(1)+'%';}}
   if(lblEl) lblEl.textContent=lbl;
-  if(curEl){curEl.style.left=pos+'%';curEl.textContent=val.toFixed(1)+'%';}
-}
+  if(curEl){{curEl.style.left=pos+'%';curEl.textContent=val.toFixed(1)+'%';}}
+}}
 
-function setHist(btn,sid){
+function setHist(btn,sid){{
   const n=parseInt(btn.dataset.n);
   btn.closest('.htable-hdr').querySelectorAll('.hbtn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active'); filterRows(sid,n);
-}
-function filterRows(sid,n){
+}}
+function filterRows(sid,n){{
   const view=document.getElementById('iv_'+sid); if(!view) return;
-  view.querySelectorAll('table.ht tbody tr').forEach(tr=>{
+  view.querySelectorAll('table.ht tbody tr').forEach(tr=>{{
     tr.style.display=parseInt(tr.dataset.row)<n?'':'none';
-  });
-}
+  }});
+}}
 
-function fmtV(n,short=false){
+function fmtV(n,short=false){{
   if(n===null||isNaN(n)) return'—';
   n=Math.round(n);
-  if(short){
+  if(short){{
     if(Math.abs(n)>=1e6) return(n/1e6).toFixed(1)+'M';
     if(Math.abs(n)>=1e3) return(n/1e3).toFixed(0)+'K';
     return''+n;
-  }
+  }}
   const sign=n>0?'+':n<0?'-':'';
   return sign+Math.abs(n).toLocaleString('uk-UA');
-}
-function fmtFull(n){
+}}
+function fmtFull(n){{
   if(n===null||isNaN(n)) return'—';
   n=Math.round(n);
   const sign=n>0?'+':n<0?'-':'';
   return sign+Math.abs(n).toLocaleString('uk-UA');
-}
+}}
 
 const firstCat=document.querySelector('.ctab');
 if(firstCat) selCat(firstCat.dataset.c);
@@ -1084,7 +1073,7 @@ if(firstCat) selCat(firstCat.dataset.c);
 def main():
     print()
     print("="*55)
-    print("   COT Dashboard Generator v7")
+    print("   COT Dashboard Generator v8")
     print("="*55)
     print()
     OUTPUT_FILE.parent.mkdir(parents=True,exist_ok=True)
