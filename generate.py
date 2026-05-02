@@ -489,15 +489,14 @@ def make_metric_card(lbl, val, chg, chg_pct, spark_series, spark_color):
 # Додаємо мітку "ЗМІНА ЗА ТИЖДЕНЬ" і % delta для Δ NET
 # ================================================================
 def analysis_row(group_label, group_color, net, cl, cs, chg, chg_pct):
-    dw='ЛОНГ'if net>0 else'ШОРТ'
-    dc='g'   if net>0 else'r'
+    dc='g' if net>0 else 'r'
     return(
+        # Зовнішній контейнер: ліво=зміни, право=нет позиція
         f'<div class="arow">'
-        f'<div class="arow-group-lbl" style="color:{group_color}">{group_label}</div>'
-        f'<div class="arow-dir {dc}">{dw}'
-        f'<span class="arow-net">{fv_full(net,sign=True)}</span>'
-        f'</div>'
-        # Мітка секції змін
+        f'<div class="arow-body">'
+
+        # ── ЛІВА ЧАСТИНА: ЗМІНА ЗА ТИЖДЕНЬ ────────────────
+        f'<div class="arow-left">'
         f'<div class="arow-week-lbl">ЗМІНА ЗА ТИЖДЕНЬ</div>'
         f'<div class="arow-grid">'
         f'<div class="ag-item">'
@@ -510,12 +509,20 @@ def analysis_row(group_label, group_color, net, cl, cs, chg, chg_pct):
         f'</div>'
         f'<div class="ag-item">'
         f'<span class="ag-lbl">Δ NET</span>'
-        # Δ NET + % в дужках
         f'<span class="{cc(chg)} ag-val">{fv_full(chg,sign=True)}'
         f'<span class="ag-pct"> ({chg_pct})</span></span>'
         f'</div>'
+        f'</div>'  # /arow-grid
+        f'</div>'  # /arow-left
+
+        # ── ПРАВА ЧАСТИНА: назва групи + нет позиція велика ──
+        f'<div class="arow-right">'
+        f'<div class="ar-glbl" style="color:{group_color}">{group_label}</div>'
+        f'<div class="ar-net {dc}">{fv_full(net, sign=True)}</div>'
         f'</div>'
-        f'</div>'
+
+        f'</div>'  # /arow-body
+        f'</div>'  # /arow
     )
 
 
@@ -818,18 +825,25 @@ html,body{{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13
 /* АНАЛІЗ */
 .arow{{margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--bd);}}
 .arow:last-child{{margin:0;padding:0;border:none;}}
-.arow-group-lbl{{font-size:10px;font-weight:bold;letter-spacing:.8px;margin-bottom:5px;}}
-.arow-dir{{font-size:15px;font-weight:bold;margin-bottom:8px;}}
-.arow-net{{font-size:13px;margin-left:8px;opacity:.9;font-weight:normal;}}
+/* Flexbox ліво/право */
+.arow-body{{display:flex;gap:10px;align-items:center;}}
+.arow-left{{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;}}
+.arow-right{{
+  width:150px;flex-shrink:0;
+  display:flex;flex-direction:column;justify-content:center;align-items:flex-end;
+  border-left:1px solid var(--bd);padding-left:12px;
+}}
+/* Права частина: назва малими + нет позиція великими */
+.ar-glbl{{font-size:9px;font-weight:bold;letter-spacing:.8px;margin-bottom:4px;}}
+.ar-net{{font-size:clamp(22px,2.5vw,32px);font-weight:bold;line-height:1.1;text-align:right;}}
 /* Мітка "ЗМІНА ЗА ТИЖДЕНЬ" */
-.arow-week-lbl{{font-size:8px;color:var(--d);letter-spacing:.8px;margin-bottom:5px;
-  text-transform:uppercase;border-top:1px solid var(--bd);padding-top:6px;}}
-.arow-grid{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;}}
-.ag-item{{display:flex;flex-direction:column;gap:3px;}}
+.arow-week-lbl{{font-size:8px;color:var(--d);letter-spacing:.8px;margin-bottom:8px;
+  text-transform:uppercase;}}
+.arow-grid{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;align-items:center;}}
+.ag-item{{display:flex;flex-direction:column;gap:4px;}}
 .ag-lbl{{font-size:8px;color:#fff;letter-spacing:.4px;}}
-.ag-val{{font-size:clamp(14px,1.8vw,20px);font-weight:bold;line-height:1.1;}}
-/* % в дужках поруч з Δ NET */
-.ag-pct{{font-size:10px;opacity:.75;font-weight:normal;}}
+.ag-val{{font-size:clamp(16px,1.9vw,22px);font-weight:bold;line-height:1.1;}}
+.ag-pct{{font-size:11px;opacity:.75;font-weight:normal;}}
 
 /* SM DIV */
 .sm-panel{{display:flex;flex-direction:column;justify-content:space-between;}}
@@ -921,8 +935,10 @@ table.ht .sep-r{{border-right:1px solid var(--bd);}}
   .mc-val{{font-size:clamp(14px,5vw,22px);}}
   .mid{{grid-template-columns:1fr;gap:8px;}}
   .bar-charts-grid{{grid-template-columns:1fr;}}
+  .arow-right{{width:110px;padding-left:8px;}}
+  .ar-net{{font-size:clamp(14px,4vw,20px);}}
   .arow-grid{{grid-template-columns:1fr 1fr 1fr;}}
-  .ag-val{{font-size:clamp(12px,4vw,16px);}}
+  .ag-val{{font-size:clamp(11px,3.5vw,15px);}}
   table.ht{{font-size:10px;}}
   table.ht th{{padding:4px 5px;font-size:8px;}}
   table.ht td{{padding:4px 5px;}}
@@ -1017,16 +1033,16 @@ function drawBarsFor(sid,nWeeks){{
   const d=_cd[sid]; if(!d) return;
   const n=Math.min(nWeeks,d.dates.length);
   const dates=d.dates.slice(-n);
-  drawOneBar('barcv_ls_'+sid,dates,d.ld.slice(-n),CL_LS);
-  drawOneBar('barcv_cm_'+sid,dates,d.cd.slice(-n),CL_CM);
-  drawOneBar('barcv_st_'+sid,dates,d.sd.slice(-n),CL_ST);
+  drawOneBar('barcv_ls_'+sid,dates,d.ld.slice(-n),CL_LS,'rgba(240,81,90,.75)');
+  drawOneBar('barcv_cm_'+sid,dates,d.cd.slice(-n),CL_CM,'rgba(240,81,90,.75)');
+  drawOneBar('barcv_st_'+sid,dates,d.sd.slice(-n),CL_ST,'rgba(15,18,28,.9)');
 }}
 
-function drawOneBar(cvId,dates,data,baseColor){{
+function drawOneBar(cvId,dates,data,baseColor,negColor){{
   const cv=document.getElementById(cvId); if(!cv) return;
   const key='b_'+cvId;
   if(BarChts[key]){{BarChts[key].destroy();delete BarChts[key];}}
-  const colors=data.map(v=>v>=0?baseColor+'cc':'rgba(240,81,90,.7)');
+  const colors=data.map(v=>v>=0?baseColor+'cc':negColor);
   BarChts[key]=new Chart(cv.getContext('2d'),{{
     type:'bar',
     data:{{labels:dates,datasets:[{{data:data,backgroundColor:colors,borderWidth:0,borderRadius:1}}]}},
