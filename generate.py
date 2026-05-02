@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""COT Dashboard Generator v8"""
+"""COT Dashboard Generator v9"""
 
 import pandas as pd
 import json
@@ -17,10 +17,9 @@ CHART_WEEKS  = 260
 SPARK_WEEKS  = 26
 HISTORY      = 52
 
-# ── Кольори учасників ─────────────────────────────────────────
-COLOR_LS = '#4a9eff'   # Large Spec  — синій
-COLOR_CM = '#20d483'   # Commercials — зелений
-COLOR_ST = '#f0515a'   # Small Traders — червоний
+COLOR_LS = '#4a9eff'
+COLOR_CM = '#20d483'
+COLOR_ST = '#f0515a'
 
 DISPLAY = {
     'SP500':'S&P 500','DOW_30':'DOW 30','RUSSELL2K':'RUSSELL 2K',
@@ -109,6 +108,14 @@ def fp(n, signed=False):
     try:
         v=float(n); s='+'if(signed and v>0)else ''
         return f"{s}{v:.1f}%"
+    except: return '—'
+
+def pct_change(chg, net):
+    """Відсоткова зміна: chg / abs(попереднє_net) * 100"""
+    try:
+        prev = float(net) - float(chg)
+        if abs(prev) < 1: return '—'
+        return fp(float(chg)/abs(prev)*100, signed=True)
     except: return '—'
 
 def cc(n):
@@ -274,6 +281,11 @@ def read_sheet(xl, name, overview):
         oi_cur=float(oi_all[i0]); oi_prev=float(oi_all[i1])
         oi_pct=round((oi_cur-oi_prev)/abs(oi_prev)*100,2) if oi_prev!=0 else 0.0
 
+        ls_chg=round(float(ls_net[i0])-float(ls_net[i1]),0)
+        cm_chg=round(float(cm_net[i0])-float(cm_net[i1]),0)
+        st_chg=round(float(st_net[i0])-float(st_net[i1]),0)
+        oi_chg=round(oi_cur-oi_prev,0)
+
         return{
             'name':name,'display':disp(name),'sid':sid(name),
             'chart':chart,'hist':hist,
@@ -292,14 +304,15 @@ def read_sheet(xl, name, overview):
                 'date':  all_dates[i0],
                 'ls_net':ls_net[i0],'cm_net':cm_net[i0],'st_net':st_net[i0],
                 'ls_pct':ls_pct[i0],'cm_pct':cm_pct[i0],'st_pct':st_pct[i0],
-                # CHG зберігаємо як є (знак з Excel)
                 'ls_cl': ls_cl[i0], 'ls_cs': ls_cs[i0],
                 'cm_cl': cm_cl[i0], 'cm_cs': cm_cs[i0],
                 'oi':    oi_cur,'oi_pct':oi_pct,
-                'ls_chg':round(float(ls_net[i0])-float(ls_net[i1]),0),
-                'cm_chg':round(float(cm_net[i0])-float(cm_net[i1]),0),
-                'st_chg':round(float(st_net[i0])-float(st_net[i1]),0),
-                'oi_chg':round(oi_cur-oi_prev,0),
+                'ls_chg':ls_chg,'cm_chg':cm_chg,'st_chg':st_chg,'oi_chg':oi_chg,
+                # % зміна net position за тиждень
+                'ls_chg_pct': pct_change(ls_chg, ls_net[i0]),
+                'cm_chg_pct': pct_change(cm_chg, cm_net[i0]),
+                'st_chg_pct': pct_change(st_chg, st_net[i0]),
+                'oi_chg_pct': fp(oi_pct, signed=True),
             }
         }
     except Exception as e:
@@ -346,7 +359,8 @@ def intensity_bg(val, max_abs):
 
 # ================================================================
 # 🃏  ТАБЛИЦЯ
-# Заголовки груп — кольорові фони: LS=синій, CM=зелений, ST=червоний
+# Заголовок групи — кольоровий фон
+# Підзаголовок (CHG L / CHG S / NET POS) — стандартний bg3, без кольору
 # ================================================================
 def make_hist_table(hist):
     n=len(hist['dates'])
@@ -385,26 +399,39 @@ def make_hist_table(hist):
         )
         rows.append(row)
 
-    # Заголовки з кольоровими фонами
-    ls_hdr = f'background:rgba(74,158,255,.25);color:#fff'
-    cm_hdr = f'background:rgba(32,212,131,.25);color:#fff'
-    st_hdr = f'background:rgba(240,81,90,.25);color:#fff'
+    # Рядок 1: назви груп — кольоровий фон
+    ls_bg = 'background:rgba(74,158,255,.25);color:#fff;border-left:2px solid rgba(74,158,255,.6)'
+    cm_bg = 'background:rgba(32,212,131,.20);color:#fff;border-left:2px solid rgba(32,212,131,.6)'
+    st_bg = 'background:rgba(240,81,90,.20);color:#fff;border-left:2px solid rgba(240,81,90,.6)'
+    # Рядок 2: назви колонок — стандартний темний фон (bg3), без кольору
+    sub_style = 'background:var(--bg3);color:var(--d);'
+    sub_ls = sub_style + 'border-left:2px solid rgba(74,158,255,.3)'
+    sub_cm = sub_style + 'border-left:2px solid rgba(32,212,131,.3)'
+    sub_st = sub_style + 'border-left:2px solid rgba(240,81,90,.3)'
 
     return(
         '<table class="ht">'
         '<thead>'
         '<tr>'
-        '<th rowspan="2" class="th-left th-date">ДАТА</th>'
-        f'<th colspan="3" class="th-group" style="{ls_hdr}">LARGE SPECULATORS</th>'
-        f'<th colspan="3" class="th-group" style="{cm_hdr}">COMMERCIALS</th>'
-        f'<th colspan="3" class="th-group" style="{st_hdr}">SMALL TRADERS</th>'
-        '<th class="th-group">OI</th>'
+        f'<th rowspan="2" class="th-left th-date">ДАТА</th>'
+        f'<th colspan="3" class="th-group" style="{ls_bg}">LARGE SPECULATORS</th>'
+        f'<th colspan="3" class="th-group" style="{cm_bg}">COMMERCIALS</th>'
+        f'<th colspan="3" class="th-group" style="{st_bg}">SMALL TRADERS</th>'
+        f'<th rowspan="2" class="th-group">OI</th>'
         '</tr>'
         '<tr>'
-        f'<th style="{ls_hdr}">CHG L</th><th style="{ls_hdr}">CHG S</th><th class="sep-r" style="{ls_hdr}">NET POS</th>'
-        f'<th style="{cm_hdr}">CHG L</th><th style="{cm_hdr}">CHG S</th><th class="sep-r" style="{cm_hdr}">NET POS</th>'
-        f'<th style="{st_hdr}">CHG L</th><th style="{st_hdr}">CHG S</th><th class="sep-r" style="{st_hdr}">NET POS</th>'
-        '<th></th>'
+        # Large Spec — підзаголовки без кольорового фону
+        f'<th style="{sub_ls}">CHG L</th>'
+        f'<th style="{sub_style}">CHG S</th>'
+        f'<th class="sep-r" style="{sub_style}">NET POS</th>'
+        # Commercials
+        f'<th style="{sub_cm}">CHG L</th>'
+        f'<th style="{sub_style}">CHG S</th>'
+        f'<th class="sep-r" style="{sub_style}">NET POS</th>'
+        # Small Traders
+        f'<th style="{sub_st}">CHG L</th>'
+        f'<th style="{sub_style}">CHG S</th>'
+        f'<th class="sep-r" style="{sub_style}">NET POS</th>'
         '</tr>'
         '</thead>'
         '<tbody>'+''.join(rows)+'</tbody>'
@@ -433,15 +460,25 @@ def sm_bar(val,label):
 
 # ================================================================
 # 🃏  METRIC CARD
+# Додаємо "за тиждень" і % до рядка зміни
 # ================================================================
-def make_metric_card(lbl,val,chg_str,chg_cls,sub,spark_series,spark_color):
-    spark=make_sparkline(spark_series, spark_color)
+def make_metric_card(lbl, val, chg, chg_pct, spark_series, spark_color):
+    spark = make_sparkline(spark_series, spark_color)
+    chg_abs = abs(int(chg))
+    chg_cls = cc(chg)
+    pct_cls = cc(chg)
     return(
         f'<div class="mc">'
         f'<div class="mc-lbl">{lbl}</div>'
-        f'<div class="mc-val {cc(val)}">{fv(val,sign=True)}</div>'
-        f'<div class="mc-chg {chg_cls}">{chg_str}</div>'
-        f'<div class="mc-sub">{sub}</div>'
+        f'<div class="mc-val {cc(val)}">{fv(val, sign=True)}</div>'
+        # Рядок зміни: стрілка + значення + "за тиждень"
+        f'<div class="mc-chg {chg_cls}">'
+        f'{ar(chg)} {fv(chg_abs, True)}'
+        f'<span class="mc-wtag"> за тиждень</span>'
+        f'</div>'
+        # Рядок % зміни
+        f'<div class="mc-pct {pct_cls}">{chg_pct}</div>'
+        f'<div class="mc-sub">COT Index: —</div>'
         f'{spark}'
         f'</div>'
     )
@@ -449,23 +486,19 @@ def make_metric_card(lbl,val,chg_str,chg_cls,sub,spark_series,spark_color):
 
 # ================================================================
 # 🃏  АНАЛІЗ ПОЗИЦІОНУВАННЯ
-# CHG SHORT відображається як є з Excel (знак не міняємо)
+# Додаємо мітку "ЗМІНА ЗА ТИЖДЕНЬ" і % delta для Δ NET
 # ================================================================
-def analysis_row(group_label, group_color, net, cl, cs, chg):
-    """
-    cl  = Change(Long)  — знак із Excel
-    cs  = Change(Short) — знак із Excel (НЕ негуємо)
-    chg = delta net position
-    """
+def analysis_row(group_label, group_color, net, cl, cs, chg, chg_pct):
     dw='ЛОНГ'if net>0 else'ШОРТ'
     dc='g'   if net>0 else'r'
     return(
         f'<div class="arow">'
-        # Назва групи замість "АНАЛІЗ ПОЗИЦІОНУВАННЯ"
         f'<div class="arow-group-lbl" style="color:{group_color}">{group_label}</div>'
         f'<div class="arow-dir {dc}">{dw}'
         f'<span class="arow-net">{fv_full(net,sign=True)}</span>'
         f'</div>'
+        # Мітка секції змін
+        f'<div class="arow-week-lbl">ЗМІНА ЗА ТИЖДЕНЬ</div>'
         f'<div class="arow-grid">'
         f'<div class="ag-item">'
         f'<span class="ag-lbl">CHG LONG</span>'
@@ -473,12 +506,13 @@ def analysis_row(group_label, group_color, net, cl, cs, chg):
         f'</div>'
         f'<div class="ag-item">'
         f'<span class="ag-lbl">CHG SHORT</span>'
-        # cs береться як є — знак вже правильний з Excel
         f'<span class="{cc(cs)} ag-val">{fv_full(cs,sign=True)}</span>'
         f'</div>'
         f'<div class="ag-item">'
         f'<span class="ag-lbl">Δ NET</span>'
-        f'<span class="{cc(chg)} ag-val">{fv_full(chg,sign=True)}</span>'
+        # Δ NET + % в дужках
+        f'<span class="{cc(chg)} ag-val">{fv_full(chg,sign=True)}'
+        f'<span class="ag-pct"> ({chg_pct})</span></span>'
         f'</div>'
         f'</div>'
         f'</div>'
@@ -491,28 +525,41 @@ def analysis_row(group_label, group_color, net, cl, cs, chg):
 def make_instrument_view(d):
     c=d['cur']; s=d['sid']; sm=d['sm']
 
-    mc_ls=make_metric_card('LARGE SPEC (NETTO)',   c['ls_net'],
-        f'{ar(c["ls_chg"])} {fv(abs(int(c["ls_chg"])),True)}',
-        cc(c['ls_chg']),f'COT Index: {fp(d["cot_idx"]["ls"]["all"])}',
+    # Metric cards — передаємо chg_pct окремо
+    mc_ls = make_metric_card(
+        'LARGE SPEC (NETTO)',    c['ls_net'],
+        c['ls_chg'], c['ls_chg_pct'],
         d['spark']['ls'], COLOR_LS)
-    mc_cm=make_metric_card('COMMERCIALS (NETTO)',  c['cm_net'],
-        f'{ar(c["cm_chg"])} {fv(abs(int(c["cm_chg"])),True)}',
-        cc(c['cm_chg']),f'COT Index: {fp(d["cot_idx"]["cm"]["all"])}',
+    mc_cm = make_metric_card(
+        'COMMERCIALS (NETTO)',   c['cm_net'],
+        c['cm_chg'], c['cm_chg_pct'],
         d['spark']['cm'], COLOR_CM)
-    mc_st=make_metric_card('SMALL TRADERS (NETTO)',c['st_net'],
-        f'{ar(c["st_chg"])} {fv(abs(int(c["st_chg"])),True)}',
-        cc(c['st_chg']),f'COT Index: {fp(d["cot_idx"]["st"]["all"])}',
+    mc_st = make_metric_card(
+        'SMALL TRADERS (NETTO)', c['st_net'],
+        c['st_chg'], c['st_chg_pct'],
         d['spark']['st'], COLOR_ST)
-    mc_oi=make_metric_card('OPEN INTEREST',        c['oi'],
-        f'{ar(c["oi_pct"])} {fp(c["oi_pct"])}',
-        cc(c['oi_pct']),f'зміна: {fv(int(c["oi_chg"]),True,sign=True)}',
+    mc_oi = make_metric_card(
+        'OPEN INTEREST',         c['oi'],
+        c['oi_chg'], c['oi_chg_pct'],
         d['spark']['oi'], '#a0aac0')
 
-    # АНАЛІЗ — без заголовку панелі, назва групи всередині кожного рядка
+    # COT Index — оновлюємо mc-sub після генерації карток
+    def patch_cot(mc_html, key):
+        cot = fp(d['cot_idx'][key]['all'])
+        return mc_html.replace('COT Index: —', f'COT Index: {cot}')
+
+    mc_ls = patch_cot(mc_ls, 'ls')
+    mc_cm = patch_cot(mc_cm, 'cm')
+    mc_st = patch_cot(mc_st, 'st')
+    mc_oi = mc_oi.replace('COT Index: —', f'зміна: {fv(int(c["oi_chg"]),True,sign=True)}')
+
+    # Аналіз
     analysis_panel=(
         f'<div class="panel">'
-        + analysis_row('LARGE SPEC',   COLOR_LS, c['ls_net'], c['ls_cl'], c['ls_cs'], c['ls_chg'])
-        + analysis_row('COMMERCIALS',  COLOR_CM, c['cm_net'], c['cm_cl'], c['cm_cs'], c['cm_chg'])
+        + analysis_row('LARGE SPEC',  COLOR_LS, c['ls_net'], c['ls_cl'], c['ls_cs'],
+                       c['ls_chg'], c['ls_chg_pct'])
+        + analysis_row('COMMERCIALS', COLOR_CM, c['cm_net'], c['cm_cl'], c['cm_cs'],
+                       c['cm_chg'], c['cm_chg_pct'])
         + f'</div>'
     )
 
@@ -692,7 +739,7 @@ def generate_html(data):
 # ================================================================
 # 🖼️  CSS
 # ================================================================
-HTML_HEAD=f"""<!DOCTYPE html>
+HTML_HEAD = f"""<!DOCTYPE html>
 <html lang="uk">
 <head>
 <meta charset="UTF-8">
@@ -706,13 +753,12 @@ HTML_HEAD=f"""<!DOCTYPE html>
   --t:#dde2ee;--d:#8090b0;
   --f:'Courier New',Courier,monospace;
   --hdr-h:50px;
-  --c-ls:{COLOR_LS};
-  --c-cm:{COLOR_CM};
-  --c-st:{COLOR_ST};
+  --c-ls:{COLOR_LS};--c-cm:{COLOR_CM};--c-st:{COLOR_ST};
 }}
 *,*::before,*::after{{margin:0;padding:0;box-sizing:border-box;}}
 html,body{{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13px;}}
 
+/* HEADER */
 .hdr{{height:var(--hdr-h);padding:0 24px;background:var(--bg2);
   border-bottom:1px solid var(--bd);display:flex;align-items:center;
   justify-content:space-between;position:sticky;top:0;z-index:300;}}
@@ -722,7 +768,7 @@ html,body{{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13
 .hdr-r{{text-align:right;font-size:11px;color:var(--d);line-height:2;}}
 .hdr-r b{{color:var(--t);}}
 
-/* Category tabs — НЕ sticky */
+/* CATEGORY TABS — не sticky */
 .ctabs{{display:flex;gap:5px;padding:8px 24px;background:var(--bg2);
   border-bottom:1px solid var(--bd);flex-wrap:wrap;}}
 .ctab{{padding:5px 14px;border:1px solid var(--bd);border-radius:3px;
@@ -732,7 +778,7 @@ html,body{{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13
 .ctab.active{{background:var(--g);color:#000;border-color:var(--g);font-weight:bold;}}
 .tc{{opacity:.4;font-size:9px;margin-left:3px;}}
 
-/* Instrument tabs — sticky під header */
+/* INSTRUMENT TABS — sticky під header */
 .catsec{{display:none;}}.catsec.active{{display:block;}}
 .itabs{{display:flex;gap:4px;padding:7px 24px;background:var(--bg);
   border-bottom:1px solid var(--bd);flex-wrap:wrap;
@@ -754,32 +800,36 @@ html,body{{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13
 .rtab.active{{background:var(--g);color:#000;border-color:var(--g);font-weight:bold;}}
 .rtab.disabled{{opacity:.3;cursor:not-allowed;}}
 
-/* Metric cards */
+/* METRIC CARDS */
 .mcards{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px;}}
 .mc{{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:14px 16px;overflow:hidden;min-width:0;}}
 .mc-lbl{{font-size:9px;color:#fff;letter-spacing:.5px;margin-bottom:6px;white-space:nowrap;}}
 .mc-val{{font-size:clamp(16px,2.5vw,26px);font-weight:bold;letter-spacing:.3px;word-break:break-all;line-height:1.15;}}
-.mc-chg{{font-size:11px;margin-top:5px;}}
+.mc-chg{{font-size:12px;margin-top:6px;}}
+.mc-wtag{{font-size:9px;color:var(--d);margin-left:3px;}}
+.mc-pct{{font-size:10px;margin-top:2px;opacity:.85;}}
 .mc-sub{{font-size:10px;color:var(--d);margin-top:3px;}}
 
-/* Mid 3-col */
+/* MID 3-COL */
 .mid{{display:grid;grid-template-columns:1fr 200px 1fr;gap:10px;margin-bottom:12px;}}
 .panel{{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:14px 16px;}}
 .plbl{{font-size:9px;color:#fff;letter-spacing:.5px;margin-bottom:10px;}}
 
-/* Аналіз позиціонування */
+/* АНАЛІЗ */
 .arow{{margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--bd);}}
 .arow:last-child{{margin:0;padding:0;border:none;}}
-/* Назва групи — виділений заголовок */
 .arow-group-lbl{{font-size:10px;font-weight:bold;letter-spacing:.8px;margin-bottom:5px;}}
-.arow-dir{{font-size:15px;font-weight:bold;margin-bottom:10px;}}
+.arow-dir{{font-size:15px;font-weight:bold;margin-bottom:8px;}}
 .arow-net{{font-size:13px;margin-left:8px;opacity:.9;font-weight:normal;}}
-/* Сітка 3 рівні колонки */
+/* Мітка "ЗМІНА ЗА ТИЖДЕНЬ" */
+.arow-week-lbl{{font-size:8px;color:var(--d);letter-spacing:.8px;margin-bottom:5px;
+  text-transform:uppercase;border-top:1px solid var(--bd);padding-top:6px;}}
 .arow-grid{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;}}
 .ag-item{{display:flex;flex-direction:column;gap:3px;}}
 .ag-lbl{{font-size:8px;color:#fff;letter-spacing:.4px;}}
-/* Великі цифри — рівні числам у картках */
 .ag-val{{font-size:clamp(14px,1.8vw,20px);font-weight:bold;line-height:1.1;}}
+/* % в дужках поруч з Δ NET */
+.ag-pct{{font-size:10px;opacity:.75;font-weight:normal;}}
 
 /* SM DIV */
 .sm-panel{{display:flex;flex-direction:column;justify-content:space-between;}}
@@ -791,7 +841,7 @@ html,body{{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13
 .sm-hint{{font-size:8px;color:var(--d);margin-top:8px;line-height:1.5;
   border-top:1px solid var(--bd);padding-top:8px;}}
 
-/* COT Percentile */
+/* COT PERCENTILE */
 .pct-sel-row{{display:flex;gap:5px;align-items:center;margin-bottom:10px;flex-wrap:wrap;}}
 .psel-group{{display:flex;gap:3px;}}
 .psel-sep{{width:1px;height:16px;background:var(--bd);margin:0 3px;}}
@@ -812,7 +862,7 @@ html,body{{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13
 .ptlbl-cur{{color:var(--t);font-weight:bold;}}
 .pbar-lb{{display:flex;justify-content:space-between;font-size:8px;color:var(--d);margin-top:12px;}}
 
-/* Chart */
+/* CHART */
 .chartbox{{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:14px 16px;margin-bottom:12px;}}
 .chartbox-hdr{{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px;}}
 .period-btns{{display:flex;gap:3px;}}
@@ -826,12 +876,12 @@ html,body{{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13
 .ll-dash{{display:inline-block;width:14px;height:0;border-top:2px dashed;vertical-align:middle;}}
 .cw{{height:140px;position:relative;}}
 
-/* Bar charts */
+/* BAR CHARTS */
 .bar-charts-grid{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}}
 .bar-lbl{{font-size:8px;letter-spacing:.5px;margin-bottom:6px;}}
 .bar-cw{{height:80px;position:relative;}}
 
-/* History table */
+/* HISTORY TABLE */
 .htable-wrap{{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;overflow:hidden;margin-bottom:12px;}}
 .htable-hdr{{padding:8px 14px;border-bottom:1px solid var(--bd);
   font-size:10px;color:#fff;letter-spacing:.5px;
@@ -842,13 +892,13 @@ html,body{{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13
 .hbtn.active{{background:var(--bg3);color:#fff;border-color:var(--b);}}
 .htable-scroll{{overflow-x:auto;}}
 table.ht{{width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap;}}
-table.ht th{{padding:5px 9px;background:var(--bg3);border-bottom:1px solid var(--bd);
+table.ht th{{padding:5px 9px;border-bottom:1px solid var(--bd);
   font-weight:normal;font-size:9px;letter-spacing:.5px;text-align:right;}}
 table.ht .th-left{{text-align:left;}}
-table.ht .th-date{{min-width:80px;max-width:90px;width:88px;}}
-table.ht .th-group{{text-align:center;border-left:1px solid rgba(255,255,255,.1);}}
+table.ht .th-date{{min-width:80px;max-width:90px;width:88px;background:var(--bg3);}}
+table.ht .th-group{{text-align:center;}}
 table.ht td{{padding:5px 9px;border-bottom:1px solid var(--bg3);text-align:right;}}
-table.ht .date-col{{text-align:left;color:var(--d);width:88px;}}
+table.ht .date-col{{text-align:left;color:var(--d);width:88px;background:var(--bg3);}}
 table.ht tr:hover td{{background:rgba(52,61,90,.5)!important;}}
 table.ht .sep-r{{border-right:1px solid var(--bd);}}
 
@@ -856,7 +906,7 @@ table.ht .sep-r{{border-right:1px solid var(--bd);}}
 .footer{{text-align:center;padding:14px;color:var(--d);font-size:9px;
   letter-spacing:1px;border-top:1px solid var(--bd);margin-top:4px;}}
 
-/* ── MOBILE ── */
+/* MOBILE */
 @media(max-width:640px){{
   :root{{--hdr-h:56px;}}
   .hdr{{padding:8px 12px;height:auto;min-height:var(--hdr-h);flex-wrap:wrap;}}
@@ -883,7 +933,7 @@ table.ht .sep-r{{border-right:1px solid var(--bd);}}
 <script>const _cd={{}};const _ci={{}};const Charts={{}};const BarChts={{}};</script>
 """
 
-HTML_FOOT=f"""
+HTML_FOOT = f"""
 <script>
 const CL_LS='{COLOR_LS}', CL_CM='{COLOR_CM}', CL_ST='{COLOR_ST}';
 const CurPer={{}};
@@ -976,7 +1026,6 @@ function drawOneBar(cvId,dates,data,baseColor){{
   const cv=document.getElementById(cvId); if(!cv) return;
   const key='b_'+cvId;
   if(BarChts[key]){{BarChts[key].destroy();delete BarChts[key];}}
-  // Позитивні — колір групи, негативні — темніша версія
   const colors=data.map(v=>v>=0?baseColor+'cc':'rgba(240,81,90,.7)');
   BarChts[key]=new Chart(cv.getContext('2d'),{{
     type:'bar',
@@ -1073,7 +1122,7 @@ if(firstCat) selCat(firstCat.dataset.c);
 def main():
     print()
     print("="*55)
-    print("   COT Dashboard Generator v8")
+    print("   COT Dashboard Generator v9")
     print("="*55)
     print()
     OUTPUT_FILE.parent.mkdir(parents=True,exist_ok=True)
