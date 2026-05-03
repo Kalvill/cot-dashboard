@@ -22,16 +22,73 @@ COLOR_CM = '#20d483'
 COLOR_ST = '#f0515a'
 
 # ================================================================
-# 📅  ЗВІТИ — список з id, назва, розклад
+# 📅  ЗВІТИ
 # ================================================================
 REPORTS = [
-    {'id':'usda_crop',  'name':'USDA Crop Progress', 'sched':'Пн 22:00 (кві–лис)', 'tag':None},
-    {'id':'eia_petrol', 'name':'EIA Petroleum',      'sched':'Ср 16:30',           'tag':None},
-    {'id':'usda_exp',   'name':'USDA Export Sales',  'sched':'Чт 14:30',           'tag':None},
-    {'id':'cot_cftc',   'name':'COT Report (CFTC)',  'sched':'Пт 21:30',           'tag':None},
-    {'id':'usda_wasde', 'name':'USDA WASDE',         'sched':'~12 число, 18:00',   'tag':'Місячний'},
-    {'id':'usda_oil',   'name':'USDA Oilseeds',      'sched':'з WASDE, 18:15',     'tag':'Місячний'},
+    {'id':'usda_crop',  'name':'USDA Crop Progress', 'sched':'Пн 22:00 (кві-лис)', 'tag':None},
+    {'id':'eia_petrol', 'name':'EIA Petroleum',      'sched':'Ср 16:30',            'tag':None},
+    {'id':'usda_exp',   'name':'USDA Export Sales',  'sched':'Чт 14:30',            'tag':None},
+    {'id':'cot_cftc',   'name':'COT Report (CFTC)',  'sched':'Пт 21:30',            'tag':None},
+    {'id':'usda_wasde', 'name':'USDA WASDE',         'sched':'~12 число, 18:00',    'tag':'Місячний'},
+    {'id':'usda_oil',   'name':'USDA Oilseeds',      'sched':'з WASDE, 18:15',      'tag':'Місячний'},
 ]
+
+# ================================================================
+# 📊  РЕЛЕВАНТНІСТЬ ЗВІТІВ
+# 'direct'   = прямий вплив   (зелений кружок)
+# 'indirect' = непрямий/COT   (помаранчевий квадрат)
+# 'none'     = не впливає     (сірий кружок)
+# '_default' = для всіх інших
+# ================================================================
+REPORT_RELEVANCE = {
+    'usda_crop': {
+        'CORN':'direct','WHEAT':'direct','SOYBEAN':'direct',
+        'SOYBEAN_MEAL':'direct','SOYBEAN_OIL':'direct',
+        'COTTON':'direct','RICE':'direct','COFFEE':'direct',
+        'COCOA':'direct','SUGAR':'direct','OJ':'direct',
+        'CATTLE':'indirect','LUMBER':'indirect',
+        '_default':'none',
+    },
+    'eia_petrol': {
+        'WTI_CRUDE':'direct','BRENT':'direct','NAT_GAS':'direct',
+        'SP500':'indirect','NASDAQ':'indirect','DOW_30':'indirect',
+        'RUSSELL2K':'indirect','VIX':'indirect',
+        'CAD':'indirect',
+        '_default':'none',
+    },
+    'usda_exp': {
+        'WHEAT':'direct','CORN':'direct','SOYBEAN':'direct',
+        'SOYBEAN_MEAL':'direct','SOYBEAN_OIL':'direct',
+        'COTTON':'direct','RICE':'direct','COFFEE':'direct',
+        'COCOA':'indirect','SUGAR':'indirect','OJ':'indirect',
+        '_default':'none',
+    },
+    'cot_cftc': {
+        '_default':'indirect',
+    },
+    'usda_wasde': {
+        'WHEAT':'direct','CORN':'direct','SOYBEAN':'direct',
+        'SOYBEAN_MEAL':'direct','SOYBEAN_OIL':'direct',
+        'COTTON':'direct','RICE':'direct','SUGAR':'direct',
+        'COFFEE':'direct','COCOA':'direct','OJ':'direct',
+        'CATTLE':'direct','LUMBER':'indirect',
+        'SP500':'indirect','NASDAQ':'indirect','DOW_30':'indirect',
+        'RUSSELL2K':'indirect','VIX':'indirect',
+        'WTI_CRUDE':'indirect','BRENT':'indirect','NAT_GAS':'indirect',
+        'AUD':'indirect','CAD':'indirect','NZD':'indirect',
+        '_default':'none',
+    },
+    'usda_oil': {
+        'SOYBEAN':'direct','SOYBEAN_MEAL':'direct','SOYBEAN_OIL':'direct',
+        'CORN':'indirect','WHEAT':'indirect','COTTON':'indirect',
+        'WTI_CRUDE':'indirect','BRENT':'indirect',
+        '_default':'none',
+    },
+}
+
+def get_relevance(instrument_sid: str, report_id: str) -> str:
+    mapping = REPORT_RELEVANCE.get(report_id, {})
+    return mapping.get(instrument_sid, mapping.get('_default', 'none'))
 
 DISPLAY = {
     'SP500':'S&P 500','DOW_30':'DOW 30','RUSSELL2K':'RUSSELL 2K',
@@ -450,13 +507,26 @@ def sm_bar(val,label):
 # 📅  PANEL ЗВІТІВ
 # ================================================================
 def make_reports_panel(s_id):
-    """Панель з переліком звітів і LONG/SHORT/NEUTRAL кнопками"""
+    """Панель звітів з індикаторами релевантності для кожного інструменту"""
     rows = []
     for rpt in REPORTS:
         rid = rpt['id']
+        rel = get_relevance(s_id, rid)
         tag = f'<span class="rpt-tag">{rpt["tag"]}</span>' if rpt['tag'] else ''
+
+        # Іконка релевантності
+        if rel == 'direct':
+            icon = '<span class="rel-icon rel-d" title="Прямий вплив">●</span>'
+        elif rel == 'indirect':
+            icon = '<span class="rel-icon rel-i" title="Непрямий / через COT">■</span>'
+        else:
+            icon = '<span class="rel-icon rel-n" title="Не впливає">○</span>'
+
+        row_cls = 'rpt-row' if rel != 'none' else 'rpt-row rpt-dim'
+
         rows.append(
-            f'<div class="rpt-row" id="rpt_{s_id}_{rid}">'
+            f'<div class="{row_cls}" id="rpt_{s_id}_{rid}">'
+            f'<div class="rpt-rel">{icon}</div>'
             f'<div class="rpt-info">'
             f'<div class="rpt-name">{rpt["name"]}{tag}</div>'
             f'<div class="rpt-sched">{rpt["sched"]}</div>'
@@ -470,7 +540,12 @@ def make_reports_panel(s_id):
         )
     return (
         f'<div class="panel rpt-panel" id="rpts_{s_id}">'
-        f'<div class="plbl">ЗВІТИ</div>'
+        f'<div class="plbl-row">'
+        f'<div class="plbl" style="margin:0">ЗВІТИ</div>'
+        f'<div class="rel-legend">'
+        f'<span class="rel-icon rel-d">●</span>прямий&nbsp;'
+        f'<span class="rel-icon rel-i">■</span>непрямий'
+        f'</div></div>'
         + ''.join(rows) +
         f'</div>'
     )
@@ -981,9 +1056,20 @@ html,body{{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13
 
 /* ── REPORTS PANEL ───────────────────────────── */
 .rpt-panel{{display:flex;flex-direction:column;overflow:hidden;}}
+.plbl-row{{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}}
+/* Легенда */
+.rel-legend{{font-size:8px;color:var(--d);display:flex;align-items:center;gap:3px;}}
+.rel-icon{{font-size:10px;margin-right:1px;line-height:1;}}
+.rel-d{{color:#20d483;}}
+.rel-i{{color:#f0a030;}}
+.rel-n{{color:#343d5a;}}
+/* Рядок звіту */
 .rpt-row{{display:flex;align-items:center;justify-content:space-between;
-  padding:5px 0;border-bottom:1px solid var(--bd);gap:6px;}}
+  padding:5px 0;border-bottom:1px solid var(--bd);gap:4px;}}
 .rpt-row:last-child{{border:none;padding-bottom:0;}}
+/* Dim для "не впливає" */
+.rpt-dim{{opacity:.35;}}
+.rpt-rel{{width:12px;flex-shrink:0;text-align:center;}}
 .rpt-info{{flex:1;min-width:0;}}
 .rpt-name{{font-size:9px;color:var(--t);font-weight:bold;letter-spacing:.2px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}}
@@ -996,7 +1082,6 @@ html,body{{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13
   background:var(--bg3);color:var(--d);font-family:var(--f);font-size:9px;
   font-weight:bold;cursor:pointer;transition:all .1s;line-height:20px;text-align:center;padding:0;}}
 .rb:hover{{border-color:var(--t);color:var(--t);}}
-/* активний стан */
 .rb-l.active{{background:rgba(32,212,131,.25);border-color:var(--g);color:var(--g);}}
 .rb-s.active{{background:rgba(240,81,90,.20);border-color:var(--r);color:var(--r);}}
 .rb-n.active{{background:var(--bg3);border-color:var(--d);color:var(--d);}}
