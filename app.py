@@ -22,7 +22,7 @@ OUTPUT_DIR  = BASE_DIR / "output"
 app = Flask(__name__, static_folder=str(OUTPUT_DIR))
 
 # Секретний ключ для сесій — зміни на щось своє!
-app.secret_key = os.environ.get("SECRET_KEY", "local_dev_key")
+app.secret_key = "cot_secret_key_змени_це_на_своє_2025"
 app.permanent_session_lifetime = timedelta(days=30)
 
 # ================================================================
@@ -74,14 +74,12 @@ def login_required(f):
 # ================================================================
 @app.route('/')
 def index():
-    """Якщо не залогінений — редірект на логін"""
-    if 'user_id' not in session:
-        return redirect(url_for('login_page'))
+    """Дашборд доступний всім — логін опціональний"""
     return send_from_directory(str(OUTPUT_DIR), 'cot_dashboard.html')
 
 @app.route('/login')
 def login_page():
-    """Сторінка логіну"""
+    """Окрема сторінка логіну (fallback)"""
     return LOGIN_HTML
 
 # ================================================================
