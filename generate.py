@@ -185,30 +185,86 @@ def make_sparkline(series, color, h=38):
 # ================================================================
 # 📥  OVERVIEW
 # ================================================================
+# Зберігаємо повну таблицю overview для окремої вкладки
+OVERVIEW_TABLE = []
+
 def read_overview(xl):
+    global OVERVIEW_TABLE
     result={}
+    OVERVIEW_TABLE = []
     try:
         raw=xl.parse('overview',header=None)
-        for i in range(4,len(raw)):
+        # Дати зі рядка 2 (індекс 1): col 2 = Report For, col 5 = Today
+        def safe_date(cell):
+            v = pd.to_datetime(cell, errors='coerce')
+            return v.strftime('%d.%m.%Y') if pd.notna(v) else '—'
+        try:
+            rep_date = safe_date(raw.iloc[1,2])
+            today_date = safe_date(raw.iloc[1,5])
+        except:
+            rep_date = '—'; today_date = '—'
+        OVERVIEW_TABLE.append(('_meta', rep_date, today_date))
+
+        # Стовпці для відображення в таблиці:
+        # 1=ASSET, 2=NET LS, 3=NET CM, 4=COT LS, 5=COT CM, 6=COT ST
+        # 8=SM DIV, 9=Chg%LS, 10=ChgLS, 11=Chg%CM, 12=ChgCM
+        # 14=%OI Chg, 18=SM DIV 3M, 19=SM DIV 6M
+        current_group = ''
+        for i in range(4, len(raw)):
             row=raw.iloc[i]
             asset=str(row.iloc[1]).strip() if pd.notna(row.iloc[1]) else ''
             if not asset or asset=='nan': continue
-            cot_ls=pd.to_numeric(row.iloc[4],errors='coerce')
-            if pd.isna(cot_ls): continue
+
             def safe(c):
                 v=pd.to_numeric(row.iloc[c],errors='coerce')
-                return float(v) if pd.notna(v) else 0.0
-            s=OVERVIEW_TO_SID.get(asset,asset)
+                return float(v) if pd.notna(v) else None
+
+            cot_ls = safe(4)
+
+            # Якщо це заголовок групи (наприклад CURRENCIES, METALAS...)
+            if cot_ls is None:
+                current_group = asset
+                OVERVIEW_TABLE.append(('_group', asset))
+                continue
+
+            s = OVERVIEW_TO_SID.get(asset, asset)
+            net_ls = safe(2)
+            net_cm = safe(3)
+            chg_ls = safe(10)
+            chg_cm = safe(12)
+            oi_chg_pct = safe(14)
+            sm_div = safe(8)
+            sm_div_3m = safe(18)
+            sm_div_6m = safe(19)
+
             result[s]={
-                'cot_ls_all':round(safe(4)*100,1),
-                'cot_cm_all':round(safe(5)*100,1),
-                'cot_st_all':round(safe(6)*100,1),
-                'sm_div':    round(safe(8),3),
-                'sm_div_3m': round(safe(18),3),
-                'sm_div_6m': round(safe(19),3),
+                'cot_ls_all': round(cot_ls*100, 1),
+                'cot_cm_all': round((safe(5) or 0)*100, 1),
+                'cot_st_all': round((safe(6) or 0)*100, 1),
+                'sm_div':     round(sm_div or 0, 3),
+                'sm_div_3m':  round(sm_div_3m or 0, 3),
+                'sm_div_6m':  round(sm_div_6m or 0, 3),
             }
+
+            OVERVIEW_TABLE.append({
+                'asset':     asset,
+                'sid':       s,
+                'group':     current_group,
+                'net_ls':    net_ls,
+                'net_cm':    net_cm,
+                'cot_ls':    round(cot_ls*100, 1),
+                'cot_cm':    round((safe(5) or 0)*100, 1),
+                'cot_st':    round((safe(6) or 0)*100, 1),
+                'chg_ls':    chg_ls,
+                'chg_cm':    chg_cm,
+                'oi_chg_pct': oi_chg_pct,
+                'sm_div':    sm_div,
+                'sm_div_3m': sm_div_3m,
+                'sm_div_6m': sm_div_6m,
+            })
     except Exception as e:
         print(f"  ⚠  overview: {e}")
+        import traceback; traceback.print_exc()
     return result
 
 
@@ -464,20 +520,26 @@ def sm_bar(val,label):
 # ================================================================
 def make_metric_card(lbl, val, chg, chg_pct, spark_series, spark_color):
     spark = make_sparkline(spark_series, spark_color)
-    chg_abs = abs(int(chg))
+    try: chg_int = int(round(float(chg)))
+    except: chg_int = 0
     chg_cls = cc(chg)
-    pct_cls = cc(chg)
+    if chg_int > 0:
+        bg = 'background:rgba(32,212,131,.20);border-radius:3px;padding:2px 7px;display:inline-block;'
+    elif chg_int < 0:
+        bg = 'background:rgba(240,81,90,.20);border-radius:3px;padding:2px 7px;display:inline-block;'
+    else:
+        bg = 'padding:2px 7px;display:inline-block;'
     return(
         f'<div class="mc">'
         f'<div class="mc-lbl">{lbl}</div>'
         f'<div class="mc-val {cc(val)}">{fv(val, sign=True)}</div>'
-        # Рядок зміни: стрілка + значення + "за тиждень"
-        f'<div class="mc-chg {chg_cls}">'
-        f'{ar(chg)} {fv(chg_abs, True)}'
+        f'<div class="mc-chg-wrap">'
+        f'<span class="{chg_cls}" style="{bg}">'
+        f'{ar(chg)} {fv_full(abs(chg_int))}'
         f'<span class="mc-wtag"> за тиждень</span>'
+        f'</span>'
         f'</div>'
-        # Рядок % зміни
-        f'<div class="mc-pct {pct_cls}">{chg_pct}</div>'
+        f'<div class="mc-pct {chg_cls}">{chg_pct}</div>'
         f'<div class="mc-sub">COT Index: —</div>'
         f'{spark}'
         f'</div>'
@@ -693,10 +755,109 @@ def make_instrument_view(d):
         f'</div>'
         +f'<div class="mcards">{mc_ls}{mc_cm}{mc_st}{mc_oi}</div>'
         +f'<div class="mid">{analysis_panel}{sm_panel}{pct_panel}</div>'
-        +chart_block+bar_block+table_block
+        +bar_block+chart_block+table_block
         +f'</div>'
     )
 
+
+
+# ================================================================
+# 🌐  OVERVIEW TAB HTML
+# ================================================================
+def make_overview_tab():
+    """Будує HTML таблиці OVERVIEW з даних read_overview"""
+    rows_html = []
+    rep_date = '—'; today_date = '—'
+    for item in OVERVIEW_TABLE:
+        if isinstance(item, tuple) and item[0] == '_meta':
+            rep_date = item[1]; today_date = item[2]
+            continue
+        if isinstance(item, tuple) and item[0] == '_group':
+            rows_html.append(
+                f'<tr class="ov-group"><td colspan="12">{item[1]}</td></tr>'
+            )
+            continue
+        if not isinstance(item, dict): continue
+        d = item
+
+        def fnum(v, sign=False, pct=False):
+            if v is None: return '<span class="d">—</span>'
+            if pct:
+                v2 = v*100 if abs(v)<=1.5 else v
+                s = '+' if (sign and v2>0) else ''
+                cls = 'g' if v2>0 else ('r' if v2<0 else 'd')
+                return f'<span class="{cls}">{s}{v2:.1f}%</span>'
+            try:
+                n = int(round(float(v)))
+                body = f"{abs(n):,}".replace(',', '\u202f')
+                s = '+' if (sign and n>0) else ('-' if n<0 else '')
+                cls = 'g' if n>0 else ('r' if n<0 else 'd')
+                return f'<span class="{cls}">{s}{body}</span>'
+            except: return '<span class="d">—</span>'
+
+        def pct_bar(v, lo=0.15, hi=0.85):
+            """Маленький прогрес-бар для COT Index"""
+            if v is None: return ''
+            pct = min(max(v/100, 0), 1)
+            color = '#f0515a' if pct<lo else ('#20d483' if pct>hi else '#4a9eff')
+            return (f'<div class="ov-bar-bg">'
+                    f'<div class="ov-bar-fill" style="width:{pct*100:.1f}%;background:{color}"></div>'
+                    f'</div>')
+
+        def sm_cls(v):
+            if v is None: return 'd'
+            return 'g' if float(v)>0 else ('r' if float(v)<0 else 'd')
+
+        def sm_fmt(v):
+            if v is None: return '<span class="d">—</span>'
+            return f'<span class="{sm_cls(v)}">{float(v):+.2f}</span>'
+
+        row = (
+            f'<tr class="ov-row">'
+            f'<td class="ov-asset">{d["asset"]}</td>'
+            f'<td>{fnum(d["net_ls"], sign=True)}</td>'
+            f'<td>{fnum(d["chg_ls"], sign=True)}</td>'
+            f'<td>{fnum(d["net_cm"], sign=True)}</td>'
+            f'<td>{fnum(d["chg_cm"], sign=True)}</td>'
+            f'<td>{fnum(d["oi_chg_pct"], pct=True)}</td>'
+            f'<td><div class="ov-cot-cell">'
+            f'{pct_bar(d["cot_ls"])}'
+            f'<span class="ov-cot-val">{ d["cot_ls"]:.0f}%</span>'
+            f'</div></td>'
+            f'<td><div class="ov-cot-cell">'
+            f'{pct_bar(d["cot_cm"])}'
+            f'<span class="ov-cot-val">{ d["cot_cm"]:.0f}%</span>'
+            f'</div></td>'
+            f'<td><div class="ov-cot-cell">'
+            f'{pct_bar(d["cot_st"])}'
+            f'<span class="ov-cot-val">{ d["cot_st"]:.0f}%</span>'
+            f'</div></td>'
+            f'<td>{sm_fmt(d["sm_div"])}</td>'
+            f'<td>{sm_fmt(d["sm_div_6m"])}</td>'
+            f'<td>{sm_fmt(d["sm_div_3m"])}</td>'
+            f'</tr>'
+        )
+        rows_html.append(row)
+
+    thead = (
+        '<thead><tr>'
+        '<th class="ov-asset">ASSET</th>'
+        '<th>NET LS</th><th>CHG LS</th>'
+        '<th>NET CM</th><th>CHG CM</th>'
+        '<th>%OI CHG</th>'
+        f'<th style="color:{COLOR_LS}">COT LS</th>'
+        f'<th style="color:{COLOR_CM}">COT CM</th>'
+        f'<th style="color:{COLOR_ST}">COT ST</th>'
+        '<th>SM DIV</th><th>SM 6M</th><th>SM 3M</th>'
+        '</tr></thead>'
+    )
+
+    return (
+        f'<div class="ov-meta">Звіт: <b>{rep_date}</b> &nbsp;|&nbsp; Оновлено: {today_date}</div>'
+        f'<div class="ov-scroll">'
+        f'<table class="ov-table">{thead}<tbody>{"".join(rows_html)}</tbody></table>'
+        f'</div>'
+    )
 
 # ================================================================
 # 🌐  ЗБІРКА HTML
@@ -729,6 +890,8 @@ def generate_html(data):
         )
         first_cat=False
 
+    ov_html = make_overview_tab()
+
     return(
         HTML_HEAD
         +f'<header class="hdr">'
@@ -736,8 +899,17 @@ def generate_html(data):
         +f'<div class="hdr-s">COMMITMENTS OF TRADERS — CFTC LEGACY REPORT</div></div>'
         +f'<div class="hdr-r">Звіт: <b>{report_date}</b><br>Оновлено: {updated}</div>'
         +f'</header>'
+        +f'<div class="main-tabs">'
+        +f'<button class="mtab active" data-mt="cot" onclick="selMain(\'cot\')">COT Dashboard</button>'
+        +f'<button class="mtab" data-mt="ov" onclick="selMain(\'ov\')">Overview</button>'
+        +f'</div>'
+        +f'<div class="main-sec active" id="ms_cot">'
         +f'<div class="ctabs">'+''.join(cat_tabs)+f'</div>'
         +''.join(cat_sects)
+        +f'</div>'
+        +f'<div class="main-sec" id="ms_ov">'
+        +f'<div style="padding:16px 24px">{ov_html}</div>'
+        +f'</div>'
         +f'<div class="footer">COT DASHBOARD &bull; CFTC LEGACY &bull; {updated}</div>'
         +HTML_FOOT
     )
@@ -813,6 +985,7 @@ html,body{{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13
 .mc-lbl{{font-size:9px;color:#fff;letter-spacing:.5px;margin-bottom:6px;white-space:nowrap;}}
 .mc-val{{font-size:clamp(16px,2.5vw,26px);font-weight:bold;letter-spacing:.3px;word-break:break-all;line-height:1.15;}}
 .mc-chg{{font-size:12px;margin-top:6px;}}
+.mc-chg-wrap{{margin-top:6px;font-size:12px;}}
 .mc-wtag{{font-size:9px;color:var(--d);margin-left:3px;}}
 .mc-pct{{font-size:10px;margin-top:2px;opacity:.85;}}
 .mc-sub{{font-size:10px;color:var(--d);margin-top:3px;}}
@@ -827,7 +1000,7 @@ html,body{{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13
 .arow:last-child{{margin:0;padding:0;border:none;}}
 /* Flexbox ліво/право */
 .arow-body{{display:flex;gap:10px;align-items:center;}}
-.arow-left{{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;}}
+.arow-left{{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:space-evenly;gap:6px;}}
 .arow-right{{
   width:150px;flex-shrink:0;
   display:flex;flex-direction:column;justify-content:center;align-items:flex-end;
@@ -842,7 +1015,7 @@ html,body{{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13
 .arow-grid{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;align-items:center;}}
 .ag-item{{display:flex;flex-direction:column;gap:4px;}}
 .ag-lbl{{font-size:8px;color:#fff;letter-spacing:.4px;}}
-.ag-val{{font-size:clamp(16px,1.9vw,22px);font-weight:bold;line-height:1.1;}}
+.ag-val{{font-size:clamp(18px,2.1vw,26px);font-weight:bold;line-height:1.2;}}
 .ag-pct{{font-size:11px;opacity:.75;font-weight:normal;}}
 
 /* SM DIV */
@@ -943,6 +1116,29 @@ table.ht .sep-r{{border-right:1px solid var(--bd);}}
   table.ht th{{padding:4px 5px;font-size:8px;}}
   table.ht td{{padding:4px 5px;}}
 }}
+
+/* MAIN TABS */
+.main-tabs{{display:flex;gap:0;padding:0 24px;background:var(--bg2);border-bottom:2px solid var(--bd);position:sticky;top:var(--hdr-h);z-index:290;}}
+.mtab{{padding:10px 20px;border:none;background:transparent;color:var(--d);font-family:var(--f);font-size:12px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s;letter-spacing:.5px;}}
+.mtab:hover{{color:var(--t);}}
+.mtab.active{{color:#fff;border-bottom-color:var(--g);font-weight:bold;}}
+.main-sec{{display:none;}}.main-sec.active{{display:block;}}
+.itabs{{top:calc(var(--hdr-h) + 42px)!important;}}
+/* OVERVIEW TABLE */
+.ov-meta{{padding:10px 0 8px;font-size:11px;color:var(--d);}}
+.ov-meta b{{color:var(--t);}}
+.ov-scroll{{overflow-x:auto;}}
+.ov-table{{width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap;}}
+.ov-table th{{padding:6px 10px;background:var(--bg3);border-bottom:1px solid var(--bd);color:var(--d);font-weight:normal;font-size:9px;letter-spacing:.5px;text-align:right;}}
+.ov-table th:first-child{{text-align:left;}}
+.ov-table td{{padding:5px 10px;border-bottom:1px solid var(--bg3);text-align:right;}}
+.ov-table .ov-asset{{text-align:left;color:var(--t);font-weight:bold;letter-spacing:.3px;}}
+.ov-table .ov-group td{{background:var(--bg3);color:var(--d);font-size:8px;letter-spacing:1px;padding:4px 10px;text-align:left;}}
+.ov-table tr:hover td{{background:rgba(52,61,90,.4)!important;}}
+.ov-cot-cell{{display:flex;align-items:center;gap:6px;justify-content:flex-end;}}
+.ov-bar-bg{{width:50px;height:5px;background:var(--bg3);border-radius:2px;overflow:hidden;flex-shrink:0;}}
+.ov-bar-fill{{height:100%;border-radius:2px;}}
+.ov-cot-val{{font-size:10px;color:var(--t);min-width:30px;text-align:right;}}
 </style>
 </head>
 <body>
@@ -1122,6 +1318,17 @@ function fmtFull(n){{
   n=Math.round(n);
   const sign=n>0?'+':n<0?'-':'';
   return sign+Math.abs(n).toLocaleString('uk-UA');
+}}
+
+function selMain(mt){{
+  document.querySelectorAll('.mtab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.main-sec').forEach(s=>s.classList.remove('active'));
+  document.querySelector('[data-mt="'+mt+'"]').classList.add('active');
+  document.getElementById('ms_'+mt).classList.add('active');
+  if(mt==='cot'){{
+    const firstCat=document.querySelector('.ctab');
+    if(firstCat) selCat(firstCat.dataset.c);
+  }}
 }}
 
 const firstCat=document.querySelector('.ctab');
