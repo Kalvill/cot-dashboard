@@ -16,7 +16,7 @@ from functools import wraps
 # ⚙️  КОНФІГУРАЦІЯ
 # ================================================================
 BASE_DIR    = Path(__file__).parent
-DB_PATH     = BASE_DIR / "users.db"
+DB_PATH = Path("/app/data/users.db")
 OUTPUT_DIR  = BASE_DIR / "output"
 
 app = Flask(__name__, static_folder=str(OUTPUT_DIR))
