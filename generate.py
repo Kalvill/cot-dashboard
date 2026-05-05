@@ -336,16 +336,24 @@ def read_sheet(xl, name, overview):
         hist_df=df.tail(HISTORY).reset_index(drop=True)
         def gch(idx):
             return to_num(hist_df.iloc[:,idx]) if idx<hist_df.shape[1] else [0.0]*len(hist_df)
+        # SM DIV з BF/BG/BH — якщо стовпців немає, fallback до overview
+        def gch_sm(idx, fallback_key):
+            if idx < hist_df.shape[1]:
+                vals = pd.to_numeric(hist_df.iloc[:,idx], errors='coerce').tolist()
+                if any(v is not None and not (v != v) for v in vals):
+                    return vals
+            return [ov.get(fallback_key, None)] * len(hist_df)
+
         hist={
             'dates':hist_df['_dt'].dt.strftime('%d.%m.%Y').tolist(),
             'ls_cl':gch(COL['ls_cl']),'ls_cs':gch(COL['ls_cs']),'ls_net':gch(COL['ls_net']),
             'cm_cl':gch(COL['cm_cl']),'cm_cs':gch(COL['cm_cs']),'cm_net':gch(COL['cm_net']),
             'st_cl':gch(COL['st_cl']),'st_cs':gch(COL['st_cs']),'st_net':gch(COL['st_net']),
             'oi':gch(oi_col),
-            # SM DIV per row — беремо з overview (пусті якщо немає)
-            'sm_div_row': [ov.get('sm_div', None)] * len(hist_df),
-            'sm_div_6m_row': [ov.get('sm_div_6m', None)] * len(hist_df),
-            'sm_div_3m_row': [ov.get('sm_div_3m', None)] * len(hist_df),
+            # SM DIV: BF=57, BG=58, BH=59
+            'sm_div_row':    gch_sm(57, 'sm_div'),
+            'sm_div_6m_row': gch_sm(58, 'sm_div_6m'),
+            'sm_div_3m_row': gch_sm(59, 'sm_div_3m'),
         }
         oi_cur=float(oi_all[i0]); oi_prev=float(oi_all[i1])
         oi_pct=round((oi_cur-oi_prev)/abs(oi_prev)*100,2) if oi_prev!=0 else 0.0
@@ -461,6 +469,21 @@ def make_hist_table(hist, stats_ls, stats_cm, stats_st, stats_oi, sm):
     st_bg  = 'background:rgba(240,81,90,.15);color:#fff;border-left:2px solid rgba(240,81,90,.7)'
     oi_bg  = 'background:rgba(160,170,192,.1);color:#fff'
 
+    # colgroup для синхронізації ширин між mm і data таблицями
+    mm_colgroup = (
+        '<colgroup>'
+        '<col style="width:52px">'             # лейбл MAX/MIN
+        '<col><col><col>'                       # LS: CHG L / CHG S / NET
+        '<col><col><col>'                       # CM
+        '<col><col><col>'                       # ST
+        '<col style="width:70px">'             # OI All
+        '<col style="width:70px">'             # OI 1Y
+        '<col style="width:48px">'             # SM DIV
+        '<col style="width:48px">'             # SM 6M
+        '<col style="width:48px">'             # SM 3M
+        '</colgroup>'
+    )
+
     mm_thead = (
         '<thead class="mm-thead">'
         '<tr>'
@@ -502,11 +525,11 @@ def make_hist_table(hist, stats_ls, stats_cm, stats_st, stats_oi, sm):
     mm_rows = (
         '<tr class="mm-row"><td class="mm-lbl">MAX</td>'
         +grp(stats_ls,'max_all','g')+grp(stats_cm,'max_all','g')+grp(stats_st,'max_all','g')
-        +mm_v(stats_oi['max_all'],'')+mm_v(stats_oi['max_all'],'')
+        +mm_v(stats_oi['max_all'],'')+mm_v(stats_oi['max_1y'],'')
         +sm_mini(sm['div'])+sm_mini(sm['div_6m'])+sm_mini(sm['div_3m'])+'</tr>'
         '<tr class="mm-row"><td class="mm-lbl">MIN</td>'
         +grp(stats_ls,'min_all','r')+grp(stats_cm,'min_all','r')+grp(stats_st,'min_all','r')
-        +mm_v(stats_oi['min_all'],'')+mm_v(stats_oi['min_all'],'')
+        +mm_v(stats_oi['min_all'],'')+mm_v(stats_oi['min_1y'],'')
         +'<td class="sm-td"></td><td class="sm-td"></td><td class="sm-td"></td></tr>'
         '<tr class="mm-row mm-yr"><td class="mm-lbl">MAX 1Y</td>'
         +grp(stats_ls,'max_1y','g')+grp(stats_cm,'max_1y','g')+grp(stats_st,'max_1y','g')
@@ -520,7 +543,7 @@ def make_hist_table(hist, stats_ls, stats_cm, stats_st, stats_oi, sm):
 
     mm_block = (
         f'<div class="mm-wrap">'
-        f'<table class="mm-table">{mm_thead}<tbody>{mm_rows}</tbody></table>'
+        f'<table class="mm-table">{mm_colgroup}{mm_thead}<tbody>{mm_rows}</tbody></table>'
         f'</div>'
     )
 
@@ -538,15 +561,20 @@ def make_hist_table(hist, stats_ls, stats_cm, stats_st, stats_oi, sm):
         sm_6m = hist.get('sm_div_6m_row',[None]*n)
         sm_3m = hist.get('sm_div_3m_row',[None]*n)
         # SM DIV тільки в першому рядку (актуальне значення)
-        sm_show = row_idx == 0
-
         def sm_cell(v):
-            if v is None: return '<td class="sm-td d"></td>'
+            if v is None or (isinstance(v, float) and v != v): return '<td class="sm-td d"></td>'
             try:
-                f2=float(v); c='g' if f2>0 else('r' if f2<0 else 'd')
-                return f'<td class="sm-td {c}">{f2:+.2f}</td>'
+                f2=float(v)
+                if f2 == 0: return '<td class="sm-td d"></td>'
+                c='g' if f2>0 else 'r'
+                return f'<td class="sm-td {c}">{f2:+.3f}</td>'
             except:
                 return '<td class="sm-td d"></td>'
+
+        # SM DIV per-row з BF/BG/BH
+        sm_div_val    = hist.get('sm_div_row',    [None]*n)
+        sm_div_6m_val = hist.get('sm_div_6m_row', [None]*n)
+        sm_div_3m_val = hist.get('sm_div_3m_row', [None]*n)
 
         row=(
             f'<tr data-row="{row_idx}">'
@@ -558,14 +586,30 @@ def make_hist_table(hist, stats_ls, stats_cm, stats_st, stats_oi, sm):
             +td_chg(hist['st_cl'][i],m_st_cl)+td_chg(hist['st_cs'][i],m_st_cs)
             +td_net(hist['st_net'][i],' sep-r')
             +f'<td class="t">{fv_full(hist["oi"][i])}</td>'
-            +sm_cell(sm['div'] if sm_show else None)
-            +sm_cell(sm['div_6m'] if sm_show else None)
-            +sm_cell(sm['div_3m'] if sm_show else None)
+            +sm_cell(sm_div_val[i])
+            +sm_cell(sm_div_6m_val[i])
+            +sm_cell(sm_div_3m_val[i])
             +'</tr>'
         )
         rows.append(row)
 
+    # Кольорові підзаголовки з лівими рамками як у mm-блоці
+    sub_ls = 'background:var(--bg3);color:var(--d);border-left:2px solid rgba(74,158,255,.5)'
+    sub_cm = 'background:var(--bg3);color:var(--d);border-left:2px solid rgba(32,212,131,.5)'
+    sub_st = 'background:var(--bg3);color:var(--d);border-left:2px solid rgba(240,81,90,.5)'
+    sub_plain = 'background:var(--bg3);color:var(--d)'
+
     data_thead = (
+        '<colgroup>'
+        '<col style="width:84px">'              # ДАТА
+        '<col><col><col>'                        # LS: CHG L / CHG S / NET
+        '<col><col><col>'                        # CM
+        '<col><col><col>'                        # ST
+        '<col style="width:70px">'              # OI
+        '<col style="width:48px">'              # SM DIV
+        '<col style="width:48px">'              # SM 6M
+        '<col style="width:48px">'              # SM 3M
+        '</colgroup>'
         '<thead>'
         '<tr>'
         f'<th rowspan="2" class="th-left th-date">ДАТА</th>'
@@ -573,18 +617,18 @@ def make_hist_table(hist, stats_ls, stats_cm, stats_st, stats_oi, sm):
         f'<th colspan="3" class="th-group" style="{cm_bg}">COMMERCIALS</th>'
         f'<th colspan="3" class="th-group" style="{st_bg}">SMALL TRADERS</th>'
         f'<th rowspan="2" class="th-group">OI</th>'
-        f'<th colspan="3" class="th-group sm-th-group">SM DIV</th>'
+        f'<th colspan="3" class="th-group sm-th-group" style="background:var(--bg3);color:var(--d)">SM DIV</th>'
         '</tr>'
         '<tr>'
-        f'<th style="background:var(--bg3);color:var(--d);">CHG L</th>'
-        f'<th style="background:var(--bg3);color:var(--d);">CHG S</th>'
-        f'<th class="sep-r" style="background:var(--bg3);color:var(--d);">NET POS</th>'
-        f'<th style="background:var(--bg3);color:var(--d);">CHG L</th>'
-        f'<th style="background:var(--bg3);color:var(--d);">CHG S</th>'
-        f'<th class="sep-r" style="background:var(--bg3);color:var(--d);">NET POS</th>'
-        f'<th style="background:var(--bg3);color:var(--d);">CHG L</th>'
-        f'<th style="background:var(--bg3);color:var(--d);">CHG S</th>'
-        f'<th class="sep-r" style="background:var(--bg3);color:var(--d);">NET POS</th>'
+        f'<th style="{sub_ls}">CHG L</th>'
+        f'<th style="{sub_plain}">CHG S</th>'
+        f'<th class="sep-r" style="{sub_plain}">NET POS</th>'
+        f'<th style="{sub_cm}">CHG L</th>'
+        f'<th style="{sub_plain}">CHG S</th>'
+        f'<th class="sep-r" style="{sub_plain}">NET POS</th>'
+        f'<th style="{sub_st}">CHG L</th>'
+        f'<th style="{sub_plain}">CHG S</th>'
+        f'<th class="sep-r" style="{sub_plain}">NET POS</th>'
         f'<th class="sm-th">All</th><th class="sm-th">6M</th><th class="sm-th">3M</th>'
         '</tr>'
         '</thead>'
