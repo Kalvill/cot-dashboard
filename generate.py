@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""COT Dashboard Generator v11 — Reports Calendar"""
+"""COT Dashboard Generator v12"""
 
 import pandas as pd
 import json
@@ -21,9 +21,6 @@ COLOR_LS = '#4a9eff'
 COLOR_CM = '#20d483'
 COLOR_ST = '#f0515a'
 
-# ================================================================
-# 📅  ЗВІТИ
-# ================================================================
 REPORTS = [
     {'id':'usda_crop',  'name':'USDA Crop Progress', 'sched':'Пн 22:00 (кві-лис)', 'tag':None},
     {'id':'eia_petrol', 'name':'EIA Petroleum',      'sched':'Ср 16:30',            'tag':None},
@@ -33,60 +30,44 @@ REPORTS = [
     {'id':'usda_oil',   'name':'USDA Oilseeds',      'sched':'з WASDE, 18:15',      'tag':'Місячний'},
 ]
 
-# ================================================================
-# 📊  РЕЛЕВАНТНІСТЬ ЗВІТІВ
-# 'direct'   = прямий вплив   (зелений кружок)
-# 'indirect' = непрямий/COT   (помаранчевий квадрат)
-# 'none'     = не впливає     (сірий кружок)
-# '_default' = для всіх інших
-# ================================================================
 REPORT_RELEVANCE = {
     'usda_crop': {
         'CORN':'direct','WHEAT':'direct','SOYBEAN':'direct',
         'SOYBEAN_MEAL':'direct','SOYBEAN_OIL':'direct',
         'COTTON':'direct','RICE':'direct','COFFEE':'direct',
         'COCOA':'direct','SUGAR':'direct','OJ':'direct',
-        'CATTLE':'indirect','LUMBER':'indirect',
-        '_default':'none',
+        'CATTLE':'indirect','LUMBER':'indirect','_default':'none',
     },
     'eia_petrol': {
         'WTI_CRUDE':'direct','BRENT':'direct','NAT_GAS':'direct',
         'SP500':'indirect','NASDAQ':'indirect','DOW_30':'indirect',
-        'RUSSELL2K':'indirect','VIX':'indirect',
-        'CAD':'indirect',
-        '_default':'none',
+        'RUSSELL2K':'indirect','VIX':'indirect','CAD':'indirect','_default':'none',
     },
     'usda_exp': {
         'WHEAT':'direct','CORN':'direct','SOYBEAN':'direct',
         'SOYBEAN_MEAL':'direct','SOYBEAN_OIL':'direct',
         'COTTON':'direct','RICE':'direct','COFFEE':'direct',
-        'COCOA':'indirect','SUGAR':'indirect','OJ':'indirect',
-        '_default':'none',
+        'COCOA':'indirect','SUGAR':'indirect','OJ':'indirect','_default':'none',
     },
-    'cot_cftc': {
-        '_default':'indirect',
-    },
+    'cot_cftc': {'_default':'indirect'},
     'usda_wasde': {
         'WHEAT':'direct','CORN':'direct','SOYBEAN':'direct',
         'SOYBEAN_MEAL':'direct','SOYBEAN_OIL':'direct',
         'COTTON':'direct','RICE':'direct','SUGAR':'direct',
-        'COFFEE':'direct','COCOA':'direct','OJ':'direct',
-        'CATTLE':'direct','LUMBER':'indirect',
-        'SP500':'indirect','NASDAQ':'indirect','DOW_30':'indirect',
-        'RUSSELL2K':'indirect','VIX':'indirect',
+        'COFFEE':'direct','COCOA':'direct','OJ':'direct','CATTLE':'direct',
+        'LUMBER':'indirect','SP500':'indirect','NASDAQ':'indirect',
+        'DOW_30':'indirect','RUSSELL2K':'indirect','VIX':'indirect',
         'WTI_CRUDE':'indirect','BRENT':'indirect','NAT_GAS':'indirect',
-        'AUD':'indirect','CAD':'indirect','NZD':'indirect',
-        '_default':'none',
+        'AUD':'indirect','CAD':'indirect','NZD':'indirect','_default':'none',
     },
     'usda_oil': {
         'SOYBEAN':'direct','SOYBEAN_MEAL':'direct','SOYBEAN_OIL':'direct',
         'CORN':'indirect','WHEAT':'indirect','COTTON':'indirect',
-        'WTI_CRUDE':'indirect','BRENT':'indirect',
-        '_default':'none',
+        'WTI_CRUDE':'indirect','BRENT':'indirect','_default':'none',
     },
 }
 
-def get_relevance(instrument_sid: str, report_id: str) -> str:
+def get_relevance(instrument_sid, report_id):
     mapping = REPORT_RELEVANCE.get(report_id, {})
     return mapping.get(instrument_sid, mapping.get('_default', 'none'))
 
@@ -112,8 +93,7 @@ OVERVIEW_TO_SID = {
     'GOLD':'GOLD','SILVER':'SILVER','COPPER':'COPPER',
     'PLATINUM':'PLATINUM','PALLADIUM':'PALLADIUM',
     'SP500':'SP500','S&P500':'SP500','NASDAQ':'NASDAQ',
-    'DOW_30':'DOW_30','DOW 30':'DOW_30',
-    'RUSSELL2K':'RUSSELL2K','VIX':'VIX',
+    'DOW_30':'DOW_30','DOW 30':'DOW_30','RUSSELL2K':'RUSSELL2K','VIX':'VIX',
     'WTI_CRUDE':'WTI_CRUDE','WTI CRUDE':'WTI_CRUDE',
     'BRENT':'BRENT','NAT_GAS':'NAT_GAS','NAT GAS':'NAT_GAS',
     'CORN':'CORN','WHEAT':'WHEAT','SOYBEAN':'SOYBEAN',
@@ -135,20 +115,14 @@ COL = {
 DATA_START_ROW = 5
 
 
-# ================================================================
-# 🔧  УТИЛІТИ
-# ================================================================
 def disp(n): return DISPLAY.get(n, n)
 def sid(n):  return n.replace(' ','_').replace('&','n').replace('/','_')
-
-def to_num(s):
-    return pd.to_numeric(s, errors='coerce').fillna(0).round(2).tolist()
+def to_num(s): return pd.to_numeric(s, errors='coerce').fillna(0).round(2).tolist()
 
 def norm_pct(vals):
     if not vals: return vals
     nz = [abs(v) for v in vals if v != 0]
-    if nz and max(nz) <= 1.5:
-        return [round(v*100,1) for v in vals]
+    if nz and max(nz) <= 1.5: return [round(v*100,1) for v in vals]
     return [round(v,1) for v in vals]
 
 def fv(n, short=False, sign=False):
@@ -220,22 +194,17 @@ def find_oi_col(df):
     return 23
 
 
-# ================================================================
-# 🎨  SVG SPARKLINE
-# ================================================================
 def make_sparkline(series, color, h=38):
     data=[float(v) for v in (series or [])[-SPARK_WEEKS:]]
     n=len(data)
     if n<3: return ''
-    W=200; H=h
-    mn=min(data); mx=max(data); rng=mx-mn
+    W=200; H=h; mn=min(data); mx=max(data); rng=mx-mn
     if rng==0: return ''
     def px(i): return round(i/(n-1)*W,1)
     def py(v): return round((1-(v-mn)/rng)*H,1)
     pts=[(px(i),py(v)) for i,v in enumerate(data)]
     line=' '.join(f"{x},{y}"for x,y in pts)
-    zy=max(0,min(H,py(0)))
-    area=f"0,{zy} "+line+f" {W},{zy}"
+    zy=max(0,min(H,py(0))); area=f"0,{zy} "+line+f" {W},{zy}"
     lx,ly=pts[-1]
     return(
         f'<svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" '
@@ -249,9 +218,6 @@ def make_sparkline(series, color, h=38):
     )
 
 
-# ================================================================
-# 📥  OVERVIEW
-# ================================================================
 OVERVIEW_TABLE = []
 
 def read_overview(xl):
@@ -308,9 +274,6 @@ def read_overview(xl):
     return result
 
 
-# ================================================================
-# 📥  ОСНОВНИЙ АРКУШ
-# ================================================================
 def read_sheet(xl, name, overview):
     try:
         raw=xl.parse(name,header=None)
@@ -342,6 +305,23 @@ def read_sheet(xl, name, overview):
                 '6m':calc_cot_index(series,26),
                 '3m':calc_cot_index(series,13),
             }
+
+        # ── Stats: max/min all-time and 1yr for net, cl, cs ─────
+        def stats(net_s, cl_s=None, cs_s=None):
+            def mm(series):
+                s = [float(v) for v in series if v != 0]
+                s1y = s[-52:] if len(s) >= 52 else s
+                return {
+                    'max_all': max(s) if s else 0,
+                    'min_all': min(s) if s else 0,
+                    'max_1y':  max(s1y) if s1y else 0,
+                    'min_1y':  min(s1y) if s1y else 0,
+                }
+            res = mm(net_s)
+            res['cl'] = mm(cl_s) if cl_s is not None else None
+            res['cs'] = mm(cs_s) if cs_s is not None else None
+            return res
+
         N=min(CHART_WEEKS,len(df))
         chart_df=df.tail(N).reset_index(drop=True)
         def gcc(idx):
@@ -362,6 +342,10 @@ def read_sheet(xl, name, overview):
             'cm_cl':gch(COL['cm_cl']),'cm_cs':gch(COL['cm_cs']),'cm_net':gch(COL['cm_net']),
             'st_cl':gch(COL['st_cl']),'st_cs':gch(COL['st_cs']),'st_net':gch(COL['st_net']),
             'oi':gch(oi_col),
+            # SM DIV per row — беремо з overview (пусті якщо немає)
+            'sm_div_row': [ov.get('sm_div', None)] * len(hist_df),
+            'sm_div_6m_row': [ov.get('sm_div_6m', None)] * len(hist_df),
+            'sm_div_3m_row': [ov.get('sm_div_3m', None)] * len(hist_df),
         }
         oi_cur=float(oi_all[i0]); oi_prev=float(oi_all[i1])
         oi_pct=round((oi_cur-oi_prev)/abs(oi_prev)*100,2) if oi_prev!=0 else 0.0
@@ -372,6 +356,10 @@ def read_sheet(xl, name, overview):
         return{
             'name':name,'display':disp(name),'sid':sid(name),
             'chart':chart,'hist':hist,
+            'stats_ls': stats(ls_net, ls_cl, ls_cs),
+            'stats_cm': stats(cm_net, cm_cl, cm_cs),
+            'stats_st': stats(st_net),
+            'stats_oi': stats(oi_all),
             'cot_idx':{
                 'ls':cot_idx(ls_net,'cot_ls_all'),
                 'cm':cot_idx(cm_net,'cot_cm_all'),
@@ -423,7 +411,7 @@ def load_all():
 
 
 # ================================================================
-# 🎨  ТАБЛИЦЯ
+# 🎨  ТАБЛИЦЯ з Max/Min + SM DIV колонками
 # ================================================================
 def intensity_bg(val, max_abs):
     if max_abs==0: return ''
@@ -434,14 +422,109 @@ def intensity_bg(val, max_abs):
     except: pass
     return ''
 
-def make_hist_table(hist):
+def sm_div_cell(v):
+    """Клітинка SM DIV з кольором"""
+    if v is None: return '<td class="d sm-td">—</td>'
+    try:
+        f = float(v)
+        cls = 'g' if f > 0 else ('r' if f < 0 else 'd')
+        return f'<td class="{cls} sm-td">{f:+.2f}</td>'
+    except:
+        return '<td class="d sm-td">—</td>'
+
+def maxmin_row(label, val_all, val_1y, cls_all='', cls_1y=''):
+    """Рядок max/min для одної групи"""
+    def cell(v, cls=''):
+        return f'<td class="mm-val {cls}">{fv_full(v, sign=True)}</td>'
+    return (
+        f'<tr class="mm-row">'
+        f'<td class="mm-lbl">{label}</td>'
+        + cell(val_all, cls_all)
+        + cell(val_1y, cls_1y)
+        + '</tr>'
+    )
+
+def make_hist_table(hist, stats_ls, stats_cm, stats_st, stats_oi, sm):
     n=len(hist['dates'])
     if n==0: return '<p style="padding:12px;color:#8090b0">Немає даних</p>'
+
     def maxabs(lst):
         vals=[abs(v) for v in lst if v!=0]; return max(vals) if vals else 1
+
     m_ls_cl=maxabs(hist['ls_cl']); m_ls_cs=maxabs(hist['ls_cs'])
     m_cm_cl=maxabs(hist['cm_cl']); m_cm_cs=maxabs(hist['cm_cs'])
     m_st_cl=maxabs(hist['st_cl']); m_st_cs=maxabs(hist['st_cs'])
+
+    # ── Max/Min блок ─────────────────────────────────────
+    ls_bg  = 'background:rgba(74,158,255,.18);color:#fff;border-left:2px solid rgba(74,158,255,.7)'
+    cm_bg  = 'background:rgba(32,212,131,.15);color:#fff;border-left:2px solid rgba(32,212,131,.7)'
+    st_bg  = 'background:rgba(240,81,90,.15);color:#fff;border-left:2px solid rgba(240,81,90,.7)'
+    oi_bg  = 'background:rgba(160,170,192,.1);color:#fff'
+
+    mm_thead = (
+        '<thead class="mm-thead">'
+        '<tr>'
+        '<th class="mm-lbl-h"></th>'
+        f'<th colspan="3" style="{ls_bg}">LARGE SPEC</th>'
+        f'<th colspan="3" style="{cm_bg}">COMMERCIALS</th>'
+        f'<th colspan="3" style="{st_bg}">SMALL TRADERS</th>'
+        f'<th colspan="2" style="{oi_bg}">OI</th>'
+        '<th class="sm-th">SM DIV</th>'
+        '<th class="sm-th">SM 6M</th>'
+        '<th class="sm-th">SM 3M</th>'
+        '</tr>'
+        '<tr>'
+        '<th class="mm-lbl-h"></th>'
+        f'<th style="{ls_bg}">CHG L</th><th style="{ls_bg}">CHG S</th><th style="{ls_bg}">NET</th>'
+        f'<th style="{cm_bg}">CHG L</th><th style="{cm_bg}">CHG S</th><th style="{cm_bg}">NET</th>'
+        f'<th style="{st_bg}">CHG L</th><th style="{st_bg}">CHG S</th><th style="{st_bg}">NET</th>'
+        f'<th style="{oi_bg}">All</th><th style="{oi_bg}">1Y</th>'
+        '<th class="sm-th"></th><th class="sm-th"></th><th class="sm-th"></th>'
+        '</tr>'
+        '</thead>'
+    )
+
+    def mm_v(v, cls=''):
+        return f'<td class="mm-val {cls}">{fv_full(v, sign=True)}</td>'
+
+    def sm_mini(v):
+        if v is None: return '<td class="sm-td d">-</td>'
+        try:
+            f2=float(v); c='g' if f2>0 else('r' if f2<0 else 'd')
+            return f'<td class="sm-td {c}">{f2:+.2f}</td>'
+        except:
+            return '<td class="sm-td d">-</td>'
+
+    def grp(st, key, col):
+        cl_d=st.get('cl') or {}; cs_d=st.get('cs') or {}
+        return mm_v(cl_d.get(key,0),col)+mm_v(cs_d.get(key,0),col)+mm_v(st.get(key,0),col)
+
+    mm_rows = (
+        '<tr class="mm-row"><td class="mm-lbl">MAX</td>'
+        +grp(stats_ls,'max_all','g')+grp(stats_cm,'max_all','g')+grp(stats_st,'max_all','g')
+        +mm_v(stats_oi['max_all'],'')+mm_v(stats_oi['max_all'],'')
+        +sm_mini(sm['div'])+sm_mini(sm['div_6m'])+sm_mini(sm['div_3m'])+'</tr>'
+        '<tr class="mm-row"><td class="mm-lbl">MIN</td>'
+        +grp(stats_ls,'min_all','r')+grp(stats_cm,'min_all','r')+grp(stats_st,'min_all','r')
+        +mm_v(stats_oi['min_all'],'')+mm_v(stats_oi['min_all'],'')
+        +'<td class="sm-td"></td><td class="sm-td"></td><td class="sm-td"></td></tr>'
+        '<tr class="mm-row mm-yr"><td class="mm-lbl">MAX 1Y</td>'
+        +grp(stats_ls,'max_1y','g')+grp(stats_cm,'max_1y','g')+grp(stats_st,'max_1y','g')
+        +mm_v(stats_oi['max_1y'],'')+mm_v(stats_oi['max_1y'],'')
+        +'<td class="sm-td"></td><td class="sm-td"></td><td class="sm-td"></td></tr>'
+        '<tr class="mm-row mm-yr"><td class="mm-lbl">MIN 1Y</td>'
+        +grp(stats_ls,'min_1y','r')+grp(stats_cm,'min_1y','r')+grp(stats_st,'min_1y','r')
+        +mm_v(stats_oi['min_1y'],'')+mm_v(stats_oi['min_1y'],'')
+        +'<td class="sm-td"></td><td class="sm-td"></td><td class="sm-td"></td></tr>'
+    )
+
+    mm_block = (
+        f'<div class="mm-wrap">'
+        f'<table class="mm-table">{mm_thead}<tbody>{mm_rows}</tbody></table>'
+        f'</div>'
+    )
+
+    # ── Тижнева таблиця ──────────────────────────────────
     rows=[]
     for i in range(n-1,-1,-1):
         row_idx=n-1-i
@@ -450,6 +533,21 @@ def make_hist_table(hist):
             return f'<td class="{cls}"{intensity_bg(v,maxv)}>{txt}</td>'
         def td_net(v,extra=''):
             return f'<td class="{cc(v)}{extra}">{fv_full(v,sign=True)}</td>'
+
+        sm_v  = hist.get('sm_div_row',  [None]*n)
+        sm_6m = hist.get('sm_div_6m_row',[None]*n)
+        sm_3m = hist.get('sm_div_3m_row',[None]*n)
+        # SM DIV тільки в першому рядку (актуальне значення)
+        sm_show = row_idx == 0
+
+        def sm_cell(v):
+            if v is None: return '<td class="sm-td d"></td>'
+            try:
+                f2=float(v); c='g' if f2>0 else('r' if f2<0 else 'd')
+                return f'<td class="sm-td {c}">{f2:+.2f}</td>'
+            except:
+                return '<td class="sm-td d"></td>'
+
         row=(
             f'<tr data-row="{row_idx}">'
             f'<td class="date-col">{hist["dates"][i]}</td>'
@@ -459,36 +557,47 @@ def make_hist_table(hist):
             +td_net(hist['cm_net'][i],' sep-r')
             +td_chg(hist['st_cl'][i],m_st_cl)+td_chg(hist['st_cs'][i],m_st_cs)
             +td_net(hist['st_net'][i],' sep-r')
-            +f'<td class="d">{fv_full(hist["oi"][i])}</td>'
+            +f'<td class="t">{fv_full(hist["oi"][i])}</td>'
+            +sm_cell(sm['div'] if sm_show else None)
+            +sm_cell(sm['div_6m'] if sm_show else None)
+            +sm_cell(sm['div_3m'] if sm_show else None)
             +'</tr>'
         )
         rows.append(row)
-    ls_bg='background:rgba(74,158,255,.25);color:#fff;border-left:2px solid rgba(74,158,255,.6)'
-    cm_bg='background:rgba(32,212,131,.20);color:#fff;border-left:2px solid rgba(32,212,131,.6)'
-    st_bg='background:rgba(240,81,90,.20);color:#fff;border-left:2px solid rgba(240,81,90,.6)'
-    sub='background:var(--bg3);color:var(--d);'
-    return(
-        '<table class="ht"><thead><tr>'
+
+    data_thead = (
+        '<thead>'
+        '<tr>'
         f'<th rowspan="2" class="th-left th-date">ДАТА</th>'
         f'<th colspan="3" class="th-group" style="{ls_bg}">LARGE SPECULATORS</th>'
         f'<th colspan="3" class="th-group" style="{cm_bg}">COMMERCIALS</th>'
         f'<th colspan="3" class="th-group" style="{st_bg}">SMALL TRADERS</th>'
         f'<th rowspan="2" class="th-group">OI</th>'
-        '</tr><tr>'
-        f'<th style="{ls_bg.split(";")[0]}+opacity:.6">CHG L</th>'
-        f'<th style="{sub}">CHG S</th><th class="sep-r" style="{sub}">NET POS</th>'
-        f'<th style="{cm_bg.split(";")[0]}+opacity:.6">CHG L</th>'
-        f'<th style="{sub}">CHG S</th><th class="sep-r" style="{sub}">NET POS</th>'
-        f'<th style="{st_bg.split(";")[0]}+opacity:.6">CHG L</th>'
-        f'<th style="{sub}">CHG S</th><th class="sep-r" style="{sub}">NET POS</th>'
-        '</tr></thead>'
-        '<tbody>'+''.join(rows)+'</tbody></table>'
+        f'<th colspan="3" class="th-group sm-th-group">SM DIV</th>'
+        '</tr>'
+        '<tr>'
+        f'<th style="background:var(--bg3);color:var(--d);">CHG L</th>'
+        f'<th style="background:var(--bg3);color:var(--d);">CHG S</th>'
+        f'<th class="sep-r" style="background:var(--bg3);color:var(--d);">NET POS</th>'
+        f'<th style="background:var(--bg3);color:var(--d);">CHG L</th>'
+        f'<th style="background:var(--bg3);color:var(--d);">CHG S</th>'
+        f'<th class="sep-r" style="background:var(--bg3);color:var(--d);">NET POS</th>'
+        f'<th style="background:var(--bg3);color:var(--d);">CHG L</th>'
+        f'<th style="background:var(--bg3);color:var(--d);">CHG S</th>'
+        f'<th class="sep-r" style="background:var(--bg3);color:var(--d);">NET POS</th>'
+        f'<th class="sm-th">All</th><th class="sm-th">6M</th><th class="sm-th">3M</th>'
+        '</tr>'
+        '</thead>'
+    )
+
+    return mm_block + (
+        '<table class="ht">'
+        + data_thead
+        + '<tbody>'+''.join(rows)+'</tbody>'
+        + '</table>'
     )
 
 
-# ================================================================
-# 🃏  SM DIV бар
-# ================================================================
 def sm_bar(val,label):
     v=float(val) if val else 0.0
     pct=min(max((v+1)/2*100,0),100)
@@ -503,27 +612,19 @@ def sm_bar(val,label):
     )
 
 
-# ================================================================
-# 📅  PANEL ЗВІТІВ
-# ================================================================
 def make_reports_panel(s_id):
-    """Панель звітів з індикаторами релевантності для кожного інструменту"""
     rows = []
     for rpt in REPORTS:
         rid = rpt['id']
         rel = get_relevance(s_id, rid)
         tag = f'<span class="rpt-tag">{rpt["tag"]}</span>' if rpt['tag'] else ''
-
-        # Іконка релевантності
         if rel == 'direct':
             icon = '<span class="rel-icon rel-d" title="Прямий вплив">●</span>'
         elif rel == 'indirect':
             icon = '<span class="rel-icon rel-i" title="Непрямий / через COT">■</span>'
         else:
             icon = '<span class="rel-icon rel-n" title="Не впливає">○</span>'
-
         row_cls = 'rpt-row' if rel != 'none' else 'rpt-row rpt-dim'
-
         rows.append(
             f'<div class="{row_cls}" id="rpt_{s_id}_{rid}">'
             f'<div class="rpt-rel">{icon}</div>'
@@ -551,10 +652,7 @@ def make_reports_panel(s_id):
     )
 
 
-# ================================================================
-# 🃏  METRIC CARD
-# ================================================================
-def make_metric_card(lbl, val, chg, chg_pct, spark_series, spark_color):
+def make_metric_card(lbl, val, chg, chg_pct, spark_series, spark_color, oi=False):
     spark=make_sparkline(spark_series,spark_color)
     try: chg_int=int(round(float(chg)))
     except: chg_int=0
@@ -562,10 +660,15 @@ def make_metric_card(lbl, val, chg, chg_pct, spark_series, spark_color):
     if chg_int>0:  bg='background:rgba(32,212,131,.20);border-radius:3px;padding:2px 7px;display:inline-block;'
     elif chg_int<0:bg='background:rgba(240,81,90,.20);border-radius:3px;padding:2px 7px;display:inline-block;'
     else:          bg='padding:2px 7px;display:inline-block;'
+    # OI: завжди білий, без знаку
+    if oi:
+        val_str = f'<span class="t">{fv(val)}</span>'
+    else:
+        val_str = f'<span class="{cc(val)}">{fv(val,sign=True)}</span>'
     return(
         f'<div class="mc">'
         f'<div class="mc-lbl">{lbl}</div>'
-        f'<div class="mc-val {cc(val)}">{fv(val,sign=True)}</div>'
+        f'<div class="mc-val">{val_str}</div>'
         f'<div class="mc-chg-wrap"><span class="{chg_cls}" style="{bg}">'
         f'{ar(chg)} {fv_full(abs(chg_int))}'
         f'<span class="mc-wtag"> за тиждень</span></span></div>'
@@ -576,24 +679,26 @@ def make_metric_card(lbl, val, chg, chg_pct, spark_series, spark_color):
     )
 
 
-# ================================================================
-# 🃏  АНАЛІЗ
-# ================================================================
 def analysis_row(group_label, group_color, net, cl, cs, chg, chg_pct):
     dc='g'if net>0 else'r'
     return(
         f'<div class="arow"><div class="arow-body">'
         f'<div class="arow-left">'
         f'<div class="arow-week-lbl">ЗМІНА ЗА ТИЖДЕНЬ</div>'
-        f'<div class="arow-grid">'
+        # CHG LONG і CHG SHORT в 2 колонки
+        f'<div class="arow-grid2">'
         f'<div class="ag-item"><span class="ag-lbl">CHG LONG</span>'
         f'<span class="{cc(cl)} ag-val">{fv_full(cl,sign=True)}</span></div>'
         f'<div class="ag-item"><span class="ag-lbl">CHG SHORT</span>'
         f'<span class="{cc(cs)} ag-val">{fv_full(cs,sign=True)}</span></div>'
-        f'<div class="ag-item"><span class="ag-lbl">Δ NET</span>'
-        f'<span class="{cc(chg)} ag-val">{fv_full(chg,sign=True)}'
-        f'<span class="ag-pct"> ({chg_pct})</span></span></div>'
-        f'</div></div>'
+        f'</div>'
+        # Δ NET — окремий рядок по центру
+        f'<div class="arow-dnet">'
+        f'<span class="ag-lbl">Δ NET</span>'
+        f'<span class="{cc(chg)} ag-val-net">{fv_full(chg,sign=True)}'
+        f'<span class="ag-pct"> ({chg_pct})</span></span>'
+        f'</div>'
+        f'</div>'
         f'<div class="arow-right">'
         f'<div class="ar-glbl" style="color:{group_color}">{group_label}</div>'
         f'<div class="ar-net {dc}">{fv_full(net,sign=True)}</div>'
@@ -601,16 +706,14 @@ def analysis_row(group_label, group_color, net, cl, cs, chg, chg_pct):
     )
 
 
-# ================================================================
-# 🃏  КАРТКА ІНСТРУМЕНТУ
-# ================================================================
 def make_instrument_view(d):
     c=d['cur']; s=d['sid']; sm=d['sm']
 
     mc_ls=make_metric_card('LARGE SPEC (NETTO)',   c['ls_net'],c['ls_chg'],c['ls_chg_pct'],d['spark']['ls'],COLOR_LS)
     mc_cm=make_metric_card('COMMERCIALS (NETTO)',  c['cm_net'],c['cm_chg'],c['cm_chg_pct'],d['spark']['cm'],COLOR_CM)
     mc_st=make_metric_card('SMALL TRADERS (NETTO)',c['st_net'],c['st_chg'],c['st_chg_pct'],d['spark']['st'],COLOR_ST)
-    mc_oi=make_metric_card('OPEN INTEREST',        c['oi'],    c['oi_chg'],c['oi_chg_pct'],d['spark']['oi'],'#a0aac0')
+    # OI: передаємо oi=True для білого кольору
+    mc_oi=make_metric_card('OPEN INTEREST',        c['oi'],    c['oi_chg'],c['oi_chg_pct'],d['spark']['oi'],'#a0aac0', oi=True)
 
     def patch_cot(mc_html, key):
         return mc_html.replace('COT Index: —',f'COT Index: {fp(d["cot_idx"][key]["all"])}')
@@ -623,7 +726,6 @@ def make_instrument_view(d):
         +analysis_row('COMMERCIALS',COLOR_CM,c['cm_net'],c['cm_cl'],c['cm_cs'],c['cm_chg'],c['cm_chg_pct'])
         +f'</div>'
     )
-
     sm_panel=(
         f'<div class="panel sm-panel">'
         f'<div class="plbl">SM DIVERGENCE</div>'
@@ -631,11 +733,8 @@ def make_instrument_view(d):
         +f'<div class="sm-hint">+ бичача &nbsp;|&nbsp; − ведмежа</div>'
         +f'</div>'
     )
-
-    # Панель звітів
     reports_panel = make_reports_panel(s)
 
-    # COT INDEX панель
     ini=d['cot_idx']['ls']['all']
     ini_pos=min(max(ini,0),100)
     ini_color='#f0515a'if ini<15 else('#20d483'if ini>85 else'#dde2ee')
@@ -697,7 +796,6 @@ def make_instrument_view(d):
         f'</div>'
         f'<script>_cd["{s}"]={chart_json};</script>'
     )
-
     bar_block=(
         f'<div class="bar-charts-grid chartbox">'
         f'<div class="bar-wrap"><div class="bar-lbl" style="color:{COLOR_LS}">LARGE SPEC — WEEKLY ΔNet</div>'
@@ -709,7 +807,10 @@ def make_instrument_view(d):
         f'</div>'
     )
 
-    hist_html=make_hist_table(d['hist'])
+    # Таблиця з max/min і SM DIV
+    table_html = make_hist_table(
+        d['hist'], d['stats_ls'], d['stats_cm'], d['stats_st'], d['stats_oi'], sm
+    )
     table_block=(
         f'<div class="htable-wrap">'
         f'<div class="htable-hdr"><span>ТИЖНЕВА СТАТИСТИКА ПОЗИЦІЙ</span>'
@@ -718,11 +819,10 @@ def make_instrument_view(d):
         f'<button class="hbtn" data-n="26" onclick="setHist(this,\'{s}\')">26</button>'
         f'<button class="hbtn" data-n="52" onclick="setHist(this,\'{s}\')">52</button>'
         f'</div></div>'
-        f'<div class="htable-scroll">{hist_html}</div>'
+        f'<div class="htable-scroll">{table_html}</div>'
         f'</div>'
     )
 
-    # MID: 4 колонки: analysis | sm | reports | cot-index
     mid = f'<div class="mid">{analysis_panel}{sm_panel}{reports_panel}{pct_panel}</div>'
 
     return(
@@ -740,9 +840,6 @@ def make_instrument_view(d):
     )
 
 
-# ================================================================
-# 🌐  OVERVIEW TAB
-# ================================================================
 def make_overview_tab():
     rows_html=[]; rep_date='—'; today_date='—'
     for item in OVERVIEW_TABLE:
@@ -761,9 +858,9 @@ def make_overview_tab():
                 cls='g' if v2>0 else('r' if v2<0 else 'd')
                 return f'<span class="{cls}">{s}{v2:.1f}%</span>'
             try:
-                n=int(round(float(v))); body=f"{abs(n):,}".replace(',','\u202f')
-                s='+' if(sign and n>0)else('-' if n<0 else '')
-                cls='g' if n>0 else('r' if n<0 else 'd')
+                nv=int(round(float(v))); body=f"{abs(nv):,}".replace(',','\u202f')
+                s='+' if(sign and nv>0)else('-' if nv<0 else '')
+                cls='g' if nv>0 else('r' if nv<0 else 'd')
                 return f'<span class="{cls}">{s}{body}</span>'
             except: return '<span class="d">—</span>'
         def pct_bar(v,lo=0.15,hi=0.85):
@@ -814,9 +911,6 @@ def make_overview_tab():
     )
 
 
-# ================================================================
-# 🌐  ЗБІРКА HTML
-# ================================================================
 def generate_html(data):
     all_dates=[d['cur']['date'] for d in data.values()]
     report_date=max(all_dates) if all_dates else '—'
@@ -846,7 +940,6 @@ def generate_html(data):
         first_cat=False
 
     ov_html=make_overview_tab()
-
     return(
         HTML_HEAD
         +f'<header class="hdr">'
@@ -866,14 +959,10 @@ def generate_html(data):
         +f'</div>'
         +f'<div class="main-sec" id="ms_ov"><div style="padding:16px 24px">{ov_html}</div></div>'
         +f'<div class="footer">COT DASHBOARD &bull; CFTC LEGACY &bull; {updated}</div>'
-        +AUTH_MODAL_HTML
-        +HTML_FOOT
+        +AUTH_MODAL_HTML+HTML_FOOT
     )
 
 
-# ================================================================
-# 🖼️  AUTH MODAL
-# ================================================================
 AUTH_MODAL_HTML = """
 <div class="auth-overlay" id="authOverlay" onclick="if(event.target===this)closeAuth()">
   <div class="auth-box">
@@ -888,22 +977,15 @@ AUTH_MODAL_HTML = """
     </div>
     <div id="auth-loggedout">
       <div id="at-login">
-        <div class="auth-field"><label>EMAIL</label>
-          <input type="email" id="al-email" placeholder="your@email.com"></div>
-        <div class="auth-field"><label>ПАРОЛЬ</label>
-          <input type="password" id="al-pass" placeholder="••••••••"
-                 onkeydown="if(event.key==='Enter')doAuthLogin()"></div>
+        <div class="auth-field"><label>EMAIL</label><input type="email" id="al-email" placeholder="your@email.com"></div>
+        <div class="auth-field"><label>ПАРОЛЬ</label><input type="password" id="al-pass" placeholder="••••••••" onkeydown="if(event.key==='Enter')doAuthLogin()"></div>
         <button class="auth-submit" onclick="doAuthLogin()">УВІЙТИ</button>
         <div class="auth-msg" id="al-msg"></div>
       </div>
       <div id="at-reg" style="display:none">
-        <div class="auth-field"><label>EMAIL</label>
-          <input type="email" id="ar-email" placeholder="your@email.com"></div>
-        <div class="auth-field"><label>ПАРОЛЬ</label>
-          <input type="password" id="ar-pass" placeholder="мінімум 6 символів"></div>
-        <div class="auth-field"><label>ПАРОЛЬ ЩЕ РАЗ</label>
-          <input type="password" id="ar-pass2" placeholder="••••••••"
-                 onkeydown="if(event.key==='Enter')doAuthReg()"></div>
+        <div class="auth-field"><label>EMAIL</label><input type="email" id="ar-email" placeholder="your@email.com"></div>
+        <div class="auth-field"><label>ПАРОЛЬ</label><input type="password" id="ar-pass" placeholder="мінімум 6 символів"></div>
+        <div class="auth-field"><label>ПАРОЛЬ ЩЕ РАЗ</label><input type="password" id="ar-pass2" placeholder="••••••••" onkeydown="if(event.key==='Enter')doAuthReg()"></div>
         <button class="auth-submit" onclick="doAuthReg()">ЗАРЕЄСТРУВАТИСЬ</button>
         <div class="auth-msg" id="ar-msg"></div>
       </div>
@@ -912,10 +994,6 @@ AUTH_MODAL_HTML = """
 </div>
 """
 
-
-# ================================================================
-# 🖼️  CSS
-# ================================================================
 HTML_HEAD = f"""<!DOCTYPE html>
 <html lang="uk">
 <head>
@@ -933,6 +1011,7 @@ HTML_HEAD = f"""<!DOCTYPE html>
 }}
 *,*::before,*::after{{margin:0;padding:0;box-sizing:border-box;}}
 html,body{{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13px;}}
+.t{{color:var(--t);}}
 
 .hdr{{height:var(--hdr-h);padding:0 24px;background:var(--bg2);
   border-bottom:1px solid var(--bd);display:flex;align-items:center;
@@ -943,78 +1022,54 @@ html,body{{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13
 .hdr-r{{text-align:right;font-size:11px;color:var(--d);line-height:2;}}
 .hdr-r b{{color:var(--t);}}
 
-/* AUTH BUTTON */
 .auth-btn{{padding:6px 16px;border:1px solid var(--g);border-radius:3px;
   background:transparent;color:var(--g);font-family:var(--f);font-size:11px;
   cursor:pointer;letter-spacing:1px;transition:all .15s;}}
 .auth-btn:hover{{background:rgba(32,212,131,.15);}}
 .auth-btn.logged{{border-color:var(--b);color:var(--b);}}
 
-/* AUTH MODAL */
 .auth-overlay{{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);
   z-index:1000;align-items:center;justify-content:center;}}
 .auth-overlay.open{{display:flex;}}
-.auth-box{{background:var(--bg2);border:1px solid var(--bd);border-radius:8px;
-  padding:32px;width:320px;position:relative;}}
-.auth-close{{position:absolute;top:12px;right:14px;background:none;border:none;
-  color:var(--d);cursor:pointer;font-size:16px;font-family:var(--f);}}
+.auth-box{{background:var(--bg2);border:1px solid var(--bd);border-radius:8px;padding:32px;width:320px;position:relative;}}
+.auth-close{{position:absolute;top:12px;right:14px;background:none;border:none;color:var(--d);cursor:pointer;font-size:16px;font-family:var(--f);}}
 .auth-tabs{{display:flex;margin-bottom:20px;border-bottom:1px solid var(--bd);}}
-.auth-tab{{flex:1;padding:7px;text-align:center;cursor:pointer;font-size:11px;
-  color:var(--d);letter-spacing:1px;border-bottom:2px solid transparent;margin-bottom:-1px;}}
+.auth-tab{{flex:1;padding:7px;text-align:center;cursor:pointer;font-size:11px;color:var(--d);letter-spacing:1px;border-bottom:2px solid transparent;margin-bottom:-1px;}}
 .auth-tab.active{{color:#fff;border-bottom-color:var(--g);}}
 .auth-field{{margin-bottom:12px;}}
 .auth-field label{{display:block;font-size:9px;color:var(--d);letter-spacing:.8px;margin-bottom:4px;}}
-.auth-field input{{width:100%;background:var(--bg);border:1px solid var(--bd);
-  border-radius:4px;padding:9px 11px;color:var(--t);font-family:var(--f);font-size:12px;outline:none;}}
+.auth-field input{{width:100%;background:var(--bg);border:1px solid var(--bd);border-radius:4px;padding:9px 11px;color:var(--t);font-family:var(--f);font-size:12px;outline:none;}}
 .auth-field input:focus{{border-color:var(--g);}}
-.auth-submit{{width:100%;padding:10px;background:var(--g);color:#000;border:none;
-  border-radius:4px;cursor:pointer;font-family:var(--f);font-size:12px;font-weight:bold;margin-top:4px;}}
+.auth-submit{{width:100%;padding:10px;background:var(--g);color:#000;border:none;border-radius:4px;cursor:pointer;font-family:var(--f);font-size:12px;font-weight:bold;margin-top:4px;}}
 .auth-msg{{font-size:11px;padding:7px 10px;border-radius:4px;margin-top:10px;text-align:center;display:none;}}
 .auth-msg.err{{background:rgba(240,81,90,.15);border:1px solid var(--r);color:var(--r);}}
 .auth-msg.ok{{background:rgba(32,212,131,.15);border:1px solid var(--g);color:var(--g);}}
-.auth-user{{font-size:11px;color:var(--d);text-align:center;margin-bottom:12px;
-  padding:10px;background:var(--bg3);border-radius:4px;}}
+.auth-user{{font-size:11px;color:var(--d);text-align:center;margin-bottom:12px;padding:10px;background:var(--bg3);border-radius:4px;}}
 .auth-user b{{color:var(--t);}}
 
-/* MAIN TABS */
-.main-tabs{{display:flex;gap:0;padding:0 24px;background:var(--bg2);
-  border-bottom:2px solid var(--bd);position:sticky;top:var(--hdr-h);z-index:290;}}
-.mtab{{padding:10px 20px;border:none;background:transparent;color:var(--d);font-family:var(--f);
-  font-size:12px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;letter-spacing:.5px;}}
-.mtab:hover{{color:var(--t);}}
-.mtab.active{{color:#fff;border-bottom-color:var(--g);font-weight:bold;}}
+.main-tabs{{display:flex;gap:0;padding:0 24px;background:var(--bg2);border-bottom:2px solid var(--bd);position:sticky;top:var(--hdr-h);z-index:290;}}
+.mtab{{padding:10px 20px;border:none;background:transparent;color:var(--d);font-family:var(--f);font-size:12px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;letter-spacing:.5px;}}
+.mtab:hover{{color:var(--t);}}.mtab.active{{color:#fff;border-bottom-color:var(--g);font-weight:bold;}}
 .main-sec{{display:none;}}.main-sec.active{{display:block;}}
 
-/* CATEGORY TABS */
-.ctabs{{display:flex;gap:5px;padding:8px 24px;background:var(--bg2);
-  border-bottom:1px solid var(--bd);flex-wrap:wrap;}}
-.ctab{{padding:5px 14px;border:1px solid var(--bd);border-radius:3px;
-  cursor:pointer;color:var(--d);font-family:var(--f);font-size:12px;background:transparent;}}
-.ctab:hover{{border-color:var(--g);color:var(--t);}}
-.ctab.active{{background:var(--g);color:#000;border-color:var(--g);font-weight:bold;}}
+.ctabs{{display:flex;gap:5px;padding:8px 24px;background:var(--bg2);border-bottom:1px solid var(--bd);flex-wrap:wrap;}}
+.ctab{{padding:5px 14px;border:1px solid var(--bd);border-radius:3px;cursor:pointer;color:var(--d);font-family:var(--f);font-size:12px;background:transparent;}}
+.ctab:hover{{border-color:var(--g);color:var(--t);}}.ctab.active{{background:var(--g);color:#000;border-color:var(--g);font-weight:bold;}}
 .tc{{opacity:.4;font-size:9px;margin-left:3px;}}
 
-/* INSTRUMENT TABS */
 .catsec{{display:none;}}.catsec.active{{display:block;}}
-.itabs{{display:flex;gap:4px;padding:7px 24px;background:var(--bg);
-  border-bottom:1px solid var(--bd);flex-wrap:wrap;
-  position:sticky;top:calc(var(--hdr-h) + 42px);z-index:200;}}
-.itab{{padding:4px 12px;border:1px solid var(--bd);border-radius:3px;
-  cursor:pointer;color:var(--d);font-family:var(--f);font-size:11px;background:transparent;}}
-.itab:hover{{border-color:var(--b);color:var(--t);}}
-.itab.active{{background:var(--bg3);color:#fff;border-color:var(--b);}}
+.itabs{{display:flex;gap:4px;padding:7px 24px;background:var(--bg);border-bottom:1px solid var(--bd);flex-wrap:wrap;position:sticky;top:calc(var(--hdr-h) + 42px);z-index:200;}}
+.itab{{padding:4px 12px;border:1px solid var(--bd);border-radius:3px;cursor:pointer;color:var(--d);font-family:var(--f);font-size:11px;background:transparent;}}
+.itab:hover{{border-color:var(--b);color:var(--t);}}.itab.active{{background:var(--bg3);color:#fff;border-color:var(--b);}}
 
-.iviews{{padding:16px 24px;}}
-.iview{{display:none;}}.iview.active{{display:block;}}
+.iviews{{padding:16px 24px;}}.iview{{display:none;}}.iview.active{{display:block;}}
 
 .report-tabs{{display:flex;align-items:center;gap:6px;margin-bottom:14px;flex-wrap:wrap;}}
 .rtab-lbl{{font-size:9px;color:var(--d);letter-spacing:1px;}}
-.rtab{{padding:4px 12px;border:1px solid var(--bd);border-radius:3px;
-  cursor:pointer;color:var(--d);font-family:var(--f);font-size:11px;background:transparent;}}
+.rtab{{padding:4px 12px;border:1px solid var(--bd);border-radius:3px;cursor:pointer;color:var(--d);font-family:var(--f);font-size:11px;background:transparent;}}
 .rtab.active{{background:var(--g);color:#000;border-color:var(--g);font-weight:bold;}}
 .rtab.disabled{{opacity:.3;cursor:not-allowed;}}
 
-/* METRIC CARDS */
 .mcards{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px;}}
 .mc{{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:14px 16px;overflow:hidden;min-width:0;}}
 .mc-lbl{{font-size:9px;color:#fff;letter-spacing:.5px;margin-bottom:6px;}}
@@ -1024,74 +1079,65 @@ html,body{{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13
 .mc-pct{{font-size:10px;margin-top:2px;opacity:.85;}}
 .mc-sub{{font-size:10px;color:var(--d);margin-top:3px;}}
 
-/* MID — 4 колонки */
-.mid{{display:grid;grid-template-columns:1fr 170px 200px 1fr;gap:10px;margin-bottom:12px;}}
-.panel{{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:14px 16px;}}
+.mid{{display:grid;grid-template-columns:1fr 160px 190px 1fr;gap:8px;margin-bottom:12px;}}
+.panel{{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:12px 14px;}}
 .plbl{{font-size:9px;color:#fff;letter-spacing:.5px;margin-bottom:10px;}}
 
-/* АНАЛІЗ */
-.arow{{margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--bd);}}
+.arow{{margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--bd);}}
 .arow:last-child{{margin:0;padding:0;border:none;}}
 .arow-body{{display:flex;gap:10px;align-items:center;}}
 .arow-left{{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;}}
-.arow-right{{width:150px;flex-shrink:0;display:flex;flex-direction:column;
-  justify-content:center;align-items:flex-end;border-left:1px solid var(--bd);padding-left:12px;}}
-.ar-glbl{{font-size:9px;font-weight:bold;letter-spacing:.8px;margin-bottom:4px;}}
-.ar-net{{font-size:clamp(22px,2.5vw,32px);font-weight:bold;text-align:right;}}
+.arow-right{{width:140px;flex-shrink:0;display:flex;flex-direction:column;justify-content:center;align-items:flex-end;border-left:1px solid var(--bd);padding-left:10px;}}
+.ar-glbl{{font-size:9px;font-weight:bold;letter-spacing:.8px;margin-bottom:3px;}}
+.ar-net{{font-size:clamp(20px,2.2vw,30px);font-weight:bold;text-align:right;}}
 .arow-week-lbl{{font-size:8px;color:var(--d);letter-spacing:.8px;text-transform:uppercase;}}
-.arow-grid{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;}}
-.ag-item{{display:flex;flex-direction:column;gap:4px;}}
+/* 2 колонки CHG L / CHG S */
+.arow-grid2{{display:grid;grid-template-columns:1fr 1fr;gap:3px;margin-bottom:6px;}}
+.arow-grid{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px;}}
+/* Δ NET — окремий рядок по центру */
+.arow-dnet{{display:flex;flex-direction:column;align-items:center;margin-top:4px;padding-top:5px;border-top:1px solid var(--bd);}}
+.arow-dnet .ag-lbl{{font-size:8px;color:var(--d);letter-spacing:.4px;margin-bottom:2px;}}
+.ag-val-net{{font-size:clamp(19px,2.2vw,26px);font-weight:bold;line-height:1.2;}}
+.ag-item{{display:flex;flex-direction:column;gap:3px;}}
 .ag-lbl{{font-size:8px;color:#fff;letter-spacing:.4px;}}
-.ag-val{{font-size:clamp(18px,2.1vw,26px);font-weight:bold;line-height:1.2;}}
-.ag-pct{{font-size:11px;opacity:.75;font-weight:normal;}}
+.ag-val{{font-size:clamp(17px,2vw,24px);font-weight:bold;line-height:1.2;}}
+.ag-pct{{font-size:10px;opacity:.75;font-weight:normal;}}
+/* MAX/MIN 1Y row — subtle separator */
+table.mm-table .mm-yr td{{border-top:1px solid var(--bd);opacity:.8;}}
 
-/* SM DIV */
 .sm-panel{{display:flex;flex-direction:column;justify-content:space-between;}}
-.sm-row{{margin-bottom:10px;}}
+.sm-row{{margin-bottom:8px;}}
 .sm-lbl{{font-size:9px;color:var(--d);margin-bottom:3px;}}
 .sm-bar-bg{{background:var(--bg3);border-radius:10px;height:8px;position:relative;overflow:hidden;}}
 .sm-mk{{position:absolute;top:1px;width:8px;height:6px;border-radius:3px;transform:translateX(-50%);}}
 .sm-val{{font-size:12px;font-weight:bold;margin-top:3px;}}
-.sm-hint{{font-size:8px;color:var(--d);margin-top:8px;line-height:1.5;border-top:1px solid var(--bd);padding-top:8px;}}
+.sm-hint{{font-size:8px;color:var(--d);margin-top:6px;line-height:1.5;border-top:1px solid var(--bd);padding-top:6px;}}
 
-/* ── REPORTS PANEL ───────────────────────────── */
+/* REPORTS PANEL */
 .rpt-panel{{display:flex;flex-direction:column;overflow:hidden;}}
 .plbl-row{{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}}
-/* Легенда */
 .rel-legend{{font-size:8px;color:var(--d);display:flex;align-items:center;gap:3px;}}
 .rel-icon{{font-size:10px;margin-right:1px;line-height:1;}}
-.rel-d{{color:#20d483;}}
-.rel-i{{color:#f0a030;}}
-.rel-n{{color:#343d5a;}}
-/* Рядок звіту */
-.rpt-row{{display:flex;align-items:center;justify-content:space-between;
-  padding:5px 0;border-bottom:1px solid var(--bd);gap:4px;}}
+.rel-d{{color:#20d483;}}.rel-i{{color:#f0a030;}}.rel-n{{color:#343d5a;}}
+.rpt-row{{display:flex;align-items:center;padding:4px 0;border-bottom:1px solid var(--bd);gap:4px;}}
 .rpt-row:last-child{{border:none;padding-bottom:0;}}
-/* Dim для "не впливає" */
 .rpt-dim{{opacity:.35;}}
 .rpt-rel{{width:12px;flex-shrink:0;text-align:center;}}
 .rpt-info{{flex:1;min-width:0;}}
-.rpt-name{{font-size:9px;color:var(--t);font-weight:bold;letter-spacing:.2px;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}}
+.rpt-name{{font-size:9px;color:var(--t);font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}}
 .rpt-sched{{font-size:8px;color:var(--d);margin-top:1px;}}
-.rpt-tag{{display:inline-block;font-size:7px;padding:0 4px;border-radius:2px;
-  background:rgba(74,158,255,.2);color:var(--b);margin-left:4px;vertical-align:middle;}}
-/* Кнопки L / N / S */
+.rpt-tag{{display:inline-block;font-size:7px;padding:0 4px;border-radius:2px;background:rgba(74,158,255,.2);color:var(--b);margin-left:4px;vertical-align:middle;}}
 .rpt-btns{{display:flex;gap:2px;flex-shrink:0;}}
-.rb{{width:20px;height:20px;border-radius:3px;border:1px solid var(--bd);
-  background:var(--bg3);color:var(--d);font-family:var(--f);font-size:9px;
-  font-weight:bold;cursor:pointer;transition:all .1s;line-height:20px;text-align:center;padding:0;}}
+.rb{{width:20px;height:20px;border-radius:3px;border:1px solid var(--bd);background:var(--bg3);color:var(--d);font-family:var(--f);font-size:9px;font-weight:bold;cursor:pointer;transition:all .1s;line-height:20px;text-align:center;padding:0;}}
 .rb:hover{{border-color:var(--t);color:var(--t);}}
 .rb-l.active{{background:rgba(32,212,131,.25);border-color:var(--g);color:var(--g);}}
 .rb-s.active{{background:rgba(240,81,90,.20);border-color:var(--r);color:var(--r);}}
 .rb-n.active{{background:var(--bg3);border-color:var(--d);color:var(--d);}}
 
-/* COT PERCENTILE */
 .pct-sel-row{{display:flex;gap:5px;align-items:center;margin-bottom:10px;flex-wrap:wrap;}}
 .psel-group{{display:flex;gap:3px;}}
 .psel-sep{{width:1px;height:16px;background:var(--bd);margin:0 3px;}}
-.psel,.pper{{padding:2px 8px;border:1px solid var(--bd);border-radius:3px;
-  cursor:pointer;color:var(--d);font-family:var(--f);font-size:10px;background:transparent;}}
+.psel,.pper{{padding:2px 8px;border:1px solid var(--bd);border-radius:3px;cursor:pointer;color:var(--d);font-family:var(--f);font-size:10px;background:transparent;}}
 .psel:hover,.pper:hover{{border-color:var(--b);color:var(--t);}}
 .psel.active,.pper.active{{background:var(--bg3);color:#fff;border-color:var(--b);}}
 .pct-val-row{{margin-bottom:8px;}}
@@ -1106,49 +1152,56 @@ html,body{{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13
 .ptlbl-cur{{color:var(--t);font-weight:bold;}}
 .pbar-lb{{display:flex;justify-content:space-between;font-size:8px;color:var(--d);margin-top:12px;}}
 
-/* CHART */
 .chartbox{{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:14px 16px;margin-bottom:12px;}}
 .chartbox-hdr{{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px;}}
 .period-btns{{display:flex;gap:3px;}}
-.per-btn{{padding:2px 9px;border:1px solid var(--bd);border-radius:3px;
-  cursor:pointer;color:var(--d);font-family:var(--f);font-size:10px;background:transparent;}}
-.per-btn:hover{{border-color:var(--b);color:var(--t);}}
-.per-btn.active{{background:var(--bg3);color:#fff;border-color:var(--b);}}
+.per-btn{{padding:2px 9px;border:1px solid var(--bd);border-radius:3px;cursor:pointer;color:var(--d);font-family:var(--f);font-size:10px;background:transparent;}}
+.per-btn:hover{{border-color:var(--b);color:var(--t);}}.per-btn.active{{background:var(--bg3);color:#fff;border-color:var(--b);}}
 .chart-leg{{display:flex;gap:10px;font-size:10px;color:var(--d);align-items:center;flex-wrap:wrap;}}
 .ll{{display:inline-block;width:14px;height:2px;border-radius:1px;vertical-align:middle;margin-right:4px;}}
 .ll-dash{{display:inline-block;width:14px;height:0;border-top:2px dashed;vertical-align:middle;}}
 .cw{{height:140px;position:relative;}}
 
-/* BAR CHARTS */
 .bar-charts-grid{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}}
 .bar-lbl{{font-size:8px;letter-spacing:.5px;margin-bottom:6px;}}
 .bar-cw{{height:80px;position:relative;}}
 
-/* HISTORY TABLE */
+/* ── HISTORY TABLE + MAX/MIN ── */
 .htable-wrap{{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;overflow:hidden;margin-bottom:12px;}}
-.htable-hdr{{padding:8px 14px;border-bottom:1px solid var(--bd);font-size:10px;color:#fff;
-  letter-spacing:.5px;display:flex;align-items:center;justify-content:space-between;}}
+.htable-hdr{{padding:7px 14px;border-bottom:1px solid var(--bd);font-size:10px;color:#fff;letter-spacing:.5px;display:flex;align-items:center;justify-content:space-between;}}
 .hsel{{display:flex;gap:4px;}}
-.hbtn{{padding:2px 10px;border:1px solid var(--bd);border-radius:3px;cursor:pointer;
-  color:var(--d);font-family:var(--f);font-size:11px;background:transparent;}}
+.hbtn{{padding:2px 10px;border:1px solid var(--bd);border-radius:3px;cursor:pointer;color:var(--d);font-family:var(--f);font-size:11px;background:transparent;}}
 .hbtn.active{{background:var(--bg3);color:#fff;border-color:var(--b);}}
 .htable-scroll{{overflow-x:auto;}}
+/* Max/Min блок */
+.mm-wrap{{border-bottom:2px solid var(--bd);}}
+table.mm-table{{width:100%;border-collapse:collapse;font-size:10px;white-space:nowrap;}}
+table.mm-table th{{padding:4px 8px;background:var(--bg3);border-bottom:1px solid var(--bd);font-weight:normal;font-size:8px;letter-spacing:.5px;text-align:center;}}
+table.mm-table .mm-lbl-h{{text-align:left;width:40px;}}
+table.mm-table .mm-lbl{{font-size:8px;color:var(--d);letter-spacing:.5px;padding:4px 8px;text-align:left;background:var(--bg3);}}
+table.mm-table .mm-val{{padding:4px 8px;text-align:right;}}
+table.mm-table .mm-row td{{border-bottom:1px solid var(--bg3);}}
+table.mm-table .sm-th{{width:42px;text-align:center;color:var(--d);}}
+table.mm-table .sm-td{{width:42px;text-align:center;font-size:10px;padding:4px 6px;}}
+/* Data table */
 table.ht{{width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap;}}
-table.ht th{{padding:5px 9px;border-bottom:1px solid var(--bd);font-weight:normal;font-size:9px;letter-spacing:.5px;text-align:right;}}
+table.ht th{{padding:4px 8px;border-bottom:1px solid var(--bd);font-weight:normal;font-size:9px;letter-spacing:.5px;text-align:right;}}
 table.ht .th-left{{text-align:left;}}
-table.ht .th-date{{min-width:80px;max-width:90px;width:88px;background:var(--bg3);}}
+table.ht .th-date{{min-width:78px;max-width:88px;width:84px;background:var(--bg3);}}
 table.ht .th-group{{text-align:center;}}
-table.ht td{{padding:5px 9px;border-bottom:1px solid var(--bg3);text-align:right;}}
-table.ht .date-col{{text-align:left;color:var(--d);width:88px;background:var(--bg3);}}
+table.ht .sm-th-group{{text-align:center;font-size:8px;}}
+table.ht .sm-th{{width:42px;text-align:center;font-size:8px;color:var(--d);}}
+table.ht td{{padding:4px 8px;border-bottom:1px solid var(--bg3);text-align:right;}}
+table.ht .date-col{{text-align:left;color:var(--d);width:84px;background:var(--bg3);}}
 table.ht tr:hover td{{background:rgba(52,61,90,.5)!important;}}
 table.ht .sep-r{{border-right:1px solid var(--bd);}}
+table.ht .sm-td{{text-align:center;font-size:10px;padding:4px 6px;}}
 
 /* OVERVIEW TABLE */
 .ov-meta{{padding:10px 0 8px;font-size:11px;color:var(--d);}}.ov-meta b{{color:var(--t);}}
 .ov-scroll{{overflow-x:auto;}}
 .ov-table{{width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap;}}
-.ov-table th{{padding:6px 10px;background:var(--bg3);border-bottom:1px solid var(--bd);
-  color:var(--d);font-weight:normal;font-size:9px;letter-spacing:.5px;text-align:right;}}
+.ov-table th{{padding:6px 10px;background:var(--bg3);border-bottom:1px solid var(--bd);color:var(--d);font-weight:normal;font-size:9px;letter-spacing:.5px;text-align:right;}}
 .ov-table th:first-child{{text-align:left;}}
 .ov-table td{{padding:5px 10px;border-bottom:1px solid var(--bg3);text-align:right;}}
 .ov-table .ov-asset{{text-align:left;color:var(--t);font-weight:bold;}}
@@ -1160,10 +1213,8 @@ table.ht .sep-r{{border-right:1px solid var(--bd);}}
 .ov-cot-val{{font-size:10px;color:var(--t);min-width:30px;text-align:right;}}
 
 .g{{color:var(--g);}}.r{{color:var(--r);}}.d{{color:var(--d);}}
-.footer{{text-align:center;padding:14px;color:var(--d);font-size:9px;
-  letter-spacing:1px;border-top:1px solid var(--bd);margin-top:4px;}}
+.footer{{text-align:center;padding:14px;color:var(--d);font-size:9px;letter-spacing:1px;border-top:1px solid var(--bd);margin-top:4px;}}
 
-/* MOBILE */
 @media(max-width:640px){{
   :root{{--hdr-h:56px;}}
   .hdr{{padding:8px 12px;height:auto;min-height:var(--hdr-h);flex-wrap:wrap;}}
@@ -1173,16 +1224,13 @@ table.ht .sep-r{{border-right:1px solid var(--bd);}}
   .iviews{{padding:10px 12px;}}
   .mcards{{grid-template-columns:1fr 1fr;gap:8px;}}
   .mc{{padding:10px 12px;}}.mc-val{{font-size:clamp(14px,5vw,22px);}}
-  /* На мобільному: 2 рядки по 2 */
   .mid{{grid-template-columns:1fr 1fr;gap:8px;}}
-  .mid > .panel:first-child{{grid-column:1/-1;}}  /* analysis повна ширина */
+  .mid > .panel:first-child{{grid-column:1/-1;}}
   .bar-charts-grid{{grid-template-columns:1fr;}}
   .arow-right{{width:110px;padding-left:8px;}}
   .ar-net{{font-size:clamp(14px,4vw,20px);}}
   .ag-val{{font-size:clamp(11px,3.5vw,15px);}}
-  table.ht{{font-size:10px;}}
-  table.ht th{{padding:4px 5px;font-size:8px;}}
-  table.ht td{{padding:4px 5px;}}
+  table.ht{{font-size:10px;}}table.ht th{{padding:3px 5px;font-size:8px;}}table.ht td{{padding:3px 5px;}}
   .auth-box{{width:90vw;padding:24px 20px;}}
 }}
 </style>
@@ -1191,20 +1239,12 @@ table.ht .sep-r{{border-right:1px solid var(--bd);}}
 <script>const _cd={{}};const _ci={{}};const Charts={{}};const BarChts={{}};</script>
 """
 
-
-# ================================================================
-# 🔧  JAVASCRIPT
-# ================================================================
 HTML_FOOT = f"""
 <script>
 const CL_LS='{COLOR_LS}', CL_CM='{COLOR_CM}', CL_ST='{COLOR_ST}';
 const CurPer={{}};
+let _loggedIn=false, _userEmail='';
 
-// ── Стан авторизації ─────────────────────────────────────────
-let _loggedIn = false;
-let _userEmail = '';
-
-// ── NAVIGATION ───────────────────────────────────────────────
 function selCat(cat){{
   document.querySelectorAll('.ctab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.catsec').forEach(s=>s.classList.remove('active'));
@@ -1213,13 +1253,11 @@ function selCat(cat){{
   const first=document.querySelector('[data-cat="'+cat+'"]');
   if(first) selInst(cat,first.dataset.i);
 }}
-
 function selInst(cat,key){{
   document.querySelectorAll('[data-cat="'+cat+'"]').forEach(b=>b.classList.remove('active'));
   const btn=document.querySelector('[data-cat="'+cat+'"][data-i="'+key+'"]');
   if(btn) btn.classList.add('active');
-  const container=document.getElementById('iv_'+cat);
-  container.querySelectorAll('.iview').forEach(v=>v.classList.remove('active'));
+  document.getElementById('iv_'+cat).querySelectorAll('.iview').forEach(v=>v.classList.remove('active'));
   const sid=key.replaceAll(' ','_').replaceAll('&','n').replaceAll('/','_');
   const view=document.getElementById('iv_'+sid);
   if(view){{
@@ -1230,28 +1268,19 @@ function selInst(cat,key){{
     loadRptStances(sid);
   }}
 }}
-
 function selMain(mt){{
   document.querySelectorAll('.mtab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.main-sec').forEach(s=>s.classList.remove('active'));
   document.querySelector('[data-mt="'+mt+'"]').classList.add('active');
   document.getElementById('ms_'+mt).classList.add('active');
-  if(mt==='cot'){{
-    const firstCat=document.querySelector('.ctab');
-    if(firstCat) selCat(firstCat.dataset.c);
-  }}
+  if(mt==='cot'){{const fc=document.querySelector('.ctab');if(fc)selCat(fc.dataset.c);}}
 }}
-
-// ── CHARTS ───────────────────────────────────────────────────
 function setChartPer(btn,sid){{
   btn.closest('.period-btns').querySelectorAll('.per-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
-  const per=btn.dataset.per;
-  const n=per==='1y'?52:per==='3y'?156:9999;
-  CurPer[sid]=n;
-  drawMainChart(sid,n); drawBarsFor(sid,n);
+  const per=btn.dataset.per; const n=per==='1y'?52:per==='3y'?156:9999;
+  CurPer[sid]=n; drawMainChart(sid,n); drawBarsFor(sid,n);
 }}
-
 function drawMainChart(sid,nWeeks){{
   const cv=document.getElementById('cv_'+sid); if(!cv) return;
   if(Charts[sid]){{Charts[sid].destroy();delete Charts[sid];}}
@@ -1281,16 +1310,13 @@ function drawMainChart(sid,nWeeks){{
     }}
   }});
 }}
-
 function drawBarsFor(sid,nWeeks){{
   const d=_cd[sid]; if(!d) return;
-  const n=Math.min(nWeeks,d.dates.length);
-  const dates=d.dates.slice(-n);
+  const n=Math.min(nWeeks,d.dates.length); const dates=d.dates.slice(-n);
   drawOneBar('barcv_ls_'+sid,dates,d.ld.slice(-n),CL_LS,'rgba(240,81,90,.75)');
   drawOneBar('barcv_cm_'+sid,dates,d.cd.slice(-n),CL_CM,'rgba(240,81,90,.75)');
   drawOneBar('barcv_st_'+sid,dates,d.sd.slice(-n),CL_ST,'rgba(15,18,28,.9)');
 }}
-
 function drawOneBar(cvId,dates,data,baseColor,negColor){{
   const cv=document.getElementById(cvId); if(!cv) return;
   const key='b_'+cvId;
@@ -1307,13 +1333,10 @@ function drawOneBar(cvId,dates,data,baseColor,negColor){{
       scales:{{x:{{display:false}},y:{{display:true,
         grid:{{color:'rgba(52,61,90,.6)',lineWidth:.5}},
         ticks:{{color:'#8090b0',font:{{family:'Courier New',size:8}},maxTicksLimit:3,callback:v=>fmtV(v,true)}},
-        border:{{display:false}}}}
-      }}
+        border:{{display:false}}}}}}
     }}
   }});
 }}
-
-// ── COT INDEX ────────────────────────────────────────────────
 function pctSel(btn,sid){{
   btn.closest('.psel-group').querySelectorAll('.psel').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active'); updatePctBar(sid);
@@ -1324,7 +1347,7 @@ function pperSel(btn,sid){{
 }}
 function updatePctBar(sid){{
   const view=document.getElementById('iv_'+sid); if(!view) return;
-  const p  =view.querySelector('.psel.active')?.dataset.p  ||'ls';
+  const p=view.querySelector('.psel.active')?.dataset.p||'ls';
   const per=view.querySelector('.pper.active')?.dataset.per||'all';
   const val=_ci[sid]?.[p]?.[per]??50;
   const pos=Math.min(Math.max(val,0),100);
@@ -1334,13 +1357,11 @@ function updatePctBar(sid){{
   const valEl=document.getElementById('pctval_'+sid);
   const lblEl=document.getElementById('pctlbl_'+sid);
   const curEl=document.getElementById('pctcur_'+sid);
-  if(mk)    mk.style.left=pos+'%';
+  if(mk)mk.style.left=pos+'%';
   if(valEl){{valEl.style.color=col;valEl.textContent=val.toFixed(1)+'%';}}
-  if(lblEl) lblEl.textContent=lbl;
+  if(lblEl)lblEl.textContent=lbl;
   if(curEl){{curEl.style.left=pos+'%';curEl.textContent=val.toFixed(1)+'%';}}
 }}
-
-// ── HISTORY TABLE ────────────────────────────────────────────
 function setHist(btn,sid){{
   const n=parseInt(btn.dataset.n);
   btn.closest('.htable-hdr').querySelectorAll('.hbtn').forEach(b=>b.classList.remove('active'));
@@ -1352,100 +1373,67 @@ function filterRows(sid,n){{
     tr.style.display=parseInt(tr.dataset.row)<n?'':'none';
   }});
 }}
-
-// ── REPORTS STANCES ──────────────────────────────────────────
-// Зберігаємо в localStorage: ключ = rpt_{{sid}}_{{reportId}} → 'long'|'short'|'neutral'
-// Якщо залогінений — також синхронізуємо з сервером
-
-function setRpt(sid, rptId, stance) {{
-  // Оновлюємо кнопки
-  const row = document.getElementById('rpt_' + sid + '_' + rptId);
-  if (!row) return;
-  row.querySelectorAll('.rb').forEach(b => b.classList.remove('active'));
-  const cls = stance === 'long' ? '.rb-l' : stance === 'short' ? '.rb-s' : '.rb-n';
+function setRpt(sid,rptId,stance){{
+  const row=document.getElementById('rpt_'+sid+'_'+rptId); if(!row) return;
+  row.querySelectorAll('.rb').forEach(b=>b.classList.remove('active'));
+  const cls=stance==='long'?'.rb-l':stance==='short'?'.rb-s':'.rb-n';
   row.querySelector(cls)?.classList.add('active');
-
-  // Зберігаємо локально
-  const key = 'rpt_' + sid + '_' + rptId;
-  localStorage.setItem(key, stance);
-
-  // Якщо залогінений — відправляємо на сервер
-  if (_loggedIn) {{
-    fetch('/api/rpt_stance', {{
-      method: 'POST',
-      headers: {{'Content-Type': 'application/json'}},
-      body: JSON.stringify({{instrument: sid, report: rptId, stance: stance}})
-    }}).catch(() => {{}});
+  localStorage.setItem('rpt_'+sid+'_'+rptId,stance);
+  if(_loggedIn){{
+    fetch('/api/rpt_stance',{{method:'POST',headers:{{'Content-Type':'application/json'}},
+      body:JSON.stringify({{instrument:sid,report:rptId,stance:stance}})}}).catch(()=>{{}});
   }}
 }}
-
-function loadRptStances(sid) {{
-  // Спочатку завантажуємо з localStorage
-  const rptIds = {json.dumps([r['id'] for r in REPORTS])};
-  rptIds.forEach(rptId => {{
-    const key = 'rpt_' + sid + '_' + rptId;
-    const saved = localStorage.getItem(key) || 'neutral';
-    applyRptStance(sid, rptId, saved);
+function loadRptStances(sid){{
+  const rptIds={json.dumps([r['id'] for r in REPORTS])};
+  rptIds.forEach(rptId=>{{
+    const saved=localStorage.getItem('rpt_'+sid+'_'+rptId)||'neutral';
+    applyRptStance(sid,rptId,saved);
   }});
-
-  // Якщо залогінений — перезавантажуємо з сервера (сервер має пріоритет)
-  if (_loggedIn) {{
-    fetch('/api/rpt_stances?instrument=' + sid)
-      .then(r => r.json())
-      .then(data => {{
-        if (data && data.stances) {{
-          Object.entries(data.stances).forEach(([rptId, stance]) => {{
-            applyRptStance(sid, rptId, stance);
-            localStorage.setItem('rpt_' + sid + '_' + rptId, stance);
-          }});
-        }}
-      }}).catch(() => {{}});
+  if(_loggedIn){{
+    fetch('/api/rpt_stances?instrument='+sid).then(r=>r.json()).then(data=>{{
+      if(data&&data.stances){{
+        Object.entries(data.stances).forEach(([rptId,stance])=>{{
+          applyRptStance(sid,rptId,stance);
+          localStorage.setItem('rpt_'+sid+'_'+rptId,stance);
+        }});
+      }}
+    }}).catch(()=>{{}});
   }}
 }}
-
-function applyRptStance(sid, rptId, stance) {{
-  const row = document.getElementById('rpt_' + sid + '_' + rptId);
-  if (!row) return;
-  row.querySelectorAll('.rb').forEach(b => b.classList.remove('active'));
-  const cls = stance === 'long' ? '.rb-l' : stance === 'short' ? '.rb-s' : '.rb-n';
+function applyRptStance(sid,rptId,stance){{
+  const row=document.getElementById('rpt_'+sid+'_'+rptId); if(!row) return;
+  row.querySelectorAll('.rb').forEach(b=>b.classList.remove('active'));
+  const cls=stance==='long'?'.rb-l':stance==='short'?'.rb-s':'.rb-n';
   row.querySelector(cls)?.classList.add('active');
 }}
-
-// ── FORMAT ───────────────────────────────────────────────────
 function fmtV(n,short=false){{
-  if(n===null||isNaN(n)) return'—';
-  n=Math.round(n);
+  if(n===null||isNaN(n))return'—'; n=Math.round(n);
   if(short){{
-    if(Math.abs(n)>=1e6) return(n/1e6).toFixed(1)+'M';
-    if(Math.abs(n)>=1e3) return(n/1e3).toFixed(0)+'K';
+    if(Math.abs(n)>=1e6)return(n/1e6).toFixed(1)+'M';
+    if(Math.abs(n)>=1e3)return(n/1e3).toFixed(0)+'K';
     return''+n;
   }}
   const sign=n>0?'+':n<0?'-':'';
   return sign+Math.abs(n).toLocaleString('uk-UA');
 }}
 function fmtFull(n){{
-  if(n===null||isNaN(n)) return'—';
-  n=Math.round(n);
+  if(n===null||isNaN(n))return'—'; n=Math.round(n);
   const sign=n>0?'+':n<0?'-':'';
   return sign+Math.abs(n).toLocaleString('uk-UA');
 }}
-
-// ── AUTH ─────────────────────────────────────────────────────
-function openAuth(){{ document.getElementById('authOverlay').classList.add('open'); }}
-function closeAuth(){{ document.getElementById('authOverlay').classList.remove('open'); }}
+function openAuth(){{document.getElementById('authOverlay').classList.add('open');}}
+function closeAuth(){{document.getElementById('authOverlay').classList.remove('open');}}
 function authTab(t){{
   document.querySelectorAll('.auth-tab').forEach((el,i)=>
     el.classList.toggle('active',(i===0&&t==='login')||(i===1&&t==='reg')));
   document.getElementById('at-login').style.display=t==='login'?'':'none';
   document.getElementById('at-reg').style.display=t==='reg'?'':'none';
-  ['al-msg','ar-msg'].forEach(id=>{{
-    const el=document.getElementById(id); if(el) el.style.display='none';
-  }});
+  ['al-msg','ar-msg'].forEach(id=>{{const el=document.getElementById(id);if(el)el.style.display='none';}});
 }}
 function showAuthMsg(id,text,isErr){{
   const el=document.getElementById(id);
-  el.textContent=text; el.className='auth-msg '+(isErr?'err':'ok');
-  el.style.display='block';
+  el.textContent=text;el.className='auth-msg '+(isErr?'err':'ok');el.style.display='block';
 }}
 async function doAuthLogin(){{
   const email=document.getElementById('al-email').value.trim();
@@ -1473,55 +1461,40 @@ async function doAuthReg(){{
     else showAuthMsg('ar-msg',data.error||'Помилка реєстрації',true);
   }}catch(e){{showAuthMsg('ar-msg','Сервер недоступний',true);}}
 }}
-async function doLogout(){{
-  await fetch('/api/logout',{{method:'POST'}});
-  setLoggedOut(); closeAuth();
-}}
+async function doLogout(){{await fetch('/api/logout',{{method:'POST'}});setLoggedOut();closeAuth();}}
 function setLoggedIn(email){{
-  _loggedIn=true; _userEmail=email;
+  _loggedIn=true;_userEmail=email;
   const btn=document.getElementById('authBtn');
   if(btn){{btn.textContent='● '+email.split('@')[0].toUpperCase().substring(0,8);btn.classList.add('logged');}}
   const logged=document.getElementById('auth-logged');
   const loggedout=document.getElementById('auth-loggedout');
   const emailDisplay=document.getElementById('auth-email-display');
-  if(emailDisplay) emailDisplay.textContent=email;
-  if(logged) logged.style.display='';
-  if(loggedout) loggedout.style.display='none';
-  // Перезавантажуємо стани звітів для поточного інструменту
+  if(emailDisplay)emailDisplay.textContent=email;
+  if(logged)logged.style.display='';if(loggedout)loggedout.style.display='none';
   const activeView=document.querySelector('.iview.active');
-  if(activeView) loadRptStances(activeView.dataset.sid);
+  if(activeView)loadRptStances(activeView.dataset.sid);
 }}
 function setLoggedOut(){{
-  _loggedIn=false; _userEmail='';
+  _loggedIn=false;_userEmail='';
   const btn=document.getElementById('authBtn');
   if(btn){{btn.textContent='УВІЙТИ';btn.classList.remove('logged');}}
   const logged=document.getElementById('auth-logged');
   const loggedout=document.getElementById('auth-loggedout');
-  if(logged) logged.style.display='none';
-  if(loggedout) loggedout.style.display='';
+  if(logged)logged.style.display='none';if(loggedout)loggedout.style.display='';
 }}
-
-// Перевіряємо стан авторизації при завантаженні
-fetch('/api/me').then(r=>r.json()).then(d=>{{
-  if(d.logged_in) setLoggedIn(d.email);
-}}).catch(()=>{{}});
-
-// ── INIT ─────────────────────────────────────────────────────
+fetch('/api/me').then(r=>r.json()).then(d=>{{if(d.logged_in)setLoggedIn(d.email);}}).catch(()=>{{}});
 const firstCat=document.querySelector('.ctab');
-if(firstCat) selCat(firstCat.dataset.c);
+if(firstCat)selCat(firstCat.dataset.c);
 </script>
 </body>
 </html>
 """
 
 
-# ================================================================
-# 🚀  ЗАПУСК
-# ================================================================
 def main():
     print()
     print("="*55)
-    print("   COT Dashboard Generator v11")
+    print("   COT Dashboard Generator v12")
     print("="*55)
     print()
     OUTPUT_FILE.parent.mkdir(parents=True,exist_ok=True)
@@ -1537,7 +1510,16 @@ def main():
     kb=OUTPUT_FILE.stat().st_size/1024
     print(f"✅  Збережено: {OUTPUT_FILE}  ({kb:.0f} KB)")
     print("🌐  Відкриваємо браузер...")
-    webbrowser.open(OUTPUT_FILE.as_uri())
+    import os, sys
+    uri = OUTPUT_FILE.as_uri()
+    opened = webbrowser.open(uri)
+    if not opened:
+        # Запасний варіант для Windows
+        try:
+            os.startfile(str(OUTPUT_FILE))
+        except Exception:
+            pass
+    print(f"   Файл: {OUTPUT_FILE}")
     print("\n✨  Готово!\n")
 
 if __name__=='__main__':
