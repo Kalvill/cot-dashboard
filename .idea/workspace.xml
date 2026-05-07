@@ -4,8 +4,10 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="555262c3-5dd2-4d7e-aea2-edaa9b0911e9" name="Changes" comment="Update10">
+    <list default="true" id="555262c3-5dd2-4d7e-aea2-edaa9b0911e9" name="Changes" comment="Update11">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/generate.py" beforeDir="false" afterPath="$PROJECT_DIR$/generate.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/output/cot_dashboard.html" beforeDir="false" afterPath="$PROJECT_DIR$/output/cot_dashboard.html" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -50,11 +52,12 @@
     &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
     &quot;git-widget-placeholder&quot;: &quot;main&quot;,
-    &quot;last_opened_file_path&quot;: &quot;C:/Users/Lenovo/PytonProjects/COTDASHBOARD&quot;
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/Lenovo/PytonProjects/COTDASHBOARD/.idea&quot;
   }
 }</component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
+      <recent name="C:\Users\Lenovo\PytonProjects\COTDASHBOARD\.idea" />
       <recent name="C:\Users\Lenovo\PytonProjects\COTDASHBOARD" />
     </key>
   </component>
@@ -153,7 +156,15 @@
       <option name="project" value="LOCAL" />
       <updated>1777967679515</updated>
     </task>
-    <option name="localTasksCounter" value="11" />
+    <task id="LOCAL-00011" summary="Update11">
+      <option name="closed" value="true" />
+      <created>1778013924187</created>
+      <option name="number" value="00011" />
+      <option name="presentableId" value="LOCAL-00011" />
+      <option name="project" value="LOCAL" />
+      <updated>1778013924187</updated>
+    </task>
+    <option name="localTasksCounter" value="12" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
@@ -167,6 +178,7 @@
     <MESSAGE value="Update8_l_n_s" />
     <MESSAGE value="Update9" />
     <MESSAGE value="Update10" />
-    <option name="LAST_COMMIT_MESSAGE" value="Update10" />
+    <MESSAGE value="Update11" />
+    <option name="LAST_COMMIT_MESSAGE" value="Update11" />
   </component>
 </project>

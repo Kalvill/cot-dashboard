@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""COT Dashboard Generator v12"""
+"""COT Dashboard Generator v13"""
 
+import math
 import pandas as pd
 import json
 import webbrowser
@@ -306,7 +307,6 @@ def read_sheet(xl, name, overview):
                 '3m':calc_cot_index(series,13),
             }
 
-        # ── Stats: max/min all-time and 1yr for net, cl, cs ─────
         def stats(net_s, cl_s=None, cs_s=None):
             def mm(series):
                 s = [float(v) for v in series if v != 0]
@@ -336,7 +336,6 @@ def read_sheet(xl, name, overview):
         hist_df=df.tail(HISTORY).reset_index(drop=True)
         def gch(idx):
             return to_num(hist_df.iloc[:,idx]) if idx<hist_df.shape[1] else [0.0]*len(hist_df)
-        # SM DIV з BF/BG/BH — якщо стовпців немає, fallback до overview
         def gch_sm(idx, fallback_key):
             if idx < hist_df.shape[1]:
                 vals = pd.to_numeric(hist_df.iloc[:,idx], errors='coerce').tolist()
@@ -350,7 +349,6 @@ def read_sheet(xl, name, overview):
             'cm_cl':gch(COL['cm_cl']),'cm_cs':gch(COL['cm_cs']),'cm_net':gch(COL['cm_net']),
             'st_cl':gch(COL['st_cl']),'st_cs':gch(COL['st_cs']),'st_net':gch(COL['st_net']),
             'oi':gch(oi_col),
-            # SM DIV: BF=57, BG=58, BH=59
             'sm_div_row':    gch_sm(57, 'sm_div'),
             'sm_div_6m_row': gch_sm(58, 'sm_div_6m'),
             'sm_div_3m_row': gch_sm(59, 'sm_div_3m'),
@@ -361,6 +359,9 @@ def read_sheet(xl, name, overview):
         cm_chg=round(float(cm_net[i0])-float(cm_net[i1]),0)
         st_chg=round(float(st_net[i0])-float(st_net[i1]),0)
         oi_chg=round(oi_cur-oi_prev,0)
+        # OI Capacity: поточний OI відносно максимального (all-time)
+        _oi_stats = stats(oi_all)
+        oi_capacity = round(oi_cur / _oi_stats['max_all'] * 100, 1) if _oi_stats.get('max_all', 0) > 0 else 50.0
         return{
             'name':name,'display':disp(name),'sid':sid(name),
             'chart':chart,'hist':hist,
@@ -377,6 +378,7 @@ def read_sheet(xl, name, overview):
                 'div':ov.get('sm_div',0.0),'div_3m':ov.get('sm_div_3m',0.0),'div_6m':ov.get('sm_div_6m',0.0),
             },
             'spark':{'ls':ls_net,'cm':cm_net,'st':st_net,'oi':oi_all},
+            'oi_capacity': oi_capacity,
             'cur':{
                 'date':all_dates[i0],
                 'ls_net':ls_net[i0],'cm_net':cm_net[i0],'st_net':st_net[i0],
@@ -419,7 +421,76 @@ def load_all():
 
 
 # ================================================================
-# 🎨  ТАБЛИЦЯ з Max/Min + SM DIV колонками
+# 🎯  GAUGE ІНДИКАТОР (дугоподібний)
+# ================================================================
+def make_gauge_svg(value, color, size=74):
+    """
+    Дугоподібний індикатор 0–100%.
+    Дуга: від нижнього-лівого (7:20) до нижнього-правого (4:40),
+    проходить через верхню точку. Загальний кут: 240° за годинниковою у SVG.
+    """
+    value = max(0.0, min(100.0, float(value)))
+    cx = cy = size / 2
+    r = size * 0.40
+
+    # SVG кути (за годинниковою від правого = 0°)
+    START_SVG = 140.0   # ~7:20 (нижній лівий)
+    SWEEP     = 240.0   # градусів за годинниковою
+
+    def pt(svg_deg):
+        a = math.radians(svg_deg)
+        return (round(cx + r * math.cos(a), 2), round(cy + r * math.sin(a), 2))
+
+    s  = pt(START_SVG)               # 0%
+    e  = pt(START_SVG + SWEEP)       # 100%  (= 380° mod 360° = 20°)
+
+    val_sweep = value / 100.0 * SWEEP
+    v = pt(START_SVG + val_sweep)
+
+    # Фонова дуга (ціла 240°, CW, large-arc=1, sweep=1)
+    bg = f"M{s[0]},{s[1]} A{r:.1f},{r:.1f} 0 1,1 {e[0]},{e[1]}"
+
+    # Активна дуга (0 → value)
+    if value > 0:
+        vl = 1 if val_sweep > 180 else 0
+        fg = f"M{s[0]},{s[1]} A{r:.1f},{r:.1f} 0 {vl},1 {v[0]},{v[1]}"
+    else:
+        fg = None
+
+    # Текст по центру дуги (зсунутий трохи вниз)
+    tx = round(cx, 1)
+    ty = round(cy + r * 0.22, 1)
+
+    return (
+        f'<svg viewBox="0 0 {size} {size}" width="{size}" height="{size}" '
+        f'xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;display:block">'
+        # Фонова дуга
+        f'<path d="{bg}" stroke="#252d48" stroke-width="3" fill="none" stroke-linecap="round"/>'
+        # Активна дуга
+        + (f'<path d="{fg}" stroke="{color}" stroke-width="3" fill="none" stroke-linecap="round"/>' if fg else '')
+        # Мітка на поточній позиції
+        + f'<circle cx="{v[0]}" cy="{v[1]}" r="4" fill="{color}"/>'
+        # Крапка початку (0%)
+        f'<circle cx="{s[0]}" cy="{s[1]}" r="2.5" fill="#252d48" stroke="{color}" stroke-width="1"/>'
+        # Число по центру
+        f'<text x="{tx}" y="{ty + 5}" text-anchor="middle" dominant-baseline="middle" '
+        f'font-family="Courier New,monospace" font-size="15" font-weight="bold" fill="{color}">'
+        f'{int(round(value))}</text>'
+        f'</svg>'
+    )
+
+
+def gauge_color(value, oi=False):
+    """Колір gauge: 0-15% = червоний, 15-85% = білий, 85-100% = зелений. OI — завжди білий."""
+    if oi: return '#dde2ee'
+    v = float(value)
+    if v < 15:  return '#f0515a'
+    if v > 85:  return '#20d483'
+    return '#dde2ee'
+
+
+# ================================================================
+# 🎨  ТАБЛИЦЯ — єдина таблиця для синхронізації колонок MM + Data
 # ================================================================
 def intensity_bg(val, max_abs):
     if max_abs==0: return ''
@@ -430,196 +501,65 @@ def intensity_bg(val, max_abs):
     except: pass
     return ''
 
-def sm_div_cell(v):
-    """Клітинка SM DIV з кольором"""
-    if v is None: return '<td class="d sm-td">—</td>'
-    try:
-        f = float(v)
-        cls = 'g' if f > 0 else ('r' if f < 0 else 'd')
-        return f'<td class="{cls} sm-td">{f:+.2f}</td>'
-    except:
-        return '<td class="d sm-td">—</td>'
-
-def maxmin_row(label, val_all, val_1y, cls_all='', cls_1y=''):
-    """Рядок max/min для одної групи"""
-    def cell(v, cls=''):
-        return f'<td class="mm-val {cls}">{fv_full(v, sign=True)}</td>'
-    return (
-        f'<tr class="mm-row">'
-        f'<td class="mm-lbl">{label}</td>'
-        + cell(val_all, cls_all)
-        + cell(val_1y, cls_1y)
-        + '</tr>'
-    )
 
 def make_hist_table(hist, stats_ls, stats_cm, stats_st, stats_oi, sm):
-    n=len(hist['dates'])
-    if n==0: return '<p style="padding:12px;color:#8090b0">Немає даних</p>'
+    """
+    Єдина таблиця: MAX/MIN рядки у першому tbody,
+    дані — у другому tbody. Колонки синхронізовані через спільний colgroup.
+    OI — лише одна колонка (All time).
+    """
+    n = len(hist['dates'])
+    if n == 0:
+        return '<p style="padding:12px;color:#8090b0">Немає даних</p>'
 
     def maxabs(lst):
-        vals=[abs(v) for v in lst if v!=0]; return max(vals) if vals else 1
+        vals = [abs(v) for v in lst if v != 0]
+        return max(vals) if vals else 1
 
-    m_ls_cl=maxabs(hist['ls_cl']); m_ls_cs=maxabs(hist['ls_cs'])
-    m_cm_cl=maxabs(hist['cm_cl']); m_cm_cs=maxabs(hist['cm_cs'])
-    m_st_cl=maxabs(hist['st_cl']); m_st_cs=maxabs(hist['st_cs'])
+    m_ls_cl = maxabs(hist['ls_cl']); m_ls_cs = maxabs(hist['ls_cs'])
+    m_cm_cl = maxabs(hist['cm_cl']); m_cm_cs = maxabs(hist['cm_cs'])
+    m_st_cl = maxabs(hist['st_cl']); m_st_cs = maxabs(hist['st_cs'])
 
-    # ── Max/Min блок ─────────────────────────────────────
+    # Кольори для заголовків
     ls_bg  = 'background:rgba(74,158,255,.18);color:#fff;border-left:2px solid rgba(74,158,255,.7)'
     cm_bg  = 'background:rgba(32,212,131,.15);color:#fff;border-left:2px solid rgba(32,212,131,.7)'
     st_bg  = 'background:rgba(240,81,90,.15);color:#fff;border-left:2px solid rgba(240,81,90,.7)'
     oi_bg  = 'background:rgba(160,170,192,.1);color:#fff'
-
-    # colgroup для синхронізації ширин між mm і data таблицями
-    mm_colgroup = (
-        '<colgroup>'
-        '<col style="width:52px">'             # лейбл MAX/MIN
-        '<col><col><col>'                       # LS: CHG L / CHG S / NET
-        '<col><col><col>'                       # CM
-        '<col><col><col>'                       # ST
-        '<col style="width:70px">'             # OI All
-        '<col style="width:70px">'             # OI 1Y
-        '<col style="width:48px">'             # SM DIV
-        '<col style="width:48px">'             # SM 6M
-        '<col style="width:48px">'             # SM 3M
-        '</colgroup>'
-    )
-
-    mm_thead = (
-        '<thead class="mm-thead">'
-        '<tr>'
-        '<th class="mm-lbl-h"></th>'
-        f'<th colspan="3" style="{ls_bg}">LARGE SPEC</th>'
-        f'<th colspan="3" style="{cm_bg}">COMMERCIALS</th>'
-        f'<th colspan="3" style="{st_bg}">SMALL TRADERS</th>'
-        f'<th colspan="2" style="{oi_bg}">OI</th>'
-        '<th class="sm-th">SM DIV</th>'
-        '<th class="sm-th">SM 6M</th>'
-        '<th class="sm-th">SM 3M</th>'
-        '</tr>'
-        '<tr>'
-        '<th class="mm-lbl-h"></th>'
-        f'<th style="{ls_bg}">CHG L</th><th style="{ls_bg}">CHG S</th><th style="{ls_bg}">NET</th>'
-        f'<th style="{cm_bg}">CHG L</th><th style="{cm_bg}">CHG S</th><th style="{cm_bg}">NET</th>'
-        f'<th style="{st_bg}">CHG L</th><th style="{st_bg}">CHG S</th><th style="{st_bg}">NET</th>'
-        f'<th style="{oi_bg}">All</th><th style="{oi_bg}">1Y</th>'
-        '<th class="sm-th"></th><th class="sm-th"></th><th class="sm-th"></th>'
-        '</tr>'
-        '</thead>'
-    )
-
-    def mm_v(v, cls=''):
-        return f'<td class="mm-val {cls}">{fv_full(v, sign=True)}</td>'
-
-    def sm_mini(v):
-        if v is None: return '<td class="sm-td d">-</td>'
-        try:
-            f2=float(v); c='g' if f2>0 else('r' if f2<0 else 'd')
-            return f'<td class="sm-td {c}">{f2:+.2f}</td>'
-        except:
-            return '<td class="sm-td d">-</td>'
-
-    def grp(st, key, col):
-        cl_d=st.get('cl') or {}; cs_d=st.get('cs') or {}
-        return mm_v(cl_d.get(key,0),col)+mm_v(cs_d.get(key,0),col)+mm_v(st.get(key,0),col)
-
-    mm_rows = (
-        '<tr class="mm-row"><td class="mm-lbl">MAX</td>'
-        +grp(stats_ls,'max_all','g')+grp(stats_cm,'max_all','g')+grp(stats_st,'max_all','g')
-        +mm_v(stats_oi['max_all'],'')+mm_v(stats_oi['max_1y'],'')
-        +sm_mini(sm['div'])+sm_mini(sm['div_6m'])+sm_mini(sm['div_3m'])+'</tr>'
-        '<tr class="mm-row"><td class="mm-lbl">MIN</td>'
-        +grp(stats_ls,'min_all','r')+grp(stats_cm,'min_all','r')+grp(stats_st,'min_all','r')
-        +mm_v(stats_oi['min_all'],'')+mm_v(stats_oi['min_1y'],'')
-        +'<td class="sm-td"></td><td class="sm-td"></td><td class="sm-td"></td></tr>'
-        '<tr class="mm-row mm-yr"><td class="mm-lbl">MAX 1Y</td>'
-        +grp(stats_ls,'max_1y','g')+grp(stats_cm,'max_1y','g')+grp(stats_st,'max_1y','g')
-        +mm_v(stats_oi['max_1y'],'')+mm_v(stats_oi['max_1y'],'')
-        +'<td class="sm-td"></td><td class="sm-td"></td><td class="sm-td"></td></tr>'
-        '<tr class="mm-row mm-yr"><td class="mm-lbl">MIN 1Y</td>'
-        +grp(stats_ls,'min_1y','r')+grp(stats_cm,'min_1y','r')+grp(stats_st,'min_1y','r')
-        +mm_v(stats_oi['min_1y'],'')+mm_v(stats_oi['min_1y'],'')
-        +'<td class="sm-td"></td><td class="sm-td"></td><td class="sm-td"></td></tr>'
-    )
-
-    mm_block = (
-        f'<div class="mm-wrap">'
-        f'<table class="mm-table">{mm_colgroup}{mm_thead}<tbody>{mm_rows}</tbody></table>'
-        f'</div>'
-    )
-
-    # ── Тижнева таблиця ──────────────────────────────────
-    rows=[]
-    for i in range(n-1,-1,-1):
-        row_idx=n-1-i
-        def td_chg(v,maxv):
-            cls=cc(v); txt=fv_full(v,sign=True) if v!=0 else '—'
-            return f'<td class="{cls}"{intensity_bg(v,maxv)}>{txt}</td>'
-        def td_net(v,extra=''):
-            return f'<td class="{cc(v)}{extra}">{fv_full(v,sign=True)}</td>'
-
-        sm_v  = hist.get('sm_div_row',  [None]*n)
-        sm_6m = hist.get('sm_div_6m_row',[None]*n)
-        sm_3m = hist.get('sm_div_3m_row',[None]*n)
-        # SM DIV тільки в першому рядку (актуальне значення)
-        def sm_cell(v):
-            if v is None or (isinstance(v, float) and v != v): return '<td class="sm-td d"></td>'
-            try:
-                f2=float(v)
-                if f2 == 0: return '<td class="sm-td d"></td>'
-                c='g' if f2>0 else 'r'
-                return f'<td class="sm-td {c}">{f2:+.3f}</td>'
-            except:
-                return '<td class="sm-td d"></td>'
-
-        # SM DIV per-row з BF/BG/BH
-        sm_div_val    = hist.get('sm_div_row',    [None]*n)
-        sm_div_6m_val = hist.get('sm_div_6m_row', [None]*n)
-        sm_div_3m_val = hist.get('sm_div_3m_row', [None]*n)
-
-        row=(
-            f'<tr data-row="{row_idx}">'
-            f'<td class="date-col">{hist["dates"][i]}</td>'
-            +td_chg(hist['ls_cl'][i],m_ls_cl)+td_chg(hist['ls_cs'][i],m_ls_cs)
-            +td_net(hist['ls_net'][i],' sep-r')
-            +td_chg(hist['cm_cl'][i],m_cm_cl)+td_chg(hist['cm_cs'][i],m_cm_cs)
-            +td_net(hist['cm_net'][i],' sep-r')
-            +td_chg(hist['st_cl'][i],m_st_cl)+td_chg(hist['st_cs'][i],m_st_cs)
-            +td_net(hist['st_net'][i],' sep-r')
-            +f'<td class="t">{fv_full(hist["oi"][i])}</td>'
-            +sm_cell(sm_div_val[i])
-            +sm_cell(sm_div_6m_val[i])
-            +sm_cell(sm_div_3m_val[i])
-            +'</tr>'
-        )
-        rows.append(row)
-
-    # Кольорові підзаголовки з лівими рамками як у mm-блоці
-    sub_ls = 'background:var(--bg3);color:var(--d);border-left:2px solid rgba(74,158,255,.5)'
-    sub_cm = 'background:var(--bg3);color:var(--d);border-left:2px solid rgba(32,212,131,.5)'
-    sub_st = 'background:var(--bg3);color:var(--d);border-left:2px solid rgba(240,81,90,.5)'
+    sm_bg  = 'background:var(--bg3);color:var(--d)'
     sub_plain = 'background:var(--bg3);color:var(--d)'
+    sub_ls = f'{sub_plain};border-left:2px solid rgba(74,158,255,.5)'
+    sub_cm = f'{sub_plain};border-left:2px solid rgba(32,212,131,.5)'
+    sub_st = f'{sub_plain};border-left:2px solid rgba(240,81,90,.5)'
 
-    data_thead = (
+    # Colgroup — 14 колонок (ДАТА + LS×3 + CM×3 + ST×3 + OI + SM×3)
+    colgroup = (
         '<colgroup>'
-        '<col style="width:84px">'              # ДАТА
-        '<col><col><col>'                        # LS: CHG L / CHG S / NET
-        '<col><col><col>'                        # CM
-        '<col><col><col>'                        # ST
-        '<col style="width:70px">'              # OI
-        '<col style="width:48px">'              # SM DIV
-        '<col style="width:48px">'              # SM 6M
-        '<col style="width:48px">'              # SM 3M
+        '<col style="width:84px">'    # 0: ДАТА / лейбл MM
+        '<col><col><col>'              # 1-3: LS CHG L / CHG S / NET
+        '<col><col><col>'              # 4-6: CM CHG L / CHG S / NET
+        '<col><col><col>'              # 7-9: ST CHG L / CHG S / NET
+        '<col style="width:82px">'    # 10: OI
+        '<col style="width:50px">'    # 11: SM DIV
+        '<col style="width:50px">'    # 12: SM 6M
+        '<col style="width:50px">'    # 13: SM 3M
         '</colgroup>'
+    )
+
+    # Thead — спільний для MM та Data секцій
+    thead = (
         '<thead>'
-        '<tr>'
-        f'<th rowspan="2" class="th-left th-date">ДАТА</th>'
+        # Рядок 1: групові назви
+        '<tr class="th-row1">'
+        '<th class="th-corner"></th>'
         f'<th colspan="3" class="th-group" style="{ls_bg}">LARGE SPECULATORS</th>'
         f'<th colspan="3" class="th-group" style="{cm_bg}">COMMERCIALS</th>'
         f'<th colspan="3" class="th-group" style="{st_bg}">SMALL TRADERS</th>'
-        f'<th rowspan="2" class="th-group">OI</th>'
-        f'<th colspan="3" class="th-group sm-th-group" style="background:var(--bg3);color:var(--d)">SM DIV</th>'
+        f'<th class="th-group" style="{oi_bg}">OI</th>'
+        f'<th colspan="3" class="th-group sm-th-group" style="{sm_bg}">SM DIV</th>'
         '</tr>'
-        '<tr>'
+        # Рядок 2: підзаголовки колонок
+        '<tr class="th-row2">'
+        '<th class="th-date th-left">ДАТА</th>'
         f'<th style="{sub_ls}">CHG L</th>'
         f'<th style="{sub_plain}">CHG S</th>'
         f'<th class="sep-r" style="{sub_plain}">NET POS</th>'
@@ -629,20 +569,124 @@ def make_hist_table(hist, stats_ls, stats_cm, stats_st, stats_oi, sm):
         f'<th style="{sub_st}">CHG L</th>'
         f'<th style="{sub_plain}">CHG S</th>'
         f'<th class="sep-r" style="{sub_plain}">NET POS</th>'
-        f'<th class="sm-th">All</th><th class="sm-th">6M</th><th class="sm-th">3M</th>'
+        f'<th style="{oi_bg}" class="th-oi">All</th>'
+        '<th class="sm-th">All</th><th class="sm-th">6M</th><th class="sm-th">3M</th>'
         '</tr>'
         '</thead>'
     )
 
-    return mm_block + (
+    # Хелпери для MM рядків
+    def mm_v(v, cls=''):
+        return f'<td class="mm-val {cls}">{fv_full(v, sign=True)}</td>'
+
+    def sm_mini(v):
+        if v is None: return '<td class="sm-td d">–</td>'
+        try:
+            f2 = float(v)
+            c = 'g' if f2 > 0 else ('r' if f2 < 0 else 'd')
+            return f'<td class="sm-td {c}">{f2:+.2f}</td>'
+        except:
+            return '<td class="sm-td d">–</td>'
+
+    def grp(st, key, col):
+        """3 клітинки: CHG L, CHG S, NET для однієї групи"""
+        cl_d = st.get('cl') or {}
+        cs_d = st.get('cs') or {}
+        return (
+            mm_v(cl_d.get(key, 0), col) +
+            mm_v(cs_d.get(key, 0), col) +
+            mm_v(st.get(key, 0), col)
+        )
+
+    # MM рядки (окремий tbody)
+    mm_rows = (
+        '<tr class="mm-row">'
+        '<td class="mm-lbl">MAX</td>'
+        + grp(stats_ls,'max_all','g') + grp(stats_cm,'max_all','g') + grp(stats_st,'max_all','g')
+        + mm_v(stats_oi['max_all'], '')
+        + sm_mini(sm['div']) + sm_mini(sm['div_6m']) + sm_mini(sm['div_3m'])
+        + '</tr>'
+
+        '<tr class="mm-row">'
+        '<td class="mm-lbl">MIN</td>'
+        + grp(stats_ls,'min_all','r') + grp(stats_cm,'min_all','r') + grp(stats_st,'min_all','r')
+        + mm_v(stats_oi['min_all'], '')
+        + '<td class="sm-td"></td><td class="sm-td"></td><td class="sm-td"></td>'
+        + '</tr>'
+
+        '<tr class="mm-row mm-yr">'
+        '<td class="mm-lbl">MAX 1Y</td>'
+        + grp(stats_ls,'max_1y','g') + grp(stats_cm,'max_1y','g') + grp(stats_st,'max_1y','g')
+        + mm_v(stats_oi['max_1y'], '')
+        + '<td class="sm-td"></td><td class="sm-td"></td><td class="sm-td"></td>'
+        + '</tr>'
+
+        '<tr class="mm-row mm-yr">'
+        '<td class="mm-lbl">MIN 1Y</td>'
+        + grp(stats_ls,'min_1y','r') + grp(stats_cm,'min_1y','r') + grp(stats_st,'min_1y','r')
+        + mm_v(stats_oi['min_1y'], '')
+        + '<td class="sm-td"></td><td class="sm-td"></td><td class="sm-td"></td>'
+        + '</tr>'
+    )
+    mm_tbody = f'<tbody class="mm-tbody">{mm_rows}</tbody>'
+
+    # Дані рядки (окремий tbody)
+    def td_chg(v, maxv):
+        cls = cc(v)
+        txt = fv_full(v, sign=True) if v != 0 else '—'
+        return f'<td class="{cls}"{intensity_bg(v, maxv)}>{txt}</td>'
+
+    def td_net(v, extra=''):
+        return f'<td class="{cc(v)}{extra}">{fv_full(v, sign=True)}</td>'
+
+    def sm_cell(v):
+        if v is None or (isinstance(v, float) and v != v):
+            return '<td class="sm-td d"></td>'
+        try:
+            f2 = float(v)
+            if f2 == 0: return '<td class="sm-td d"></td>'
+            c = 'g' if f2 > 0 else 'r'
+            return f'<td class="sm-td {c}">{f2:+.3f}</td>'
+        except:
+            return '<td class="sm-td d"></td>'
+
+    sm_div_val    = hist.get('sm_div_row',    [None]*n)
+    sm_div_6m_val = hist.get('sm_div_6m_row', [None]*n)
+    sm_div_3m_val = hist.get('sm_div_3m_row', [None]*n)
+
+    data_rows = []
+    for i in range(n-1, -1, -1):
+        row_idx = n-1-i
+        row = (
+            f'<tr data-row="{row_idx}">'
+            f'<td class="date-col">{hist["dates"][i]}</td>'
+            + td_chg(hist['ls_cl'][i], m_ls_cl)
+            + td_chg(hist['ls_cs'][i], m_ls_cs)
+            + td_net(hist['ls_net'][i], ' sep-r')
+            + td_chg(hist['cm_cl'][i], m_cm_cl)
+            + td_chg(hist['cm_cs'][i], m_cm_cs)
+            + td_net(hist['cm_net'][i], ' sep-r')
+            + td_chg(hist['st_cl'][i], m_st_cl)
+            + td_chg(hist['st_cs'][i], m_st_cs)
+            + td_net(hist['st_net'][i], ' sep-r')
+            + f'<td class="t">{fv_full(hist["oi"][i])}</td>'
+            + sm_cell(sm_div_val[i])
+            + sm_cell(sm_div_6m_val[i])
+            + sm_cell(sm_div_3m_val[i])
+            + '</tr>'
+        )
+        data_rows.append(row)
+
+    data_tbody = f'<tbody class="data-tbody">{"".join(data_rows)}</tbody>'
+
+    return (
         '<table class="ht">'
-        + data_thead
-        + '<tbody>'+''.join(rows)+'</tbody>'
+        + colgroup + thead + mm_tbody + data_tbody
         + '</table>'
     )
 
 
-def sm_bar(val,label):
+def sm_bar(val, label):
     v=float(val) if val else 0.0
     pct=min(max((v+1)/2*100,0),100)
     color='#20d483'if v>0 else('#f0515a'if v<0 else'#6a7290')
@@ -691,78 +735,112 @@ def make_reports_panel(s_id):
         f'<span class="rel-icon rel-d">●</span>прямий&nbsp;'
         f'<span class="rel-icon rel-i">■</span>непрямий'
         f'</div></div>'
-        + ''.join(rows) +
-        f'</div>'
+        + ''.join(rows)
+        + f'</div>'
     )
 
 
-def make_metric_card(lbl, val, chg, chg_pct, spark_series, spark_color, oi=False):
-    spark=make_sparkline(spark_series,spark_color)
-    try: chg_int=int(round(float(chg)))
-    except: chg_int=0
-    chg_cls=cc(chg)
-    if chg_int>0:  bg='background:rgba(32,212,131,.20);border-radius:3px;padding:2px 7px;display:inline-block;'
-    elif chg_int<0:bg='background:rgba(240,81,90,.20);border-radius:3px;padding:2px 7px;display:inline-block;'
-    else:          bg='padding:2px 7px;display:inline-block;'
-    # OI: завжди білий, без знаку
+def make_metric_card(lbl, val, chg, chg_pct, spark_series, spark_color,
+                     oi=False, gauge_val=50.0, sub_text='COT Index: —'):
+    """
+    Картка метрики:
+    - Лейбл вгорі зліва (повернуто)
+    - Велике число ліворуч
+    - Gauge індикатор праворуч
+    - Sparkline внизу
+    """
+    spark = make_sparkline(spark_series, spark_color)
+    try: chg_int = int(round(float(chg)))
+    except: chg_int = 0
+    chg_cls = cc(chg)
+    if chg_int > 0:
+        bg = 'background:rgba(32,212,131,.20);border-radius:3px;padding:2px 7px;display:inline-block;'
+    elif chg_int < 0:
+        bg = 'background:rgba(240,81,90,.20);border-radius:3px;padding:2px 7px;display:inline-block;'
+    else:
+        bg = 'padding:2px 7px;display:inline-block;'
+    # Значення
     if oi:
         val_str = f'<span class="t">{fv(val)}</span>'
     else:
-        val_str = f'<span class="{cc(val)}">{fv(val,sign=True)}</span>'
-    return(
+        val_str = f'<span class="{cc(val)}">{fv(val, sign=True)}</span>'
+    # Gauge
+    gcol = gauge_color(gauge_val, oi=oi)
+    g_svg = make_gauge_svg(gauge_val, gcol)
+    return (
         f'<div class="mc">'
+        # Лейбл — зліва вгорі (повернуто до попереднього стилю)
         f'<div class="mc-lbl">{lbl}</div>'
+        f'<div class="mc-inner">'
+        f'<div class="mc-left">'
         f'<div class="mc-val">{val_str}</div>'
         f'<div class="mc-chg-wrap"><span class="{chg_cls}" style="{bg}">'
         f'{ar(chg)} {fv_full(abs(chg_int))}'
         f'<span class="mc-wtag"> за тиждень</span></span></div>'
         f'<div class="mc-pct {chg_cls}">{chg_pct}</div>'
-        f'<div class="mc-sub">COT Index: —</div>'
+        f'<div class="mc-sub">{sub_text}</div>'
+        f'</div>'
+        f'<div class="mc-right">{g_svg}</div>'
+        f'</div>'
         f'{spark}'
         f'</div>'
     )
 
 
 def analysis_row(group_label, group_color, net, cl, cs, chg, chg_pct):
-    dc='g'if net>0 else'r'
-    return(
+    """
+    Панель аналізу: прибрано 'ЗМІНА ЗА ТИЖДЕНЬ',
+    збільшено шрифти підписів.
+    """
+    dc = 'g' if net > 0 else 'r'
+    return (
         f'<div class="arow"><div class="arow-body">'
         f'<div class="arow-left">'
-        f'<div class="arow-week-lbl">ЗМІНА ЗА ТИЖДЕНЬ</div>'
-        # CHG LONG і CHG SHORT в 2 колонки
+        # CHG LONG і CHG SHORT в 2 колонки (без рядка "ЗМІНА ЗА ТИЖДЕНЬ")
         f'<div class="arow-grid2">'
-        f'<div class="ag-item"><span class="ag-lbl">CHG LONG</span>'
-        f'<span class="{cc(cl)} ag-val">{fv_full(cl,sign=True)}</span></div>'
-        f'<div class="ag-item"><span class="ag-lbl">CHG SHORT</span>'
-        f'<span class="{cc(cs)} ag-val">{fv_full(cs,sign=True)}</span></div>'
+        f'<div class="ag-item">'
+        f'<span class="ag-lbl">CHG LONG</span>'
+        f'<span class="{cc(cl)} ag-val">{fv_full(cl, sign=True)}</span>'
         f'</div>'
-        # Δ NET — окремий рядок по центру
+        f'<div class="ag-item">'
+        f'<span class="ag-lbl">CHG SHORT</span>'
+        f'<span class="{cc(cs)} ag-val">{fv_full(cs, sign=True)}</span>'
+        f'</div>'
+        f'</div>'
+        # Δ NET — окремий рядок
         f'<div class="arow-dnet">'
         f'<span class="ag-lbl">Δ NET</span>'
-        f'<span class="{cc(chg)} ag-val-net">{fv_full(chg,sign=True)}'
+        f'<span class="{cc(chg)} ag-val-net">{fv_full(chg, sign=True)}'
         f'<span class="ag-pct"> ({chg_pct})</span></span>'
         f'</div>'
         f'</div>'
         f'<div class="arow-right">'
         f'<div class="ar-glbl" style="color:{group_color}">{group_label}</div>'
-        f'<div class="ar-net {dc}">{fv_full(net,sign=True)}</div>'
-        f'</div></div></div>'
+        f'<div class="ar-net {dc}">{fv_full(net, sign=True)}</div>'
+        f'</div>'
+        f'</div></div>'
     )
 
 
 def make_instrument_view(d):
     c=d['cur']; s=d['sid']; sm=d['sm']
 
-    mc_ls=make_metric_card('LARGE SPEC (NETTO)',   c['ls_net'],c['ls_chg'],c['ls_chg_pct'],d['spark']['ls'],COLOR_LS)
-    mc_cm=make_metric_card('COMMERCIALS (NETTO)',  c['cm_net'],c['cm_chg'],c['cm_chg_pct'],d['spark']['cm'],COLOR_CM)
-    mc_st=make_metric_card('SMALL TRADERS (NETTO)',c['st_net'],c['st_chg'],c['st_chg_pct'],d['spark']['st'],COLOR_ST)
-    # OI: передаємо oi=True для білого кольору
-    mc_oi=make_metric_card('OPEN INTEREST',        c['oi'],    c['oi_chg'],c['oi_chg_pct'],d['spark']['oi'],'#a0aac0', oi=True)
-
-    def patch_cot(mc_html, key):
-        return mc_html.replace('COT Index: —',f'COT Index: {fp(d["cot_idx"][key]["all"])}')
-    mc_ls=patch_cot(mc_ls,'ls'); mc_cm=patch_cot(mc_cm,'cm'); mc_st=patch_cot(mc_st,'st')
-    mc_oi=mc_oi.replace('COT Index: —',f'зміна: {fv(int(c["oi_chg"]),True,sign=True)}')
+    mc_ls=make_metric_card('LARGE SPEC (NETTO)',    c['ls_net'],c['ls_chg'],c['ls_chg_pct'],
+                           d['spark']['ls'],COLOR_LS,
+                           gauge_val=d['cot_idx']['ls']['all'],
+                           sub_text=f"COT Index: {fp(d['cot_idx']['ls']['all'])}")
+    mc_cm=make_metric_card('COMMERCIALS (NETTO)',   c['cm_net'],c['cm_chg'],c['cm_chg_pct'],
+                           d['spark']['cm'],COLOR_CM,
+                           gauge_val=d['cot_idx']['cm']['all'],
+                           sub_text=f"COT Index: {fp(d['cot_idx']['cm']['all'])}")
+    mc_st=make_metric_card('SMALL TRADERS (NETTO)',c['st_net'],c['st_chg'],c['st_chg_pct'],
+                           d['spark']['st'],COLOR_ST,
+                           gauge_val=d['cot_idx']['st']['all'],
+                           sub_text=f"COT Index: {fp(d['cot_idx']['st']['all'])}")
+    mc_oi=make_metric_card('OPEN INTEREST',         c['oi'],    c['oi_chg'],c['oi_chg_pct'],
+                           d['spark']['oi'],'#a0aac0',oi=True,
+                           gauge_val=d.get('oi_capacity', 50.0),
+                           sub_text=f"зміна: {fv(int(c['oi_chg']),True,sign=True)}")
 
     analysis_panel=(
         f'<div class="panel">'
@@ -851,7 +929,7 @@ def make_instrument_view(d):
         f'</div>'
     )
 
-    # Таблиця з max/min і SM DIV
+    # Єдина таблиця з синхронізованими колонками
     table_html = make_hist_table(
         d['hist'], d['stats_ls'], d['stats_cm'], d['stats_st'], d['stats_oi'], sm
     )
@@ -984,10 +1062,18 @@ def generate_html(data):
         first_cat=False
 
     ov_html=make_overview_tab()
+
+    # DASHBOARD — перші 3 букви синього, 3 зеленого, 3 червоного
+    dashboard_text = (
+        '<span class="dash-b">DAS</span>'
+        '<span class="dash-g">HBO</span>'
+        '<span class="dash-r">ARD</span>'
+    )
+
     return(
         HTML_HEAD
         +f'<header class="hdr">'
-        +f'<div><div class="hdr-t">COT <em>DASHBOARD</em></div>'
+        +f'<div><div class="hdr-t">COT {dashboard_text}</div>'
         +f'<div class="hdr-s">COMMITMENTS OF TRADERS — CFTC LEGACY REPORT</div></div>'
         +f'<div style="display:flex;align-items:center;gap:16px">'
         +f'<div class="hdr-r">Звіт: <b>{report_date}</b><br>Оновлено: {updated}</div>'
@@ -1049,6 +1135,7 @@ HTML_HEAD = f"""<!DOCTYPE html>
 :root{{
   --bg:#1a1e2d;--bg2:#21263a;--bg3:#282f47;--bd:#343d5a;
   --g:#20d483;--r:#f0515a;--b:#4a9eff;
+  --accent:#f59420;
   --t:#dde2ee;--d:#8090b0;
   --f:'Courier New',Courier,monospace;
   --hdr-h:50px;
@@ -1057,11 +1144,15 @@ HTML_HEAD = f"""<!DOCTYPE html>
 html,body{{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13px;}}
 .t{{color:var(--t);}}
 
+/* ── HEADER ── */
 .hdr{{height:var(--hdr-h);padding:0 24px;background:var(--bg2);
   border-bottom:1px solid var(--bd);display:flex;align-items:center;
   justify-content:space-between;position:sticky;top:0;z-index:300;}}
 .hdr-t{{font-size:17px;font-weight:bold;color:#fff;letter-spacing:2px;}}
-.hdr-t em{{color:var(--g);font-style:normal;}}
+/* DASHBOARD кольорові букви */
+.dash-b{{color:#4a9eff;font-style:normal;}}
+.dash-g{{color:#20d483;font-style:normal;}}
+.dash-r{{color:#f0515a;font-style:normal;}}
 .hdr-s{{font-size:10px;color:var(--d);margin-top:2px;letter-spacing:1px;}}
 .hdr-r{{text-align:right;font-size:11px;color:var(--d);line-height:2;}}
 .hdr-r b{{color:var(--t);}}
@@ -1072,6 +1163,7 @@ html,body{{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13
 .auth-btn:hover{{background:rgba(32,212,131,.15);}}
 .auth-btn.logged{{border-color:var(--b);color:var(--b);}}
 
+/* ── AUTH ── */
 .auth-overlay{{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);
   z-index:1000;align-items:center;justify-content:center;}}
 .auth-overlay.open{{display:flex;}}
@@ -1091,64 +1183,76 @@ html,body{{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13
 .auth-user{{font-size:11px;color:var(--d);text-align:center;margin-bottom:12px;padding:10px;background:var(--bg3);border-radius:4px;}}
 .auth-user b{{color:var(--t);}}
 
+/* ── MAIN TABS ── */
 .main-tabs{{display:flex;gap:0;padding:0 24px;background:var(--bg2);border-bottom:2px solid var(--bd);position:sticky;top:var(--hdr-h);z-index:290;}}
-.mtab{{padding:10px 20px;border:none;background:transparent;color:var(--d);font-family:var(--f);font-size:12px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;letter-spacing:.5px;}}
-.mtab:hover{{color:var(--t);}}.mtab.active{{color:#fff;border-bottom-color:var(--g);font-weight:bold;}}
+.mtab{{padding:10px 20px;border:none;background:transparent;color:#b0bcd4;font-family:var(--f);font-size:12px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;letter-spacing:.5px;}}
+.mtab:hover{{color:var(--t);}}.mtab.active{{color:var(--accent);border-bottom-color:var(--accent);font-weight:bold;}}
 .main-sec{{display:none;}}.main-sec.active{{display:block;}}
 
+/* ── CATEGORY TABS — оранжевий акцент, яскравіші неактивні ── */
 .ctabs{{display:flex;gap:5px;padding:8px 24px;background:var(--bg2);border-bottom:1px solid var(--bd);flex-wrap:wrap;}}
-.ctab{{padding:5px 14px;border:1px solid var(--bd);border-radius:3px;cursor:pointer;color:var(--d);font-family:var(--f);font-size:12px;background:transparent;}}
-.ctab:hover{{border-color:var(--g);color:var(--t);}}.ctab.active{{background:var(--g);color:#000;border-color:var(--g);font-weight:bold;}}
-.tc{{opacity:.4;font-size:9px;margin-left:3px;}}
+.ctab{{padding:5px 14px;border:1px solid var(--bd);border-radius:3px;cursor:pointer;
+  color:#c0cce0;font-family:var(--f);font-size:12px;background:transparent;transition:color .15s,border-color .15s;}}
+.ctab:hover{{border-color:var(--accent);color:#fff;}}
+.ctab.active{{background:var(--accent);color:#000;border-color:var(--accent);font-weight:bold;}}
+.tc{{opacity:.5;font-size:9px;margin-left:3px;}}
 
+/* ── INSTRUMENT TABS — оранжевий акцент, яскравіші неактивні ── */
 .catsec{{display:none;}}.catsec.active{{display:block;}}
 .itabs{{display:flex;gap:4px;padding:7px 24px;background:var(--bg);border-bottom:1px solid var(--bd);flex-wrap:wrap;position:sticky;top:calc(var(--hdr-h) + 42px);z-index:200;}}
-.itab{{padding:4px 12px;border:1px solid var(--bd);border-radius:3px;cursor:pointer;color:var(--d);font-family:var(--f);font-size:11px;background:transparent;}}
-.itab:hover{{border-color:var(--b);color:var(--t);}}.itab.active{{background:var(--bg3);color:#fff;border-color:var(--b);}}
+.itab{{padding:4px 12px;border:1px solid var(--bd);border-radius:3px;cursor:pointer;
+  color:#b0bcd4;font-family:var(--f);font-size:11px;background:transparent;transition:all .15s;}}
+.itab:hover{{border-color:var(--accent);color:#fff;}}
+.itab.active{{background:var(--bg3);color:var(--accent);border-color:var(--accent);font-weight:bold;}}
 
 .iviews{{padding:16px 24px;}}.iview{{display:none;}}.iview.active{{display:block;}}
 
+/* ── REPORT TABS ── */
 .report-tabs{{display:flex;align-items:center;gap:6px;margin-bottom:14px;flex-wrap:wrap;}}
 .rtab-lbl{{font-size:9px;color:var(--d);letter-spacing:1px;}}
-.rtab{{padding:4px 12px;border:1px solid var(--bd);border-radius:3px;cursor:pointer;color:var(--d);font-family:var(--f);font-size:11px;background:transparent;}}
-.rtab.active{{background:var(--g);color:#000;border-color:var(--g);font-weight:bold;}}
+.rtab{{padding:4px 12px;border:1px solid var(--bd);border-radius:3px;cursor:pointer;color:#b0bcd4;font-family:var(--f);font-size:11px;background:transparent;}}
+.rtab.active{{background:var(--accent);color:#000;border-color:var(--accent);font-weight:bold;}}
 .rtab.disabled{{opacity:.3;cursor:not-allowed;}}
 
+/* ── METRIC CARDS — лейбл зліва, gauge справа ── */
 .mcards{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px;}}
-.mc{{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:14px 16px;overflow:hidden;min-width:0;}}
-.mc-lbl{{font-size:9px;color:#fff;letter-spacing:.5px;margin-bottom:6px;}}
-.mc-val{{font-size:clamp(16px,2.5vw,26px);font-weight:bold;line-height:1.15;}}
+.mc{{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:12px 14px;overflow:hidden;min-width:0;display:flex;flex-direction:column;}}
+/* Лейбл повернуто вліво вгорі */
+.mc-lbl{{font-size:9px;color:#fff;letter-spacing:.6px;margin-bottom:5px;text-align:left;opacity:.85;}}
+/* Рядок: число (ліво) + gauge (право) */
+.mc-inner{{display:flex;align-items:center;gap:8px;}}
+.mc-left{{flex:1;min-width:0;}}
+.mc-right{{flex-shrink:0;display:flex;align-items:center;justify-content:center;}}
+.mc-val{{font-size:clamp(18px,2.5vw,34px);font-weight:bold;line-height:1.1;}}
 .mc-chg-wrap{{margin-top:6px;font-size:12px;}}
 .mc-wtag{{font-size:9px;color:var(--d);margin-left:3px;}}
 .mc-pct{{font-size:10px;margin-top:2px;opacity:.85;}}
 .mc-sub{{font-size:10px;color:var(--d);margin-top:3px;}}
 
+/* ── ANALYSIS PANEL — без "ЗМІНА ЗА ТИЖДЕНЬ", більші підписи ── */
 .mid{{display:grid;grid-template-columns:1fr 160px 190px 1fr;gap:8px;margin-bottom:12px;}}
 .panel{{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:12px 14px;}}
 .plbl{{font-size:9px;color:#fff;letter-spacing:.5px;margin-bottom:10px;}}
-
 .arow{{margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--bd);}}
 .arow:last-child{{margin:0;padding:0;border:none;}}
 .arow-body{{display:flex;gap:10px;align-items:center;}}
 .arow-left{{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;}}
 .arow-right{{width:140px;flex-shrink:0;display:flex;flex-direction:column;justify-content:center;align-items:flex-end;border-left:1px solid var(--bd);padding-left:10px;}}
-.ar-glbl{{font-size:9px;font-weight:bold;letter-spacing:.8px;margin-bottom:3px;}}
+/* "ЗМІНА ЗА ТИЖДЕНЬ" прибрано з Python коду */
+.ar-glbl{{font-size:11px;font-weight:bold;letter-spacing:.8px;margin-bottom:3px;}}
 .ar-net{{font-size:clamp(20px,2.2vw,30px);font-weight:bold;text-align:right;}}
-.arow-week-lbl{{font-size:8px;color:var(--d);letter-spacing:.8px;text-transform:uppercase;}}
 /* 2 колонки CHG L / CHG S */
-.arow-grid2{{display:grid;grid-template-columns:1fr 1fr;gap:3px;margin-bottom:6px;}}
-.arow-grid{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px;}}
-/* Δ NET — окремий рядок по центру */
-.arow-dnet{{display:flex;flex-direction:column;align-items:center;margin-top:4px;padding-top:5px;border-top:1px solid var(--bd);}}
-.arow-dnet .ag-lbl{{font-size:8px;color:var(--d);letter-spacing:.4px;margin-bottom:2px;}}
-.ag-val-net{{font-size:clamp(19px,2.2vw,26px);font-weight:bold;line-height:1.2;}}
+.arow-grid2{{display:grid;grid-template-columns:1fr 1fr;gap:3px;}}
+/* Δ NET — окремий рядок */
+.arow-dnet{{display:flex;flex-direction:column;align-items:center;padding-top:6px;border-top:1px solid var(--bd);}}
+.arow-dnet .ag-lbl{{font-size:10px;color:var(--d);letter-spacing:.4px;margin-bottom:2px;}}
+.ag-val-net{{font-size:clamp(19px,2.2vw,28px);font-weight:bold;line-height:1.2;}}
 .ag-item{{display:flex;flex-direction:column;gap:3px;}}
-.ag-lbl{{font-size:8px;color:#fff;letter-spacing:.4px;}}
-.ag-val{{font-size:clamp(17px,2vw,24px);font-weight:bold;line-height:1.2;}}
+.ag-lbl{{font-size:10px;color:#c0ccd8;letter-spacing:.4px;font-weight:bold;}}
+.ag-val{{font-size:clamp(17px,2vw,26px);font-weight:bold;line-height:1.2;}}
 .ag-pct{{font-size:10px;opacity:.75;font-weight:normal;}}
-/* MAX/MIN 1Y row — subtle separator */
-table.mm-table .mm-yr td{{border-top:1px solid var(--bd);opacity:.8;}}
 
+/* ── SM PANEL ── */
 .sm-panel{{display:flex;flex-direction:column;justify-content:space-between;}}
 .sm-row{{margin-bottom:8px;}}
 .sm-lbl{{font-size:9px;color:var(--d);margin-bottom:3px;}}
@@ -1157,7 +1261,7 @@ table.mm-table .mm-yr td{{border-top:1px solid var(--bd);opacity:.8;}}
 .sm-val{{font-size:12px;font-weight:bold;margin-top:3px;}}
 .sm-hint{{font-size:8px;color:var(--d);margin-top:6px;line-height:1.5;border-top:1px solid var(--bd);padding-top:6px;}}
 
-/* REPORTS PANEL */
+/* ── REPORTS PANEL ── */
 .rpt-panel{{display:flex;flex-direction:column;overflow:hidden;}}
 .plbl-row{{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}}
 .rel-legend{{font-size:8px;color:var(--d);display:flex;align-items:center;gap:3px;}}
@@ -1178,12 +1282,13 @@ table.mm-table .mm-yr td{{border-top:1px solid var(--bd);opacity:.8;}}
 .rb-s.active{{background:rgba(240,81,90,.20);border-color:var(--r);color:var(--r);}}
 .rb-n.active{{background:var(--bg3);border-color:var(--d);color:var(--d);}}
 
+/* ── PCT PANEL ── */
 .pct-sel-row{{display:flex;gap:5px;align-items:center;margin-bottom:10px;flex-wrap:wrap;}}
 .psel-group{{display:flex;gap:3px;}}
 .psel-sep{{width:1px;height:16px;background:var(--bd);margin:0 3px;}}
-.psel,.pper{{padding:2px 8px;border:1px solid var(--bd);border-radius:3px;cursor:pointer;color:var(--d);font-family:var(--f);font-size:10px;background:transparent;}}
-.psel:hover,.pper:hover{{border-color:var(--b);color:var(--t);}}
-.psel.active,.pper.active{{background:var(--bg3);color:#fff;border-color:var(--b);}}
+.psel,.pper{{padding:2px 8px;border:1px solid var(--bd);border-radius:3px;cursor:pointer;color:#b0bcd4;font-family:var(--f);font-size:10px;background:transparent;}}
+.psel:hover,.pper:hover{{border-color:var(--accent);color:#fff;}}
+.psel.active,.pper.active{{background:var(--bg3);color:var(--accent);border-color:var(--accent);}}
 .pct-val-row{{margin-bottom:8px;}}
 .pbar-wrap{{position:relative;margin-bottom:3px;}}
 .pbar-bg{{background:var(--bg3);border-radius:3px;height:18px;position:relative;overflow:hidden;}}
@@ -1196,50 +1301,51 @@ table.mm-table .mm-yr td{{border-top:1px solid var(--bd);opacity:.8;}}
 .ptlbl-cur{{color:var(--t);font-weight:bold;}}
 .pbar-lb{{display:flex;justify-content:space-between;font-size:8px;color:var(--d);margin-top:12px;}}
 
+/* ── CHART BOXES ── */
 .chartbox{{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:14px 16px;margin-bottom:12px;}}
 .chartbox-hdr{{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px;}}
 .period-btns{{display:flex;gap:3px;}}
-.per-btn{{padding:2px 9px;border:1px solid var(--bd);border-radius:3px;cursor:pointer;color:var(--d);font-family:var(--f);font-size:10px;background:transparent;}}
-.per-btn:hover{{border-color:var(--b);color:var(--t);}}.per-btn.active{{background:var(--bg3);color:#fff;border-color:var(--b);}}
+.per-btn{{padding:2px 9px;border:1px solid var(--bd);border-radius:3px;cursor:pointer;color:#b0bcd4;font-family:var(--f);font-size:10px;background:transparent;}}
+.per-btn:hover{{border-color:var(--accent);color:#fff;}}
+.per-btn.active{{background:var(--bg3);color:var(--accent);border-color:var(--accent);}}
 .chart-leg{{display:flex;gap:10px;font-size:10px;color:var(--d);align-items:center;flex-wrap:wrap;}}
 .ll{{display:inline-block;width:14px;height:2px;border-radius:1px;vertical-align:middle;margin-right:4px;}}
 .ll-dash{{display:inline-block;width:14px;height:0;border-top:2px dashed;vertical-align:middle;}}
 .cw{{height:140px;position:relative;}}
-
 .bar-charts-grid{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}}
 .bar-lbl{{font-size:8px;letter-spacing:.5px;margin-bottom:6px;}}
 .bar-cw{{height:80px;position:relative;}}
 
-/* ── HISTORY TABLE + MAX/MIN ── */
+/* ── ЄДИНА ТАБЛИЦЯ (MM + Data) ── */
 .htable-wrap{{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;overflow:hidden;margin-bottom:12px;}}
 .htable-hdr{{padding:7px 14px;border-bottom:1px solid var(--bd);font-size:10px;color:#fff;letter-spacing:.5px;display:flex;align-items:center;justify-content:space-between;}}
 .hsel{{display:flex;gap:4px;}}
-.hbtn{{padding:2px 10px;border:1px solid var(--bd);border-radius:3px;cursor:pointer;color:var(--d);font-family:var(--f);font-size:11px;background:transparent;}}
-.hbtn.active{{background:var(--bg3);color:#fff;border-color:var(--b);}}
+.hbtn{{padding:2px 10px;border:1px solid var(--bd);border-radius:3px;cursor:pointer;color:#b0bcd4;font-family:var(--f);font-size:11px;background:transparent;}}
+.hbtn.active{{background:var(--bg3);color:var(--accent);border-color:var(--accent);}}
 .htable-scroll{{overflow-x:auto;}}
-/* Max/Min блок */
-.mm-wrap{{border-bottom:2px solid var(--bd);}}
-table.mm-table{{width:100%;border-collapse:collapse;font-size:10px;white-space:nowrap;}}
-table.mm-table th{{padding:4px 8px;background:var(--bg3);border-bottom:1px solid var(--bd);font-weight:normal;font-size:8px;letter-spacing:.5px;text-align:center;}}
-table.mm-table .mm-lbl-h{{text-align:left;width:40px;}}
-table.mm-table .mm-lbl{{font-size:8px;color:var(--d);letter-spacing:.5px;padding:4px 8px;text-align:left;background:var(--bg3);}}
-table.mm-table .mm-val{{padding:4px 8px;text-align:right;}}
-table.mm-table .mm-row td{{border-bottom:1px solid var(--bg3);}}
-table.mm-table .sm-th{{width:42px;text-align:center;color:var(--d);}}
-table.mm-table .sm-td{{width:42px;text-align:center;font-size:10px;padding:4px 6px;}}
-/* Data table */
-table.ht{{width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap;}}
-table.ht th{{padding:4px 8px;border-bottom:1px solid var(--bd);font-weight:normal;font-size:9px;letter-spacing:.5px;text-align:right;}}
+
+/* Спільна таблиця */
+table.ht{{width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap;table-layout:fixed;}}
+table.ht th{{padding:4px 8px;border-bottom:1px solid var(--bd);font-weight:normal;font-size:9px;letter-spacing:.5px;text-align:right;overflow:hidden;}}
+table.ht .th-corner{{text-align:left;background:var(--bg3);}}
+table.ht .th-date{{text-align:left;background:var(--bg3);}}
 table.ht .th-left{{text-align:left;}}
-table.ht .th-date{{min-width:78px;max-width:88px;width:84px;background:var(--bg3);}}
 table.ht .th-group{{text-align:center;}}
-table.ht .sm-th-group{{text-align:center;font-size:8px;}}
-table.ht .sm-th{{width:42px;text-align:center;font-size:8px;color:var(--d);}}
-table.ht td{{padding:4px 8px;border-bottom:1px solid var(--bg3);text-align:right;}}
-table.ht .date-col{{text-align:left;color:var(--d);width:84px;background:var(--bg3);}}
+table.ht .th-oi{{text-align:center;}}
+table.ht .sm-th{{text-align:center;font-size:8px;color:var(--d);}}
+table.ht .sm-th-group{{font-size:8px;}}
+table.ht td{{padding:4px 8px;border-bottom:1px solid var(--bg3);text-align:right;overflow:hidden;}}
+table.ht .date-col{{text-align:left;color:var(--d);background:var(--bg3);}}
 table.ht tr:hover td{{background:rgba(52,61,90,.5)!important;}}
 table.ht .sep-r{{border-right:1px solid var(--bd);}}
 table.ht .sm-td{{text-align:center;font-size:10px;padding:4px 6px;}}
+
+/* MM tbody — верхня секція Max/Min */
+table.ht tbody.mm-tbody{{border-bottom:3px solid var(--bd);}}
+table.ht tbody.mm-tbody td{{background:var(--bg3);text-align:right;border-bottom:1px solid rgba(52,61,90,.8);padding:4px 8px;}}
+table.ht tbody.mm-tbody .mm-lbl{{text-align:left;font-size:8px;color:var(--d);letter-spacing:.5px;font-weight:bold;}}
+table.ht tbody.mm-tbody .mm-val{{text-align:right;font-size:10px;}}
+table.ht tbody.mm-tbody tr.mm-yr td{{opacity:.78;}}
 
 /* OVERVIEW TABLE */
 .ov-meta{{padding:10px 0 8px;font-size:11px;color:var(--d);}}.ov-meta b{{color:var(--t);}}
@@ -1267,7 +1373,7 @@ table.ht .sm-td{{text-align:center;font-size:10px;padding:4px 6px;}}
   .itabs{{padding:5px 12px;}}.itab{{padding:3px 9px;font-size:10px;}}
   .iviews{{padding:10px 12px;}}
   .mcards{{grid-template-columns:1fr 1fr;gap:8px;}}
-  .mc{{padding:10px 12px;}}.mc-val{{font-size:clamp(14px,5vw,22px);}}
+  .mc{{padding:10px 12px;}}.mc-val{{font-size:clamp(16px,5vw,26px);}}
   .mid{{grid-template-columns:1fr 1fr;gap:8px;}}
   .mid > .panel:first-child{{grid-column:1/-1;}}
   .bar-charts-grid{{grid-template-columns:1fr;}}
@@ -1411,9 +1517,10 @@ function setHist(btn,sid){{
   btn.closest('.htable-hdr').querySelectorAll('.hbtn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active'); filterRows(sid,n);
 }}
+/* Фільтруємо лише рядки data-tbody (не mm-tbody) */
 function filterRows(sid,n){{
   const view=document.getElementById('iv_'+sid); if(!view) return;
-  view.querySelectorAll('table.ht tbody tr').forEach(tr=>{{
+  view.querySelectorAll('table.ht tbody.data-tbody tr').forEach(tr=>{{
     tr.style.display=parseInt(tr.dataset.row)<n?'':'none';
   }});
 }}
@@ -1538,27 +1645,26 @@ if(firstCat)selCat(firstCat.dataset.c);
 def main():
     print()
     print("="*55)
-    print("   COT Dashboard Generator v12")
+    print("   COT Dashboard Generator v13")
     print("="*55)
     print()
-    OUTPUT_FILE.parent.mkdir(parents=True,exist_ok=True)
+    OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
     try:
-        data=load_all()
+        data = load_all()
     except FileNotFoundError as e:
         print(e); return
     if not data:
         print("❌  Дані порожні."); return
     print("🔧  Генеруємо HTML...")
-    html=generate_html(data)
-    OUTPUT_FILE.write_text(html,encoding='utf-8')
-    kb=OUTPUT_FILE.stat().st_size/1024
+    html = generate_html(data)
+    OUTPUT_FILE.write_text(html, encoding='utf-8')
+    kb = OUTPUT_FILE.stat().st_size / 1024
     print(f"✅  Збережено: {OUTPUT_FILE}  ({kb:.0f} KB)")
     print("🌐  Відкриваємо браузер...")
-    import os, sys
+    import os
     uri = OUTPUT_FILE.as_uri()
     opened = webbrowser.open(uri)
     if not opened:
-        # Запасний варіант для Windows
         try:
             os.startfile(str(OUTPUT_FILE))
         except Exception:
@@ -1566,5 +1672,5 @@ def main():
     print(f"   Файл: {OUTPUT_FILE}")
     print("\n✨  Готово!\n")
 
-if __name__=='__main__':
+if __name__ == '__main__':
     main()
