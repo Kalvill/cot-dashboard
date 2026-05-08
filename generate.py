@@ -178,7 +178,9 @@ def make_gauge_svg(value,color,size=74):
            +(f'<path d="{fg}" stroke="{color}" stroke-width="3" fill="none" stroke-linecap="round"/>' if fg else '')
            +f'<circle cx="{v[0]}" cy="{v[1]}" r="4" fill="{color}"/>'
            f'<circle cx="{s[0]}" cy="{s[1]}" r="2.5" fill="#252d48" stroke="{color}" stroke-width="1"/>'
-           f'<text x="{tx}" y="{ty+5}" text-anchor="middle" dominant-baseline="middle" font-family="Courier New,monospace" font-size="15" font-weight="bold" fill="{color}">{int(round(value))}</text></svg>')
+           f'<text x="{tx}" y="{ty-6}" text-anchor="middle" dominant-baseline="middle" font-family="Courier New,monospace" font-size="7" fill="{color}" opacity="0.7">COT INDEX</text>'
+           # Число з 1 десятковим знаком
+           f'<text x="{tx}" y="{ty+6}" text-anchor="middle" dominant-baseline="middle" font-family="Courier New,monospace" font-size="13" font-weight="bold" fill="{color}">{value:.1f}</text></svg>')
 def gauge_color(value,oi=False):
     if oi: return '#dde2ee'
     v=float(value)
@@ -202,8 +204,8 @@ def make_metric_card(lbl,val,chg,chg_pct,spark_series,spark_color,oi=False,gauge
            f'<div class="mc-val">{val_str}</div>'
            f'<div class="mc-chg-wrap"><span class="{cc_}" style="{bg}">{ar(chg)} {fv_full(abs(ci))}<span class="mc-wtag"> за тиждень</span></span></div>'
            f'<div class="mc-pct {cc_}">{chg_pct}</div>'
-           f'<div class="mc-sub">{sub_text}</div>'
-           f'</div><div class="mc-right">{g}</div></div>{spark}</div>')
+           +(f'<div class="mc-sub">{sub_text}</div>' if sub_text else '')
+           +f'</div><div class="mc-right">{g}</div></div>{spark}</div>')
 
 # ── Analysis row (Legacy) ─────────────────────────────────────────
 def analysis_row(group_label,group_color,net,cl,cs,chg,chg_pct):
@@ -472,7 +474,7 @@ def load_tff_data():
 # ================================================================
 def make_tff_metric_cards(tff,s):
     c=tff['cur']
-    mc_lev=make_metric_card('LEV MONEY (NETTO)',c['lev_net'],c['lev_chg'],c['lev_chg_pct'],tff['spark']['lev'],TFF_COLOR_LEV,gauge_val=tff['cot_idx']['lev']['all'],sub_text=f"COT Index: {fp(tff['cot_idx']['lev']['all'])}")
+    mc_lev=make_metric_card('LEV MONEY (NETTO)',c['lev_net'],c['lev_chg'],c['lev_chg_pct'],tff['spark']['lev'],TFF_COLOR_LEV,gauge_val=tff['cot_idx']['lev']['all'],sub_text="")
     mc_am =make_metric_card('ASSET MGR (NETTO)', c['am_net'], c['am_chg'], c['am_chg_pct'], tff['spark']['am'], TFF_COLOR_AM, gauge_val=tff['cot_idx']['am']['all'], sub_text=f"COT Index: {fp(tff['cot_idx']['am']['all'])}")
     mc_dl =make_metric_card('DEALER (NETTO)',    c['dl_net'], c['dl_chg'], c['dl_chg_pct'], tff['spark']['dl'], TFF_COLOR_DL, gauge_val=tff['cot_idx']['dl']['all'], sub_text=f"COT Index: {fp(tff['cot_idx']['dl']['all'])}")
     mc_oi =make_metric_card('OPEN INTEREST',c['oi'],c['oi_chg'],c['oi_chg_pct'],tff['spark']['oi'],'#a0aac0',oi=True,gauge_val=tff.get('oi_capacity',50.0),sub_text=f"зміна: {fv(int(c['oi_chg']),True,sign=True)}")
@@ -688,9 +690,9 @@ def make_hist_table(hist,stats_ls,stats_cm,stats_st,stats_oi,sm):
 # ================================================================
 def make_instrument_view(d,tff=None):
     c=d['cur'];s=d['sid'];sm=d['sm'];has_tff=tff is not None
-    mc_ls=make_metric_card('LARGE SPEC (NETTO)',c['ls_net'],c['ls_chg'],c['ls_chg_pct'],d['spark']['ls'],COLOR_LS,gauge_val=d['cot_idx']['ls']['all'],sub_text=f"COT Index: {fp(d['cot_idx']['ls']['all'])}")
-    mc_cm=make_metric_card('COMMERCIALS (NETTO)',c['cm_net'],c['cm_chg'],c['cm_chg_pct'],d['spark']['cm'],COLOR_CM,gauge_val=d['cot_idx']['cm']['all'],sub_text=f"COT Index: {fp(d['cot_idx']['cm']['all'])}")
-    mc_st=make_metric_card('SMALL TRADERS (NETTO)',c['st_net'],c['st_chg'],c['st_chg_pct'],d['spark']['st'],COLOR_ST,gauge_val=d['cot_idx']['st']['all'],sub_text=f"COT Index: {fp(d['cot_idx']['st']['all'])}")
+    mc_ls=make_metric_card('LARGE SPEC (NETTO)',c['ls_net'],c['ls_chg'],c['ls_chg_pct'],d['spark']['ls'],COLOR_LS,gauge_val=d['cot_idx']['ls']['all'],sub_text="")
+    mc_cm=make_metric_card('COMMERCIALS (NETTO)',c['cm_net'],c['cm_chg'],c['cm_chg_pct'],d['spark']['cm'],COLOR_CM,gauge_val=d['cot_idx']['cm']['all'],sub_text="")
+    mc_st=make_metric_card('SMALL TRADERS (NETTO)',c['st_net'],c['st_chg'],c['st_chg_pct'],d['spark']['st'],COLOR_ST,gauge_val=d['cot_idx']['st']['all'],sub_text="")
     mc_oi=make_metric_card('OPEN INTEREST',c['oi'],c['oi_chg'],c['oi_chg_pct'],d['spark']['oi'],'#a0aac0',oi=True,gauge_val=d.get('oi_capacity',50.0),sub_text=f"зміна: {fv(int(c['oi_chg']),True,sign=True)}")
     analysis_panel=(f'<div class="panel">'
                     +analysis_row('LARGE SPEC',COLOR_LS,c['ls_net'],c['ls_cl'],c['ls_cs'],c['ls_chg'],c['ls_chg_pct'])
@@ -857,12 +859,14 @@ HTML_HEAD = """<!DOCTYPE html>
 html,body{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13px;}
 .t{color:var(--t);}
 .hdr{height:var(--hdr-h);padding:0 24px;background:var(--bg2);border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:300;}
+.hdr-center{position:absolute;left:50%;transform:translateX(-50%);text-align:center;pointer-events:none;}
 .hdr-t{font-size:17px;font-weight:bold;color:#fff;letter-spacing:2px;}
 .dash-b{color:#4a9eff;}.dash-g{color:#20d483;}.dash-r{color:#f0515a;}
 .hdr-s{font-size:10px;color:var(--d);margin-top:2px;letter-spacing:1px;}
-.hdr-bc{font-size:9px;color:var(--d);margin-top:3px;letter-spacing:.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:400px;}
-.hdr-bc span{color:var(--t);}
-.hdr-bc .bc-sep{color:var(--bd);margin:0 4px;}
+.hdr-bc{font-size:11px;color:var(--d);margin-top:5px;letter-spacing:.6px;white-space:nowrap;}
+.hdr-bc-pill{display:inline-flex;align-items:center;gap:2px;background:rgba(52,61,90,.75);border:1px solid var(--bd);border-radius:20px;padding:3px 12px;backdrop-filter:blur(4px);}
+.hdr-bc span{color:#dde2ee;font-weight:bold;}
+.hdr-bc .bc-sep{color:#4a5580;margin:0 5px;font-size:12px;}
 .hdr-r{text-align:right;font-size:11px;color:var(--d);line-height:2;}.hdr-r b{color:var(--t);}
 .tff-badge{display:inline-block;font-size:8px;padding:1px 5px;border-radius:2px;background:rgba(232,168,56,.2);color:#e8a838;border:1px solid #e8a83855;margin-left:6px;vertical-align:middle;}
 .auth-btn{padding:6px 16px;border:1px solid var(--g);border-radius:3px;background:transparent;color:var(--g);font-family:var(--f);font-size:11px;cursor:pointer;letter-spacing:1px;transition:all .15s;}
@@ -1031,7 +1035,7 @@ def generate_html(data, tff_data=None):
     return(HTML_HEAD
            +f'<header class="hdr"><div><div class="hdr-t">COT {db}</div>'
            +f'<div class="hdr-s">COMMITMENTS OF TRADERS — CFTC{badge}</div>'
-           +f'<div class="hdr-bc" id="hdrBreadcrumb">—</div></div>'
+           +f'<div class="hdr-bc" id="hdrBreadcrumb"></div></div>'
            +f'<div style="display:flex;align-items:center;gap:16px">'
            +f'<div class="hdr-r">Звіт: <b>{report_date}</b><br>Оновлено: {updated}</div>'
            +f'<button class="sync-btn" onclick="openSyncModal()" title="Синхронізація налаштувань">⇄</button>'
@@ -1383,7 +1387,7 @@ function updateBreadcrumb(){
     _bcInst?`<span class="bc-sep">›</span><span>${_bcInst}</span>`:'',
     _bcRpt ?`<span class="bc-sep">›</span><span>${_bcRpt}</span>` :'',
   ].filter(Boolean).join('');
-  el.innerHTML = parts || '—';
+  el.innerHTML = parts ? `<span class="hdr-bc-pill">${parts}</span>` : '';
 }
 
 // ── Issue 3: Sync stances via encoded string (без сервера) ──────
@@ -1448,13 +1452,19 @@ def main():
     OUTPUT_FILE.write_text(html,encoding='utf-8')
     kb=OUTPUT_FILE.stat().st_size/1024
     print(f"✅  Збережено: {OUTPUT_FILE}  ({kb:.0f} KB)")
-    print("🌐  Відкриваємо браузер...")
+    FLASK_URL = "http://localhost:5000"
+    print(f"🌐  Відкриваємо браузер → {FLASK_URL}")
+    print(f"   Файл: {OUTPUT_FILE}")
+    print()
+    print("   ┌─────────────────────────────────────────────┐")
+    print("   │  Flask сервер має бути запущений!           │")
+    print(f"   │  Відкрийте:  {FLASK_URL}              │")
+    print("   │  Запуск:     python app.py                  │")
+    print("   └─────────────────────────────────────────────┘")
     import os
-    uri=OUTPUT_FILE.as_uri()
-    if not webbrowser.open(uri):
+    if not webbrowser.open(FLASK_URL):
         try: os.startfile(str(OUTPUT_FILE))
         except: pass
-    print(f"   Файл: {OUTPUT_FILE}")
     print("\n✨  Готово!\n")
 
 if __name__=='__main__':
