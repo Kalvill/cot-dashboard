@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""COT Dashboard Generator v14 — Legacy + TFF Report"""
+"""COT Dashboard Generator v15 — Legacy + TFF + Disaggregated"""
 
 import math, pandas as pd, json, webbrowser
 from pathlib import Path
@@ -9,61 +9,51 @@ from datetime import datetime
 BASE_DIR    = Path(__file__).parent
 DATA_FILE   = BASE_DIR / "data" / "COT_OVERVIEW.xlsx"
 TFF_FILE    = BASE_DIR / "data" / "COT_TFF_REPORTS.xlsx"
+DISAG_FILE  = BASE_DIR / "data" / "COT_DISAGRAGATE_REPORTS.xlsx"
 OUTPUT_FILE = BASE_DIR / "output" / "cot_dashboard.html"
 
-SKIP_SHEETS     = {'overview', 'info'}
-TFF_SKIP_SHEETS = {'tff', 'info', 'lkup'}   # листи TFF-файлу які ігноруємо
+SKIP_SHEETS      = {'overview', 'info'}
+TFF_SKIP_SHEETS  = {'tff', 'info', 'lkup'}
+DISAG_SKIP_SHEETS= {'disagragate', 'info', 'lkup'}
 
-# Маппінг назв листів TFF → SID (для відповідності з Legacy)
 TFF_SHEET_TO_SID = {
-    'EURO':      'EUR',
-    'DOW 30':    'DOW_30',
-    'RUSSELL 2K':'RUSSELL2K',
-    'ETH CASH':  'ETH_CASH',
-    'ETH NANO':  'ETH_NANO',
-    'ETH MICRO': 'ETH_MICRO',
-    'BTC NANO':  'BTC_NANO',
-    'BTC MICRO': 'BTC_MICRO',
-    'NAT GAS':   'NAT_GAS',
-    'WTI CRUDE': 'WTI_CRUDE',
-    'SP500':     'SP500',
-    'NASDAQ':    'NASDAQ',
-    'VIX':       'VIX',
-    # Решта: ім'я аркуша == SID
+    'EURO':'EUR','DOW 30':'DOW_30','RUSSELL 2K':'RUSSELL2K',
+    'ETH CASH':'ETH_CASH','ETH NANO':'ETH_NANO','ETH MICRO':'ETH_MICRO',
+    'BTC NANO':'BTC_NANO','BTC MICRO':'BTC_MICRO',
+    'NAT GAS':'NAT_GAS','WTI CRUDE':'WTI_CRUDE',
+    'SP500':'SP500','NASDAQ':'NASDAQ','VIX':'VIX',
 }
-CHART_WEEKS  = 260
-SPARK_WEEKS  = 26
-HISTORY      = 52
-
-COLOR_LS = '#4a9eff'
-COLOR_CM = '#20d483'
-COLOR_ST = '#f0515a'
-TFF_COLOR_LEV = '#f0b429'
-TFF_COLOR_AM  = '#4a9eff'
-TFF_COLOR_DL  = '#20d483'
-TFF_PARTS = [('am','ASSET MGR',TFF_COLOR_AM),('lev','LEV MONEY',TFF_COLOR_LEV),('dl','DEALER',TFF_COLOR_DL)]
-# Перевірено на реальному файлі COT_TFF_REPORTS.xlsx:
-# рядок 2: Asset_Mgr(col1), Dealer(col9), Lev_Money(col16)
-# рядок 4: Change(Long)/Change(Short)/net Position
-# Open Interest: col 34 | Дані починаються з рядка 20
-TFF_COL = {
-    'date':    1,
-    'am_cl':   4,  'am_cs':   5,  'am_net':   8,
-    'dl_cl':  11,  'dl_cs':  12,  'dl_net':  15,
-    'lev_cl': 18,  'lev_cs': 19,  'lev_net': 22,
-    'oi':     34,
+DISAG_SHEET_TO_SID = {
+    'NAT GAS':'NAT_GAS','WTI CRUDE':'WTI_CRUDE',
+    'SOYBEAN MEAL':'SOYBEAN_MEAL','SOYBEAN OIL':'SOYBEAN_OIL',
 }
-TFF_DATA_START = 20
 
-REPORTS = [
-    {'id':'usda_crop',  'name':'USDA Crop Progress', 'sched':'Пн 22:00 (кві-лис)', 'tag':None},
-    {'id':'eia_petrol', 'name':'EIA Petroleum',      'sched':'Ср 16:30',            'tag':None},
-    {'id':'usda_exp',   'name':'USDA Export Sales',  'sched':'Чт 14:30',            'tag':None},
-    {'id':'cot_cftc',   'name':'COT Report (CFTC)',  'sched':'Пт 21:30',            'tag':None},
-    {'id':'usda_wasde', 'name':'USDA WASDE',         'sched':'~12 число, 18:00',    'tag':'Місячний'},
-    {'id':'usda_oil',   'name':'USDA Oilseeds',      'sched':'з WASDE, 18:15',      'tag':'Місячний'},
+CHART_WEEKS=260; SPARK_WEEKS=26; HISTORY=52
+
+COLOR_LS='#4a9eff'; COLOR_CM='#20d483'; COLOR_ST='#f0515a'
+TFF_COLOR_LEV='#f0b429'; TFF_COLOR_AM='#4a9eff'; TFF_COLOR_DL='#20d483'
+
+# Disaggregated кольори (аналогічно TFF)
+DISAG_COLOR_MM ='#a78bfa'  # Managed Money    — фіолетовий
+DISAG_COLOR_PM ='#20d483'  # Prod/Merchant    — зелений
+DISAG_COLOR_SD ='#f0b429'  # Swap Dealers     — жовтий
+
+TFF_COL={'date':1,'am_cl':4,'am_cs':5,'am_net':8,'dl_cl':11,'dl_cs':12,'dl_net':15,'lev_cl':18,'lev_cs':19,'lev_net':22,'oi':34}
+TFF_DATA_START = 19  # перший рядок даних TFF = pandas індекс 19
+# M_Money: cl=4, cs=5, net=8 | Prod/Merch: cl=11, cs=12, net=15
+# Swap Dealers: cl=18, cs=19, net=22 | OI=34
+DISAG_COL={'date':1,'mm_cl':4,'mm_cs':5,'mm_net':8,'pm_cl':11,'pm_cs':12,'pm_net':15,'sd_cl':18,'sd_cs':19,'sd_net':22,'oi':34}
+DISAG_DATA_START=20
+
+REPORTS=[
+    {'id':'usda_crop', 'name':'USDA Crop Progress','sched':'Пн 22:00 (кві-лис)','tag':None},
+    {'id':'eia_petrol','name':'EIA Petroleum',     'sched':'Ср 16:30',           'tag':None},
+    {'id':'usda_exp',  'name':'USDA Export Sales', 'sched':'Чт 14:30',           'tag':None},
+    {'id':'cot_cftc',  'name':'COT Report (CFTC)', 'sched':'Пт 21:30',           'tag':None},
+    {'id':'usda_wasde','name':'USDA WASDE',        'sched':'~12 число, 18:00',   'tag':'Місячний'},
+    {'id':'usda_oil',  'name':'USDA Oilseeds',     'sched':'з WASDE, 18:15',     'tag':'Місячний'},
 ]
-REPORT_RELEVANCE = {
+REPORT_RELEVANCE={
     'usda_crop':  {'CORN':'direct','WHEAT':'direct','SOYBEAN':'direct','SOYBEAN_MEAL':'direct','SOYBEAN_OIL':'direct','COTTON':'direct','RICE':'direct','COFFEE':'direct','COCOA':'direct','SUGAR':'direct','OJ':'direct','CATTLE':'indirect','LUMBER':'indirect','_default':'none'},
     'eia_petrol': {'WTI_CRUDE':'direct','BRENT':'direct','NAT_GAS':'direct','SP500':'indirect','NASDAQ':'indirect','DOW_30':'indirect','RUSSELL2K':'indirect','VIX':'indirect','CAD':'indirect','_default':'none'},
     'usda_exp':   {'WHEAT':'direct','CORN':'direct','SOYBEAN':'direct','SOYBEAN_MEAL':'direct','SOYBEAN_OIL':'direct','COTTON':'direct','RICE':'direct','COFFEE':'direct','COCOA':'indirect','SUGAR':'indirect','OJ':'indirect','_default':'none'},
@@ -71,10 +61,10 @@ REPORT_RELEVANCE = {
     'usda_wasde': {'WHEAT':'direct','CORN':'direct','SOYBEAN':'direct','SOYBEAN_MEAL':'direct','SOYBEAN_OIL':'direct','COTTON':'direct','RICE':'direct','SUGAR':'direct','COFFEE':'direct','COCOA':'direct','OJ':'direct','CATTLE':'direct','LUMBER':'indirect','SP500':'indirect','NASDAQ':'indirect','DOW_30':'indirect','RUSSELL2K':'indirect','VIX':'indirect','WTI_CRUDE':'indirect','BRENT':'indirect','NAT_GAS':'indirect','AUD':'indirect','CAD':'indirect','NZD':'indirect','_default':'none'},
     'usda_oil':   {'SOYBEAN':'direct','SOYBEAN_MEAL':'direct','SOYBEAN_OIL':'direct','CORN':'indirect','WHEAT':'indirect','COTTON':'indirect','WTI_CRUDE':'indirect','BRENT':'indirect','_default':'none'},
 }
-def get_relevance(sid_, rid): m=REPORT_RELEVANCE.get(rid,{}); return m.get(sid_,m.get('_default','none'))
+def get_relevance(sid_,rid): m=REPORT_RELEVANCE.get(rid,{}); return m.get(sid_,m.get('_default','none'))
 
-DISPLAY = {'SP500':'S&P 500','DOW_30':'DOW 30','RUSSELL2K':'RUSSELL 2K','NAT_GAS':'NAT GAS','WTI_CRUDE':'WTI CRUDE','SOYBEAN_MEAL':'SOYBEAN MEAL','SOYBEAN_OIL':'SOYBEAN OIL','BTC_MICRO':'BTC MICRO','BTC_NANO':'BTC NANO','ETH_CASH':'ETH CASH','ETH_MICRO':'ETH MICRO','ETH_NANO':'ETH NANO'}
-CATEGORIES = {
+DISPLAY={'SP500':'S&P 500','DOW_30':'DOW 30','RUSSELL2K':'RUSSELL 2K','NAT_GAS':'NAT GAS','WTI_CRUDE':'WTI CRUDE','SOYBEAN_MEAL':'SOYBEAN MEAL','SOYBEAN_OIL':'SOYBEAN OIL','BTC_MICRO':'BTC MICRO','BTC_NANO':'BTC NANO','ETH_CASH':'ETH CASH','ETH_MICRO':'ETH MICRO','ETH_NANO':'ETH NANO'}
+CATEGORIES={
     'Валюти':  ['DXY','EUR','GBP','JPY','AUD','CAD','CHF','NZD'],
     'Метали':  ['GOLD','SILVER','COPPER','PLATINUM','PALLADIUM'],
     'Індекси': ['SP500','NASDAQ','DOW_30','RUSSELL2K','VIX'],
@@ -82,11 +72,10 @@ CATEGORIES = {
     'Агро':    ['CORN','WHEAT','SOYBEAN','SOYBEAN_MEAL','SOYBEAN_OIL','SUGAR','COFFEE','COCOA','COTTON','RICE','OJ','LUMBER','CATTLE'],
     'Крипто':  ['BTC','BTC_MICRO','BTC_NANO','ETH_CASH','ETH_MICRO','ETH_NANO'],
 }
-OVERVIEW_TO_SID = {'DXY':'DXY','EUR':'EUR','GBP':'GBP','CAD':'CAD','JPY':'JPY','AUD':'AUD','NZD':'NZD','CHF':'CHF','GOLD':'GOLD','SILVER':'SILVER','COPPER':'COPPER','PLATINUM':'PLATINUM','PALLADIUM':'PALLADIUM','SP500':'SP500','S&P500':'SP500','NASDAQ':'NASDAQ','DOW_30':'DOW_30','DOW 30':'DOW_30','RUSSELL2K':'RUSSELL2K','VIX':'VIX','WTI_CRUDE':'WTI_CRUDE','WTI CRUDE':'WTI_CRUDE','BRENT':'BRENT','NAT_GAS':'NAT_GAS','NAT GAS':'NAT_GAS','CORN':'CORN','WHEAT':'WHEAT','SOYBEAN':'SOYBEAN','SOYBEAN_MEAL':'SOYBEAN_MEAL','SOYBEAN MEAL':'SOYBEAN_MEAL','SOYBEAN_OIL':'SOYBEAN_OIL','SOYBEAN OIL':'SOYBEAN_OIL','SUGAR':'SUGAR','COFFEE':'COFFEE','COCOA':'COCOA','COTTON':'COTTON','RICE':'RICE','OJ':'OJ','LUMBER':'LUMBER','CATTLE':'CATTLE','BTC':'BTC','BTC_NANO':'BTC_NANO','BTC NANO':'BTC_NANO','BTC_MICRO':'BTC_MICRO','BTC MICRO':'BTC_MICRO','ETH_CASH':'ETH_CASH','ETH CASH':'ETH_CASH','ETH_MICRO':'ETH_MICRO','ETH MICRO':'ETH_MICRO','ETH_NANO':'ETH_NANO','ETH NANO':'ETH_NANO'}
-COL = {'date':1,'ls_cl':4,'ls_cs':5,'ls_pct':6,'ls_net':8,'cm_cl':11,'cm_cs':12,'cm_pct':13,'cm_net':15,'st_cl':18,'st_cs':19,'st_pct':20,'st_net':22}
-DATA_START_ROW = 5
+OVERVIEW_TO_SID={'DXY':'DXY','EUR':'EUR','GBP':'GBP','CAD':'CAD','JPY':'JPY','AUD':'AUD','NZD':'NZD','CHF':'CHF','GOLD':'GOLD','SILVER':'SILVER','COPPER':'COPPER','PLATINUM':'PLATINUM','PALLADIUM':'PALLADIUM','SP500':'SP500','S&P500':'SP500','NASDAQ':'NASDAQ','DOW_30':'DOW_30','DOW 30':'DOW_30','RUSSELL2K':'RUSSELL2K','VIX':'VIX','WTI_CRUDE':'WTI_CRUDE','WTI CRUDE':'WTI_CRUDE','BRENT':'BRENT','NAT_GAS':'NAT_GAS','NAT GAS':'NAT_GAS','CORN':'CORN','WHEAT':'WHEAT','SOYBEAN':'SOYBEAN','SOYBEAN_MEAL':'SOYBEAN_MEAL','SOYBEAN MEAL':'SOYBEAN_MEAL','SOYBEAN_OIL':'SOYBEAN_OIL','SOYBEAN OIL':'SOYBEAN_OIL','SUGAR':'SUGAR','COFFEE':'COFFEE','COCOA':'COCOA','COTTON':'COTTON','RICE':'RICE','OJ':'OJ','LUMBER':'LUMBER','CATTLE':'CATTLE','BTC':'BTC','BTC_NANO':'BTC_NANO','BTC NANO':'BTC_NANO','BTC_MICRO':'BTC_MICRO','BTC MICRO':'BTC_MICRO','ETH_CASH':'ETH_CASH','ETH CASH':'ETH_CASH','ETH_MICRO':'ETH_MICRO','ETH MICRO':'ETH_MICRO','ETH_NANO':'ETH_NANO','ETH NANO':'ETH_NANO'}
+COL={'date':1,'ls_cl':4,'ls_cs':5,'ls_pct':6,'ls_net':8,'cm_cl':11,'cm_cs':12,'cm_pct':13,'cm_net':15,'st_cl':18,'st_cs':19,'st_pct':20,'st_net':22}
+DATA_START_ROW=5
 
-# ── Утиліти ──────────────────────────────────────────────────────
 def disp(n): return DISPLAY.get(n,n)
 def sid(n):  return n.replace(' ','_').replace('&','n').replace('/','_')
 def to_num(s): return pd.to_numeric(s,errors='coerce').fillna(0).round(2).tolist()
@@ -162,7 +151,6 @@ def make_sparkline(series,color,h=38):
            f'<polyline points="{line}" fill="none" stroke="{color}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>'
            f'<circle cx="{lx}" cy="{ly}" r="2.5" fill="{color}"/></svg>')
 
-# ── Gauge ─────────────────────────────────────────────────────────
 def make_gauge_svg(value,color,size=74):
     value=max(0.0,min(100.0,float(value)));cx=cy=size/2;r=size*0.40
     START_SVG=140.0;SWEEP=240.0
@@ -179,7 +167,6 @@ def make_gauge_svg(value,color,size=74):
            +f'<circle cx="{v[0]}" cy="{v[1]}" r="4" fill="{color}"/>'
            f'<circle cx="{s[0]}" cy="{s[1]}" r="2.5" fill="#252d48" stroke="{color}" stroke-width="1"/>'
            f'<text x="{tx}" y="{ty-6}" text-anchor="middle" dominant-baseline="middle" font-family="Courier New,monospace" font-size="7" fill="{color}" opacity="0.7">COT INDEX</text>'
-           # Число з 1 десятковим знаком
            f'<text x="{tx}" y="{ty+6}" text-anchor="middle" dominant-baseline="middle" font-family="Courier New,monospace" font-size="13" font-weight="bold" fill="{color}">{value:.1f}</text></svg>')
 def gauge_color(value,oi=False):
     if oi: return '#dde2ee'
@@ -188,7 +175,6 @@ def gauge_color(value,oi=False):
     if v>85: return '#20d483'
     return '#dde2ee'
 
-# ── Metric card ───────────────────────────────────────────────────
 def make_metric_card(lbl,val,chg,chg_pct,spark_series,spark_color,oi=False,gauge_val=50.0,sub_text='COT Index: —'):
     spark=make_sparkline(spark_series,spark_color)
     try: ci=int(round(float(chg)))
@@ -207,7 +193,6 @@ def make_metric_card(lbl,val,chg,chg_pct,spark_series,spark_color,oi=False,gauge
            +(f'<div class="mc-sub">{sub_text}</div>' if sub_text else '')
            +f'</div><div class="mc-right">{g}</div></div>{spark}</div>')
 
-# ── Analysis row (Legacy) ─────────────────────────────────────────
 def analysis_row(group_label,group_color,net,cl,cs,chg,chg_pct):
     dc='g'if net>0 else'r'
     return(f'<div class="arow"><div class="arow-body"><div class="arow-left">'
@@ -222,7 +207,6 @@ def analysis_row(group_label,group_color,net,cl,cs,chg,chg_pct):
            f'<div class="ar-net {dc}">{fv_full(net,sign=True)}</div>'
            f'</div></div></div>')
 
-# ── Reports panel ─────────────────────────────────────────────────
 def make_reports_panel(s_id):
     rows=[]
     for rpt in REPORTS:
@@ -245,7 +229,6 @@ def make_reports_panel(s_id):
            f'<div class="rel-legend"><span class="rel-icon rel-d">●</span>прямий&nbsp;<span class="rel-icon rel-i">■</span>непрямий</div></div>'
            +''.join(rows)+'</div>')
 
-# ── SM bar ────────────────────────────────────────────────────────
 def sm_bar(val,label):
     v=float(val) if val else 0.0
     pct=min(max((v+1)/2*100,0),100)
@@ -255,7 +238,6 @@ def sm_bar(val,label):
            f'<div class="sm-bar-bg"><div class="sm-mk" style="left:{pct:.0f}%;background:{color}"></div></div>'
            f'<div class="sm-val {cls}">{v:+.2f}</div></div>')
 
-# ── Intensity bg (таблиця) ────────────────────────────────────────
 def intensity_bg(val,max_abs):
     if max_abs==0: return ''
     try:
@@ -265,10 +247,7 @@ def intensity_bg(val,max_abs):
     except: pass
     return ''
 
-# ================================================================
-# LEGACY — читання даних
-# ================================================================
-OVERVIEW_TABLE = []
+OVERVIEW_TABLE=[]
 def read_overview(xl):
     global OVERVIEW_TABLE
     result={};OVERVIEW_TABLE=[]
@@ -362,12 +341,10 @@ def load_all():
     return data
 
 # ================================================================
-# TFF — читання даних
+# TFF — читання даних (незмінно з v14)
 # ================================================================
 def detect_tff_cols(raw):
-    """Автодетекція колонок TFF за заголовками (перші 8 рядків)."""
-    n_cols=raw.shape[1]
-    col_text=[]
+    n_cols=raw.shape[1];col_text=[]
     for ci in range(n_cols):
         parts=[]
         for ri in range(min(8,len(raw))):
@@ -380,15 +357,15 @@ def detect_tff_cols(raw):
                 if all(p in text for p in pats): return ci
         return None
     r={}
-    r['dl_cl'] =find([('dealer','change','long'), ('dealer','chg','long'), ('change','dealer','long')])
-    r['dl_cs'] =find([('dealer','change','short'),('dealer','chg','short'),('change','dealer','short')])
-    r['dl_net']=find([('dealer','net'),('dealer','nett'),('dealer','positions','net')])
-    r['am_cl'] =find([('asset','change','long'), ('asset','chg','long'), ('change','asset','long')])
-    r['am_cs'] =find([('asset','change','short'),('asset','chg','short'),('change','asset','short')])
+    r['dl_cl']=find([('dealer','change','long'),('dealer','chg','long')])
+    r['dl_cs']=find([('dealer','change','short'),('dealer','chg','short')])
+    r['dl_net']=find([('dealer','net'),('dealer','nett')])
+    r['am_cl']=find([('asset','change','long'),('asset','chg','long')])
+    r['am_cs']=find([('asset','change','short'),('asset','chg','short')])
     r['am_net']=find([('asset','net'),('asset mgr','net'),('asset_mgr','net')])
-    r['lev_cl']=find([('lev','change','long'), ('lev','chg','long'), ('change','lev','long'), ('leveraged','change','long')])
-    r['lev_cs']=find([('lev','change','short'),('lev','chg','short'),('change','lev','short'),('leveraged','change','short')])
-    r['lev_net']=find([('lev','net'),('leveraged','net'),('lev money','net'),('lev_money','net')])
+    r['lev_cl']=find([('lev','change','long'),('lev','chg','long'),('leveraged','change','long')])
+    r['lev_cs']=find([('lev','change','short'),('lev','chg','short'),('leveraged','change','short')])
+    r['lev_net']=find([('lev','net'),('leveraged','net'),('lev money','net')])
     found=sum(1 for v in r.values() if v is not None)
     if found>=6: print(f"      ✓ TFF колонки знайдено ({found}/9)"); return r
     print(f"      ⚠ TFF заголовки не знайдено ({found}/9), використовую TFF_COL"); return {}
@@ -397,8 +374,7 @@ def read_tff_sheet(xl_tff,name):
     try:
         raw=xl_tff.parse(name,header=None)
         if raw.shape[0]<TFF_DATA_START+2 or raw.shape[1]<10: return None
-        auto=detect_tff_cols(raw)
-        cols=TFF_COL.copy()
+        auto=detect_tff_cols(raw);cols=TFF_COL.copy()
         if auto: cols.update({k:v for k,v in auto.items() if v is not None})
         df=raw.iloc[TFF_DATA_START:].reset_index(drop=True).copy()
         dates_raw=pd.to_datetime(df.iloc[:,cols['date']],errors='coerce')
@@ -413,11 +389,9 @@ def read_tff_sheet(xl_tff,name):
         dl_cl=gc('dl_cl');dl_cs=gc('dl_cs');dl_net=gc('dl_net')
         am_cl=gc('am_cl');am_cs=gc('am_cs');am_net=gc('am_net')
         lev_cl=gc('lev_cl');lev_cs=gc('lev_cs');lev_net=gc('lev_net')
-        # OI: спочатку беремо з TFF_COL['oi'], якщо не знайшли - автодетекція
-        oi_col_idx = cols.get('oi', -1)
-        if oi_col_idx < 0 or oi_col_idx >= df.shape[1]:
-            oi_col_idx = find_oi_col(df)
-        oi_ci = oi_col_idx
+        oi_col_idx=cols.get('oi',-1)
+        if oi_col_idx<0 or oi_col_idx>=df.shape[1]: oi_col_idx=find_oi_col(df)
+        oi_ci=oi_col_idx
         oi_all=to_num(df.iloc[:,oi_ci]) if oi_ci<df.shape[1] else [0.0]*len(df)
         all_dates=df['_dt'].dt.strftime('%d.%m.%Y').tolist()
         i0=-1;i1=-2 if len(all_dates)>1 else -1
@@ -458,46 +432,111 @@ def load_tff_data():
     print(f"    TFF вкладок: {len(sheets)}\n")
     tff={}
     for sheet_name in sheets:
-        # Визначаємо SID: через маппінг або через стандартну функцію sid()
-        mapped_sid = TFF_SHEET_TO_SID.get(sheet_name, sid(sheet_name))
-        r=read_tff_sheet(xl, sheet_name)
+        mapped_sid=TFF_SHEET_TO_SID.get(sheet_name,sid(sheet_name))
+        r=read_tff_sheet(xl,sheet_name)
         if r:
-            r['sid'] = mapped_sid  # перезаписуємо sid після маппінгу
-            tff[mapped_sid] = r
+            r['sid']=mapped_sid;tff[mapped_sid]=r
             print(f"  ✓  TFF {sheet_name:20s} → {mapped_sid:12s}  {r['cur']['date']}  AM={fv(r['cur']['am_net'],True,True):>8s}")
         else: print(f"  ✗  TFF {sheet_name}")
     print(f"\n✅  TFF: {len(tff)} інструментів\n")
     return tff
 
 # ================================================================
-# TFF — UI КОМПОНЕНТИ
+# DISAGGREGATED — читання даних
+# ================================================================
+def read_disag_sheet(xl_d, name):
+    try:
+        raw=xl_d.parse(name, header=None)
+        if raw.shape[0]<DISAG_DATA_START+2 or raw.shape[1]<20: return None
+        df=raw.iloc[DISAG_DATA_START:].reset_index(drop=True).copy()
+        dates_raw=pd.to_datetime(df.iloc[:,DISAG_COL['date']],errors='coerce')
+        valid=dates_raw.notna()&(dates_raw.dt.year>2000)
+        df=df[valid].copy();df['_dt']=dates_raw[valid].values
+        if df.empty: return None
+        df=df.sort_values('_dt').reset_index(drop=True)
+        def gc(key):
+            idx=DISAG_COL.get(key,-1)
+            if idx<0 or idx>=df.shape[1]: return [0.0]*len(df)
+            return to_num(df.iloc[:,idx])
+        mm_cl=gc('mm_cl');mm_cs=gc('mm_cs');mm_net=gc('mm_net')
+        pm_cl=gc('pm_cl');pm_cs=gc('pm_cs');pm_net=gc('pm_net')
+        sd_cl=gc('sd_cl');sd_cs=gc('sd_cs');sd_net=gc('sd_net')
+        oi_idx=DISAG_COL.get('oi',34)
+        oi_all=to_num(df.iloc[:,oi_idx]) if oi_idx<df.shape[1] else [0.0]*len(df)
+        all_dates=df['_dt'].dt.strftime('%d.%m.%Y').tolist()
+        i0=-1;i1=-2 if len(all_dates)>1 else -1
+        def nd(net): return round(float(net[i0])-float(net[i1]),0)
+        mm_chg=nd(mm_net);pm_chg=nd(pm_net);sd_chg=nd(sd_net);oi_chg=nd(oi_all)
+        oi_cur=float(oi_all[i0]);oi_prev=float(oi_all[i1])
+        oi_pct=round((oi_cur-oi_prev)/abs(oi_prev)*100,2) if oi_prev!=0 else 0.0
+        def cot(s): return{'all':calc_cot_index(s),'3y':calc_cot_index(s,156),'1y':calc_cot_index(s,52),'6m':calc_cot_index(s,26),'3m':calc_cot_index(s,13)}
+        def stats(net_s,cl_s=None,cs_s=None):
+            def mm(s):
+                sv=[float(v) for v in s if v!=0];s1y=sv[-52:] if len(sv)>=52 else sv
+                return{'max_all':max(sv)if sv else 0,'min_all':min(sv)if sv else 0,'max_1y':max(s1y)if s1y else 0,'min_1y':min(s1y)if s1y else 0}
+            r=mm(net_s);r['cl']=mm(cl_s) if cl_s is not None else None;r['cs']=mm(cs_s) if cs_s is not None else None;return r
+        N=min(CHART_WEEKS,len(df));cdf=df.tail(N).reset_index(drop=True)
+        def gcc(key):
+            idx=DISAG_COL.get(key,-1)
+            if idx<0 or idx>=cdf.shape[1]: return [0.0]*N
+            return to_num(cdf.iloc[:,idx])
+        mm_w=gcc('mm_net');pm_w=gcc('pm_net');sd_w=gcc('sd_net')
+        oi_w=to_num(cdf.iloc[:,oi_idx]) if oi_idx<cdf.shape[1] else [0.0]*N
+        chart={'dates':cdf['_dt'].dt.strftime('%d.%m.%Y').tolist(),'mm':mm_w,'pm':pm_w,'sd':sd_w,'oi':oi_w,'mm_d':compute_delta(mm_w),'pm_d':compute_delta(pm_w),'sd_d':compute_delta(sd_w)}
+        hdf=df.tail(HISTORY).reset_index(drop=True)
+        def gch(key):
+            idx=DISAG_COL.get(key,-1)
+            if idx<0 or idx>=hdf.shape[1]: return [0.0]*len(hdf)
+            return to_num(hdf.iloc[:,idx])
+        hist={'dates':hdf['_dt'].dt.strftime('%d.%m.%Y').tolist(),'mm_cl':gch('mm_cl'),'mm_cs':gch('mm_cs'),'mm_net':gch('mm_net'),'pm_cl':gch('pm_cl'),'pm_cs':gch('pm_cs'),'pm_net':gch('pm_net'),'sd_cl':gch('sd_cl'),'sd_cs':gch('sd_cs'),'sd_net':gch('sd_net'),'oi':to_num(hdf.iloc[:,oi_idx]) if oi_idx<hdf.shape[1] else [0.0]*len(hdf)}
+        oi_st=stats(oi_all)
+        oi_cap=round(oi_cur/oi_st['max_all']*100,1) if oi_st.get('max_all',0)>0 else 50.0
+        return{'name':name,'sid':sid(name),'chart':chart,'hist':hist,'stats':{'mm':stats(mm_net,mm_cl,mm_cs),'pm':stats(pm_net,pm_cl,pm_cs),'sd':stats(sd_net,sd_cl,sd_cs),'oi':oi_st},'cot_idx':{'mm':cot(mm_net),'pm':cot(pm_net),'sd':cot(sd_net)},'spark':{'mm':mm_net,'pm':pm_net,'sd':sd_net,'oi':oi_all},'oi_capacity':oi_cap,'cur':{'date':all_dates[i0],'mm_net':mm_net[i0],'mm_chg':mm_chg,'mm_cl':mm_cl[i0],'mm_cs':mm_cs[i0],'mm_chg_pct':pct_change(mm_chg,mm_net[i0]),'pm_net':pm_net[i0],'pm_chg':pm_chg,'pm_cl':pm_cl[i0],'pm_cs':pm_cs[i0],'pm_chg_pct':pct_change(pm_chg,pm_net[i0]),'sd_net':sd_net[i0],'sd_chg':sd_chg,'sd_cl':sd_cl[i0],'sd_cs':sd_cs[i0],'sd_chg_pct':pct_change(sd_chg,sd_net[i0]),'oi':oi_cur,'oi_chg':oi_chg,'oi_chg_pct':fp(oi_pct,signed=True)}}
+    except Exception as e: print(f"  ❌ DISAG {name}: {e}"); return None
+
+def load_disag_data():
+    if not DISAG_FILE.exists(): print(f"  ⚠  DISAG файл не знайдено: {DISAG_FILE}"); return {}
+    print(f"\n📂  {DISAG_FILE}")
+    xl=pd.ExcelFile(DISAG_FILE)
+    sheets=[s for s in xl.sheet_names if s.lower() not in DISAG_SKIP_SHEETS]
+    print(f"    DISAG вкладок: {len(sheets)}\n")
+    disag={}
+    for sheet_name in sheets:
+        mapped_sid=DISAG_SHEET_TO_SID.get(sheet_name,sid(sheet_name))
+        r=read_disag_sheet(xl,sheet_name)
+        if r:
+            r['sid']=mapped_sid;disag[mapped_sid]=r
+            print(f"  ✓  DISAG {sheet_name:20s} → {mapped_sid:12s}  {r['cur']['date']}  MM={fv(r['cur']['mm_net'],True,True):>8s}")
+        else: print(f"  ✗  DISAG {sheet_name}")
+    print(f"\n✅  DISAG: {len(disag)} інструментів\n")
+    return disag
+
+# ================================================================
+# TFF UI — незмінно з v14
 # ================================================================
 def make_tff_metric_cards(tff,s):
     c=tff['cur']
     mc_lev=make_metric_card('LEV MONEY (NETTO)',c['lev_net'],c['lev_chg'],c['lev_chg_pct'],tff['spark']['lev'],TFF_COLOR_LEV,gauge_val=tff['cot_idx']['lev']['all'],sub_text="")
-    mc_am =make_metric_card('ASSET MGR (NETTO)', c['am_net'], c['am_chg'], c['am_chg_pct'], tff['spark']['am'], TFF_COLOR_AM, gauge_val=tff['cot_idx']['am']['all'], sub_text=f"COT Index: {fp(tff['cot_idx']['am']['all'])}")
-    mc_dl =make_metric_card('DEALER (NETTO)',    c['dl_net'], c['dl_chg'], c['dl_chg_pct'], tff['spark']['dl'], TFF_COLOR_DL, gauge_val=tff['cot_idx']['dl']['all'], sub_text=f"COT Index: {fp(tff['cot_idx']['dl']['all'])}")
+    mc_am =make_metric_card('ASSET MGR (NETTO)',c['am_net'],c['am_chg'],c['am_chg_pct'],tff['spark']['am'],TFF_COLOR_AM,gauge_val=tff['cot_idx']['am']['all'],sub_text=f"COT Index: {fp(tff['cot_idx']['am']['all'])}")
+    mc_dl =make_metric_card('DEALER (NETTO)',c['dl_net'],c['dl_chg'],c['dl_chg_pct'],tff['spark']['dl'],TFF_COLOR_DL,gauge_val=tff['cot_idx']['dl']['all'],sub_text=f"COT Index: {fp(tff['cot_idx']['dl']['all'])}")
     mc_oi =make_metric_card('OPEN INTEREST',c['oi'],c['oi_chg'],c['oi_chg_pct'],tff['spark']['oi'],'#a0aac0',oi=True,gauge_val=tff.get('oi_capacity',50.0),sub_text=f"зміна: {fv(int(c['oi_chg']),True,sign=True)}")
     return f'<div class="mcards">{mc_am}{mc_lev}{mc_dl}{mc_oi}</div>'
 
 def make_tff_analysis(tff):
-    """Горизонтальна панель: LEV MONEY | ASSET MGR | DEALER в ряд."""
     c=tff['cur']
     def col_html(label,color,net,cl,cs,chg,chg_pct):
         dc='g'if net>0 else'r'
-        return(f'<div class="tff-a-col">'
-               f'<div class="tff-a-name" style="color:{color}">{label}</div>'
+        return(f'<div class="tff-a-col"><div class="tff-a-name" style="color:{color}">{label}</div>'
                f'<div class="tff-a-chg-grid">'
                f'<div class="tff-ag-item"><span class="ag-lbl">CHG LONG</span><span class="{cc(cl)} ag-val">{fv_full(cl,sign=True)}</span></div>'
                f'<div class="tff-ag-item"><span class="ag-lbl">CHG SHORT</span><span class="{cc(cs)} ag-val">{fv_full(cs,sign=True)}</span></div>'
-               f'</div>'
-               f'<div class="tff-a-dnet"><span class="ag-lbl" style="font-size:9px;color:var(--d)">Δ NET</span>'
+               f'</div><div class="tff-a-dnet"><span class="ag-lbl" style="font-size:9px;color:var(--d)">Δ NET</span>'
                f'<span class="{cc(chg)} ag-val-net">{fv_full(chg,sign=True)}<span class="ag-pct"> ({chg_pct})</span></span></div>'
                f'<div class="tff-a-bignet {dc}">{fv_full(net,sign=True)}</div></div>')
     return(f'<div class="panel tff-analysis-panel">'
-           +col_html('ASSET MGR', TFF_COLOR_AM, c['am_net'], c['am_cl'], c['am_cs'], c['am_chg'], c['am_chg_pct'])
+           +col_html('ASSET MGR',TFF_COLOR_AM,c['am_net'],c['am_cl'],c['am_cs'],c['am_chg'],c['am_chg_pct'])
            +col_html('LEV MONEY',TFF_COLOR_LEV,c['lev_net'],c['lev_cl'],c['lev_cs'],c['lev_chg'],c['lev_chg_pct'])
-           +col_html('DEALER',    TFF_COLOR_DL, c['dl_net'], c['dl_cl'], c['dl_cs'], c['dl_chg'], c['dl_chg_pct'])
+           +col_html('DEALER',TFF_COLOR_DL,c['dl_net'],c['dl_cl'],c['dl_cs'],c['dl_chg'],c['dl_chg_pct'])
            +f'</div>')
 
 def make_tff_pct_panel(tff,s):
@@ -506,8 +545,7 @@ def make_tff_pct_panel(tff,s):
     ini_color='#f0515a'if ini<15 else('#20d483'if ini>85 else'#dde2ee')
     ini_lbl='екстрем. шорт'if ini<15 else('екстрем. лонг'if ini>85 else'нейтральна зона')
     cj=json.dumps(ci,ensure_ascii=False)
-    return(f'<div class="panel pct-panel">'
-           f'<div class="plbl">ПЕРЦЕНТИЛЬ (COT INDEX)</div>'
+    return(f'<div class="panel pct-panel"><div class="plbl">ПЕРЦЕНТИЛЬ (COT INDEX)</div>'
            f'<div class="pct-sel-row"><div class="psel-group">'
            f'<button class="psel active" data-p="lev" onclick="pctTffSel(this,\'{s}\')">LEV</button>'
            f'<button class="psel" data-p="am"  onclick="pctTffSel(this,\'{s}\')">AM</button>'
@@ -532,10 +570,8 @@ def make_tff_pct_panel(tff,s):
 
 def make_tff_chart_block(tff,s):
     cj=json.dumps(tff['chart'],ensure_ascii=False)
-    return(f'<div class="chartbox"><div class="chartbox-hdr">'
-           f'<div class="plbl" style="margin:0">ЧИСТІ ПОЗИЦІЇ</div>'
-           f'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
-           f'<div class="period-btns">'
+    return(f'<div class="chartbox"><div class="chartbox-hdr"><div class="plbl" style="margin:0">ЧИСТІ ПОЗИЦІЇ</div>'
+           f'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="period-btns">'
            f'<button class="per-btn active" data-per="1y" onclick="setTffChartPer(this,\'{s}\')">1 рік</button>'
            f'<button class="per-btn" data-per="3y" onclick="setTffChartPer(this,\'{s}\')">3 роки</button>'
            f'<button class="per-btn" data-per="5y" onclick="setTffChartPer(this,\'{s}\')">5 років</button>'
@@ -543,8 +579,7 @@ def make_tff_chart_block(tff,s):
            f'<span><span class="ll" style="background:{TFF_COLOR_AM}"></span>Asset Mgr</span>'
            f'<span><span class="ll" style="background:{TFF_COLOR_LEV}"></span>Lev Money</span>'
            f'<span class="ll-dash" style="border-top-color:{TFF_COLOR_DL}"></span><span style="margin-left:4px">Dealer</span>'
-           f'</div></div></div>'
-           f'<div class="cw"><canvas id="tff_cv_{s}"></canvas></div></div>'
+           f'</div></div></div><div class="cw"><canvas id="tff_cv_{s}"></canvas></div></div>'
            f'<script>_tff["{s}"]={cj};</script>')
 
 def make_tff_bar_block(tff,s):
@@ -555,7 +590,6 @@ def make_tff_bar_block(tff,s):
            f'</div>')
 
 def make_tff_hist_table(tff,table_id):
-    """Таблиця тижневої статистики TFF (без SM Divergence)."""
     hist=tff['hist'];stats=tff['stats'];n=len(hist['dates'])
     if n==0: return '<p style="padding:12px;color:#8090b0">Немає даних</p>'
     def maxabs(lst): vals=[abs(v) for v in lst if v!=0]; return max(vals) if vals else 1
@@ -564,8 +598,7 @@ def make_tff_hist_table(tff,table_id):
         r,g,b=int(color[1:3],16),int(color[3:5],16),int(color[5:7],16)
         return f'background:rgba({r},{g},{b},.18);color:#fff;border-left:2px solid {color}88'
     def sc(color): return f'background:var(--bg3);color:var(--d);border-left:2px solid {color}55'
-    sub_plain='background:var(--bg3);color:var(--d)'
-    oi_bg='background:rgba(160,170,192,.1);color:#fff'
+    sp='background:var(--bg3);color:var(--d)';oi_bg='background:rgba(160,170,192,.1);color:#fff'
     colgroup='<colgroup><col style="width:84px"><col><col><col><col><col><col><col><col><col><col style="width:82px"></colgroup>'
     thead=(f'<thead><tr class="th-row1"><th class="th-corner"></th>'
            f'<th colspan="3" class="th-group" style="{hc(TFF_COLOR_AM)}">ASSET MGR</th>'
@@ -573,9 +606,9 @@ def make_tff_hist_table(tff,table_id):
            f'<th colspan="3" class="th-group" style="{hc(TFF_COLOR_DL)}">DEALER</th>'
            f'<th class="th-group" style="{oi_bg}">OI</th></tr>'
            f'<tr class="th-row2"><th class="th-date th-left">ДАТА</th>'
-           f'<th style="{sc(TFF_COLOR_AM)}">CHG L</th><th style="{sub_plain}">CHG S</th><th class="sep-r" style="{sub_plain}">NET POS</th>'
-           f'<th style="{sc(TFF_COLOR_LEV)}">CHG L</th><th style="{sub_plain}">CHG S</th><th class="sep-r" style="{sub_plain}">NET POS</th>'
-           f'<th style="{sc(TFF_COLOR_DL)}">CHG L</th><th style="{sub_plain}">CHG S</th><th class="sep-r" style="{sub_plain}">NET POS</th>'
+           f'<th style="{sc(TFF_COLOR_AM)}">CHG L</th><th style="{sp}">CHG S</th><th class="sep-r" style="{sp}">NET POS</th>'
+           f'<th style="{sc(TFF_COLOR_LEV)}">CHG L</th><th style="{sp}">CHG S</th><th class="sep-r" style="{sp}">NET POS</th>'
+           f'<th style="{sc(TFF_COLOR_DL)}">CHG L</th><th style="{sp}">CHG S</th><th class="sep-r" style="{sp}">NET POS</th>'
            f'<th style="{oi_bg}" class="th-oi">All</th></tr></thead>')
     def mm_v(v,cls=''): return f'<td class="mm-val {cls}">{fv_full(v,sign=True)}</td>'
     def grp(st,key,col):
@@ -592,34 +625,162 @@ def make_tff_hist_table(tff,table_id):
     for i in range(n-1,-1,-1):
         ri=n-1-i
         rows.append(f'<tr data-row="{ri}"><td class="date-col">{hist["dates"][i]}</td>'
-                    +td_chg(hist['am_cl'][i], m['am_cl']) +td_chg(hist['am_cs'][i], m['am_cs']) +td_net(hist['am_net'][i], ' sep-r')
+                    +td_chg(hist['am_cl'][i],m['am_cl'])+td_chg(hist['am_cs'][i],m['am_cs'])+td_net(hist['am_net'][i],' sep-r')
                     +td_chg(hist['lev_cl'][i],m['lev_cl'])+td_chg(hist['lev_cs'][i],m['lev_cs'])+td_net(hist['lev_net'][i],' sep-r')
-                    +td_chg(hist['dl_cl'][i], m['dl_cl']) +td_chg(hist['dl_cs'][i], m['dl_cs']) +td_net(hist['dl_net'][i], ' sep-r')
+                    +td_chg(hist['dl_cl'][i],m['dl_cl'])+td_chg(hist['dl_cs'][i],m['dl_cs'])+td_net(hist['dl_net'][i],' sep-r')
                     +f'<td class="t">{fv_full(hist["oi"][i])}</td></tr>')
     data_tbody=f'<tbody class="data-tbody">{"".join(rows)}</tbody>'
     return f'<table class="ht" id="{table_id}">'+colgroup+thead+mm_tbody+data_tbody+'</table>'
 
 def make_tff_view(tff,s,reports_panel_html):
-    cards  =make_tff_metric_cards(tff,s)
-    analysis=make_tff_analysis(tff)
-    pct    =make_tff_pct_panel(tff,s)
-    chart  =make_tff_chart_block(tff,s)
-    bars   =make_tff_bar_block(tff,s)
-    tbl_id =f'tff_tbl_{s}'
-    tbl    =make_tff_hist_table(tff,tbl_id)
-    table_block=(f'<div class="htable-wrap">'
-                 f'<div class="htable-hdr"><span>ТИЖНЕВА СТАТИСТИКА ПОЗИЦІЙ</span>'
+    cards=make_tff_metric_cards(tff,s);analysis=make_tff_analysis(tff)
+    pct=make_tff_pct_panel(tff,s);chart=make_tff_chart_block(tff,s)
+    bars=make_tff_bar_block(tff,s);tbl_id=f'tff_tbl_{s}';tbl=make_tff_hist_table(tff,tbl_id)
+    table_block=(f'<div class="htable-wrap"><div class="htable-hdr"><span>ТИЖНЕВА СТАТИСТИКА ПОЗИЦІЙ</span>'
                  f'<div class="hsel">'
                  f'<button class="hbtn active" data-n="10" onclick="setTffHist(this,\'{s}\')">10</button>'
                  f'<button class="hbtn" data-n="26" onclick="setTffHist(this,\'{s}\')">26</button>'
                  f'<button class="hbtn" data-n="52" onclick="setTffHist(this,\'{s}\')">52</button>'
                  f'</div></div><div class="htable-scroll">{tbl}</div></div>')
     mid=f'<div class="tff-mid">{reports_panel_html}{pct}</div>'
-    return(f'<div class="rpt-sec" id="rpt_tff_{s}" style="display:none">'
-           +cards+analysis+mid+bars+chart+table_block+'</div>')
+    return(f'<div class="rpt-sec" id="rpt_tff_{s}" style="display:none">'+cards+analysis+mid+bars+chart+table_block+'</div>')
 
 # ================================================================
-# LEGACY таблиця
+# DISAGGREGATED UI — аналогічно TFF, різні назви учасників
+# ================================================================
+def make_disag_metric_cards(dg,s):
+    c=dg['cur']
+    mc_mm=make_metric_card('MAN MONEY (NETTO)',c['mm_net'],c['mm_chg'],c['mm_chg_pct'],dg['spark']['mm'],DISAG_COLOR_MM,gauge_val=dg['cot_idx']['mm']['all'],sub_text=f"COT Index: {fp(dg['cot_idx']['mm']['all'])}")
+    mc_pm=make_metric_card('PROD/MERCH (NETTO)',c['pm_net'],c['pm_chg'],c['pm_chg_pct'],dg['spark']['pm'],DISAG_COLOR_PM,gauge_val=dg['cot_idx']['pm']['all'],sub_text=f"COT Index: {fp(dg['cot_idx']['pm']['all'])}")
+    mc_sd=make_metric_card('SWAP DEALERS (NETTO)',c['sd_net'],c['sd_chg'],c['sd_chg_pct'],dg['spark']['sd'],DISAG_COLOR_SD,gauge_val=dg['cot_idx']['sd']['all'],sub_text=f"COT Index: {fp(dg['cot_idx']['sd']['all'])}")
+    mc_oi=make_metric_card('OPEN INTEREST',c['oi'],c['oi_chg'],c['oi_chg_pct'],dg['spark']['oi'],'#a0aac0',oi=True,gauge_val=dg.get('oi_capacity',50.0),sub_text=f"зміна: {fv(int(c['oi_chg']),True,sign=True)}")
+    return f'<div class="mcards">{mc_mm}{mc_pm}{mc_sd}{mc_oi}</div>'
+
+def make_disag_analysis(dg):
+    c=dg['cur']
+    def col_html(label,color,net,cl,cs,chg,chg_pct):
+        dc='g'if net>0 else'r'
+        return(f'<div class="tff-a-col"><div class="tff-a-name" style="color:{color}">{label}</div>'
+               f'<div class="tff-a-chg-grid">'
+               f'<div class="tff-ag-item"><span class="ag-lbl">CHG LONG</span><span class="{cc(cl)} ag-val">{fv_full(cl,sign=True)}</span></div>'
+               f'<div class="tff-ag-item"><span class="ag-lbl">CHG SHORT</span><span class="{cc(cs)} ag-val">{fv_full(cs,sign=True)}</span></div>'
+               f'</div><div class="tff-a-dnet"><span class="ag-lbl" style="font-size:9px;color:var(--d)">Δ NET</span>'
+               f'<span class="{cc(chg)} ag-val-net">{fv_full(chg,sign=True)}<span class="ag-pct"> ({chg_pct})</span></span></div>'
+               f'<div class="tff-a-bignet {dc}">{fv_full(net,sign=True)}</div></div>')
+    return(f'<div class="panel tff-analysis-panel">'
+           +col_html('MAN MONEY',DISAG_COLOR_MM,c['mm_net'],c['mm_cl'],c['mm_cs'],c['mm_chg'],c['mm_chg_pct'])
+           +col_html('PROD/MERCH',DISAG_COLOR_PM,c['pm_net'],c['pm_cl'],c['pm_cs'],c['pm_chg'],c['pm_chg_pct'])
+           +col_html('SWAP DEALERS',DISAG_COLOR_SD,c['sd_net'],c['sd_cl'],c['sd_cs'],c['sd_chg'],c['sd_chg_pct'])
+           +f'</div>')
+
+def make_disag_pct_panel(dg,s):
+    ci=dg['cot_idx'];ini=ci['mm']['all']
+    ini_pos=min(max(ini,0),100)
+    ini_color='#f0515a'if ini<15 else('#20d483'if ini>85 else'#dde2ee')
+    ini_lbl='екстрем. шорт'if ini<15 else('екстрем. лонг'if ini>85 else'нейтральна зона')
+    cj=json.dumps(ci,ensure_ascii=False)
+    return(f'<div class="panel pct-panel"><div class="plbl">ПЕРЦЕНТИЛЬ (COT INDEX)</div>'
+           f'<div class="pct-sel-row"><div class="psel-group">'
+           f'<button class="psel active" data-p="mm" onclick="pctDgSel(this,\'{s}\')">MM</button>'
+           f'<button class="psel" data-p="pm"  onclick="pctDgSel(this,\'{s}\')">PM</button>'
+           f'<button class="psel" data-p="sd"  onclick="pctDgSel(this,\'{s}\')">SD</button>'
+           f'</div><div class="psel-sep"></div><div class="psel-group">'
+           f'<button class="pper active" data-per="all" onclick="pperDgSel(this,\'{s}\')">All</button>'
+           f'<button class="pper" data-per="3y"  onclick="pperDgSel(this,\'{s}\')">3Y</button>'
+           f'<button class="pper" data-per="1y"  onclick="pperDgSel(this,\'{s}\')">1Y</button>'
+           f'<button class="pper" data-per="6m"  onclick="pperDgSel(this,\'{s}\')">6M</button>'
+           f'<button class="pper" data-per="3m"  onclick="pperDgSel(this,\'{s}\')">3M</button>'
+           f'</div></div>'
+           f'<div class="pct-val-row"><span id="dg_pctval_{s}" style="font-size:16px;font-weight:bold;color:{ini_color}">{fp(ini)}</span>'
+           f'<span id="dg_pctlbl_{s}" style="font-size:11px;color:#8090b0;margin-left:8px;">— {ini_lbl}</span></div>'
+           f'<div class="pbar-wrap"><div class="pbar-bg"><div class="pbar-lo"></div><div class="pbar-hi"></div>'
+           f'<div class="ptick" style="left:15%"></div><div class="ptick" style="left:85%"></div>'
+           f'<div class="pbar-mk" id="dg_pctmk_{s}" style="left:{ini_pos:.1f}%"></div></div>'
+           f'<div class="ptick-labels"><span class="ptlbl" style="left:15%">15%</span>'
+           f'<span id="dg_pctcur_{s}" class="ptlbl ptlbl-cur" style="left:{ini_pos:.1f}%">{fp(ini)}</span>'
+           f'<span class="ptlbl" style="left:85%">85%</span></div></div>'
+           f'<div class="pbar-lb"><span>0%</span><span>50%</span><span>100%</span></div></div>'
+           f'<script>_ci_dg["{s}"]={cj};</script>')
+
+def make_disag_chart_block(dg,s):
+    cj=json.dumps(dg['chart'],ensure_ascii=False)
+    return(f'<div class="chartbox"><div class="chartbox-hdr"><div class="plbl" style="margin:0">ЧИСТІ ПОЗИЦІЇ</div>'
+           f'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="period-btns">'
+           f'<button class="per-btn active" data-per="1y" onclick="setDgChartPer(this,\'{s}\')">1 рік</button>'
+           f'<button class="per-btn" data-per="3y" onclick="setDgChartPer(this,\'{s}\')">3 роки</button>'
+           f'<button class="per-btn" data-per="5y" onclick="setDgChartPer(this,\'{s}\')">5 років</button>'
+           f'</div><div class="chart-leg">'
+           f'<span><span class="ll" style="background:{DISAG_COLOR_MM}"></span>Man Money</span>'
+           f'<span><span class="ll" style="background:{DISAG_COLOR_PM}"></span>Prod/Merch</span>'
+           f'<span class="ll-dash" style="border-top-color:{DISAG_COLOR_SD}"></span><span style="margin-left:4px">Swap Dealers</span>'
+           f'</div></div></div><div class="cw"><canvas id="dg_cv_{s}"></canvas></div></div>'
+           f'<script>_dg["{s}"]={cj};</script>')
+
+def make_disag_bar_block(dg,s):
+    return(f'<div class="bar-charts-grid chartbox">'
+           f'<div class="bar-wrap"><div class="bar-lbl" style="color:{DISAG_COLOR_MM}">MAN MONEY — WEEKLY ΔNet</div><div class="bar-cw"><canvas id="dg_barcv_mm_{s}"></canvas></div></div>'
+           f'<div class="bar-wrap"><div class="bar-lbl" style="color:{DISAG_COLOR_PM}">PROD/MERCH — WEEKLY ΔNet</div><div class="bar-cw"><canvas id="dg_barcv_pm_{s}"></canvas></div></div>'
+           f'<div class="bar-wrap"><div class="bar-lbl" style="color:{DISAG_COLOR_SD}">SWAP DEALERS — WEEKLY ΔNet</div><div class="bar-cw"><canvas id="dg_barcv_sd_{s}"></canvas></div></div>'
+           f'</div>')
+
+def make_disag_hist_table(dg,table_id):
+    hist=dg['hist'];stats=dg['stats'];n=len(hist['dates'])
+    if n==0: return '<p style="padding:12px;color:#8090b0">Немає даних</p>'
+    def maxabs(lst): vals=[abs(v) for v in lst if v!=0]; return max(vals) if vals else 1
+    m={'mm_cl':maxabs(hist['mm_cl']),'mm_cs':maxabs(hist['mm_cs']),'pm_cl':maxabs(hist['pm_cl']),'pm_cs':maxabs(hist['pm_cs']),'sd_cl':maxabs(hist['sd_cl']),'sd_cs':maxabs(hist['sd_cs'])}
+    def hc(color):
+        r,g,b=int(color[1:3],16),int(color[3:5],16),int(color[5:7],16)
+        return f'background:rgba({r},{g},{b},.18);color:#fff;border-left:2px solid {color}88'
+    def sc(color): return f'background:var(--bg3);color:var(--d);border-left:2px solid {color}55'
+    sp='background:var(--bg3);color:var(--d)';oi_bg='background:rgba(160,170,192,.1);color:#fff'
+    colgroup='<colgroup><col style="width:84px"><col><col><col><col><col><col><col><col><col><col style="width:82px"></colgroup>'
+    thead=(f'<thead><tr class="th-row1"><th class="th-corner"></th>'
+           f'<th colspan="3" class="th-group" style="{hc(DISAG_COLOR_MM)}">MAN MONEY</th>'
+           f'<th colspan="3" class="th-group" style="{hc(DISAG_COLOR_PM)}">PROD/MERCH</th>'
+           f'<th colspan="3" class="th-group" style="{hc(DISAG_COLOR_SD)}">SWAP DEALERS</th>'
+           f'<th class="th-group" style="{oi_bg}">OI</th></tr>'
+           f'<tr class="th-row2"><th class="th-date th-left">ДАТА</th>'
+           f'<th style="{sc(DISAG_COLOR_MM)}">CHG L</th><th style="{sp}">CHG S</th><th class="sep-r" style="{sp}">NET POS</th>'
+           f'<th style="{sc(DISAG_COLOR_PM)}">CHG L</th><th style="{sp}">CHG S</th><th class="sep-r" style="{sp}">NET POS</th>'
+           f'<th style="{sc(DISAG_COLOR_SD)}">CHG L</th><th style="{sp}">CHG S</th><th class="sep-r" style="{sp}">NET POS</th>'
+           f'<th style="{oi_bg}" class="th-oi">All</th></tr></thead>')
+    def mm_v(v,cls=''): return f'<td class="mm-val {cls}">{fv_full(v,sign=True)}</td>'
+    def grp(st,key,col):
+        cl_d=st.get('cl') or{};cs_d=st.get('cs') or{}
+        return mm_v(cl_d.get(key,0),col)+mm_v(cs_d.get(key,0),col)+mm_v(st.get(key,0),col)
+    mm_rows=('<tr class="mm-row"><td class="mm-lbl">MAX</td>'+grp(stats['mm'],'max_all','g')+grp(stats['pm'],'max_all','g')+grp(stats['sd'],'max_all','g')+mm_v(stats['oi']['max_all'],'')+'</tr>'
+             '<tr class="mm-row"><td class="mm-lbl">MIN</td>'+grp(stats['mm'],'min_all','r')+grp(stats['pm'],'min_all','r')+grp(stats['sd'],'min_all','r')+mm_v(stats['oi']['min_all'],'')+'</tr>'
+             '<tr class="mm-row mm-yr"><td class="mm-lbl">MAX 1Y</td>'+grp(stats['mm'],'max_1y','g')+grp(stats['pm'],'max_1y','g')+grp(stats['sd'],'max_1y','g')+mm_v(stats['oi']['max_1y'],'')+'</tr>'
+             '<tr class="mm-row mm-yr"><td class="mm-lbl">MIN 1Y</td>'+grp(stats['mm'],'min_1y','r')+grp(stats['pm'],'min_1y','r')+grp(stats['sd'],'min_1y','r')+mm_v(stats['oi']['min_1y'],'')+'</tr>')
+    mm_tbody=f'<tbody class="mm-tbody">{mm_rows}</tbody>'
+    def td_chg(v,mv): cls=cc(v);txt=fv_full(v,sign=True) if v!=0 else'—'; return f'<td class="{cls}"{intensity_bg(v,mv)}>{txt}</td>'
+    def td_net(v,ex=''): return f'<td class="{cc(v)}{ex}">{fv_full(v,sign=True)}</td>'
+    rows=[]
+    for i in range(n-1,-1,-1):
+        ri=n-1-i
+        rows.append(f'<tr data-row="{ri}"><td class="date-col">{hist["dates"][i]}</td>'
+                    +td_chg(hist['mm_cl'][i],m['mm_cl'])+td_chg(hist['mm_cs'][i],m['mm_cs'])+td_net(hist['mm_net'][i],' sep-r')
+                    +td_chg(hist['pm_cl'][i],m['pm_cl'])+td_chg(hist['pm_cs'][i],m['pm_cs'])+td_net(hist['pm_net'][i],' sep-r')
+                    +td_chg(hist['sd_cl'][i],m['sd_cl'])+td_chg(hist['sd_cs'][i],m['sd_cs'])+td_net(hist['sd_net'][i],' sep-r')
+                    +f'<td class="t">{fv_full(hist["oi"][i])}</td></tr>')
+    data_tbody=f'<tbody class="data-tbody">{"".join(rows)}</tbody>'
+    return f'<table class="ht" id="{table_id}">'+colgroup+thead+mm_tbody+data_tbody+'</table>'
+
+def make_disag_view(dg,s,reports_panel_html):
+    cards=make_disag_metric_cards(dg,s);analysis=make_disag_analysis(dg)
+    pct=make_disag_pct_panel(dg,s);chart=make_disag_chart_block(dg,s)
+    bars=make_disag_bar_block(dg,s);tbl_id=f'dg_tbl_{s}';tbl=make_disag_hist_table(dg,tbl_id)
+    table_block=(f'<div class="htable-wrap"><div class="htable-hdr"><span>ТИЖНЕВА СТАТИСТИКА ПОЗИЦІЙ</span>'
+                 f'<div class="hsel">'
+                 f'<button class="hbtn active" data-n="10" onclick="setDgHist(this,\'{s}\')">10</button>'
+                 f'<button class="hbtn" data-n="26" onclick="setDgHist(this,\'{s}\')">26</button>'
+                 f'<button class="hbtn" data-n="52" onclick="setDgHist(this,\'{s}\')">52</button>'
+                 f'</div></div><div class="htable-scroll">{tbl}</div></div>')
+    mid=f'<div class="tff-mid">{reports_panel_html}{pct}</div>'
+    return(f'<div class="rpt-sec" id="rpt_dg_{s}" style="display:none">'+cards+analysis+mid+bars+chart+table_block+'</div>')
+
+# ================================================================
+# LEGACY таблиця (незмінно з v14)
 # ================================================================
 def make_hist_table(hist,stats_ls,stats_cm,stats_st,stats_oi,sm):
     n=len(hist['dates'])
@@ -631,8 +792,7 @@ def make_hist_table(hist,stats_ls,stats_cm,stats_st,stats_oi,sm):
     ls_bg='background:rgba(74,158,255,.18);color:#fff;border-left:2px solid rgba(74,158,255,.7)'
     cm_bg='background:rgba(32,212,131,.15);color:#fff;border-left:2px solid rgba(32,212,131,.7)'
     st_bg='background:rgba(240,81,90,.15);color:#fff;border-left:2px solid rgba(240,81,90,.7)'
-    oi_bg='background:rgba(160,170,192,.1);color:#fff'
-    sm_bg='background:var(--bg3);color:var(--d)'
+    oi_bg='background:rgba(160,170,192,.1);color:#fff';sm_bg='background:var(--bg3);color:var(--d)'
     sp='background:var(--bg3);color:var(--d)'
     sub_ls=f'{sp};border-left:2px solid rgba(74,158,255,.5)'
     sub_cm=f'{sp};border-left:2px solid rgba(32,212,131,.5)'
@@ -686,10 +846,11 @@ def make_hist_table(hist,stats_ls,stats_cm,stats_st,stats_oi,sm):
     return '<table class="ht">'+colgroup+thead+mm_tbody+data_tbody+'</table>'
 
 # ================================================================
-# INSTRUMENT VIEW (Legacy + TFF tabs)
+# INSTRUMENT VIEW
 # ================================================================
-def make_instrument_view(d,tff=None):
-    c=d['cur'];s=d['sid'];sm=d['sm'];has_tff=tff is not None
+def make_instrument_view(d,tff=None,disag=None):
+    c=d['cur'];s=d['sid'];sm=d['sm']
+    has_tff=tff is not None;has_disag=disag is not None
     mc_ls=make_metric_card('LARGE SPEC (NETTO)',c['ls_net'],c['ls_chg'],c['ls_chg_pct'],d['spark']['ls'],COLOR_LS,gauge_val=d['cot_idx']['ls']['all'],sub_text="")
     mc_cm=make_metric_card('COMMERCIALS (NETTO)',c['cm_net'],c['cm_chg'],c['cm_chg_pct'],d['spark']['cm'],COLOR_CM,gauge_val=d['cot_idx']['cm']['all'],sub_text="")
     mc_st=make_metric_card('SMALL TRADERS (NETTO)',c['st_net'],c['st_chg'],c['st_chg_pct'],d['spark']['st'],COLOR_ST,gauge_val=d['cot_idx']['st']['all'],sub_text="")
@@ -730,8 +891,7 @@ def make_instrument_view(d,tff=None):
                f'<script>_ci["{s}"]={cj};</script>')
     cj2=json.dumps(d['chart'],ensure_ascii=False)
     chart_block=(f'<div class="chartbox"><div class="chartbox-hdr"><div class="plbl" style="margin:0">ЧИСТІ ПОЗИЦІЇ</div>'
-                 f'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
-                 f'<div class="period-btns">'
+                 f'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="period-btns">'
                  f'<button class="per-btn active" data-per="1y" onclick="setChartPer(this,\'{s}\')">1 рік</button>'
                  f'<button class="per-btn" data-per="3y" onclick="setChartPer(this,\'{s}\')">3 роки</button>'
                  f'<button class="per-btn" data-per="5y" onclick="setChartPer(this,\'{s}\')">5 років</button>'
@@ -739,8 +899,7 @@ def make_instrument_view(d,tff=None):
                  f'<span><span class="ll" style="background:{COLOR_LS}"></span>Large Spec</span>'
                  f'<span><span class="ll" style="background:{COLOR_CM}"></span>Commercials</span>'
                  f'<span class="ll-dash" style="border-top-color:{COLOR_ST}"></span><span style="margin-left:4px">Small Traders</span>'
-                 f'</div></div></div>'
-                 f'<div class="cw"><canvas id="cv_{s}"></canvas></div></div>'
+                 f'</div></div></div><div class="cw"><canvas id="cv_{s}"></canvas></div></div>'
                  f'<script>_cd["{s}"]={cj2};</script>')
     bar_block=(f'<div class="bar-charts-grid chartbox">'
                f'<div class="bar-wrap"><div class="bar-lbl" style="color:{COLOR_LS}">LARGE SPEC — WEEKLY ΔNet</div><div class="bar-cw"><canvas id="barcv_ls_{s}"></canvas></div></div>'
@@ -748,8 +907,7 @@ def make_instrument_view(d,tff=None):
                f'<div class="bar-wrap"><div class="bar-lbl" style="color:{COLOR_ST}">SMALL TRADERS — WEEKLY ΔNet</div><div class="bar-cw"><canvas id="barcv_st_{s}"></canvas></div></div>'
                f'</div>')
     tbl_html=make_hist_table(d['hist'],d['stats_ls'],d['stats_cm'],d['stats_st'],d['stats_oi'],sm)
-    table_block=(f'<div class="htable-wrap">'
-                 f'<div class="htable-hdr"><span>ТИЖНЕВА СТАТИСТИКА ПОЗИЦІЙ</span>'
+    table_block=(f'<div class="htable-wrap"><div class="htable-hdr"><span>ТИЖНЕВА СТАТИСТИКА ПОЗИЦІЙ</span>'
                  f'<div class="hsel">'
                  f'<button class="hbtn active" data-n="10" onclick="setHist(this,\'{s}\')">10</button>'
                  f'<button class="hbtn" data-n="26" onclick="setHist(this,\'{s}\')">26</button>'
@@ -759,19 +917,20 @@ def make_instrument_view(d,tff=None):
     legacy_sec=(f'<div class="rpt-sec" id="rpt_legacy_{s}">'
                 f'<div class="mcards">{mc_ls}{mc_cm}{mc_st}{mc_oi}</div>'
                 +mid+bar_block+chart_block+table_block+'</div>')
-    tff_sec=make_tff_view(tff,s,make_reports_panel(s)) if has_tff else ''
+    tff_sec  =make_tff_view(tff,s,make_reports_panel(s)) if has_tff else ''
+    disag_sec=make_disag_view(disag,s,make_reports_panel(s)) if has_disag else ''
     tff_btn=(f'<button class="rtab" data-rtype="tff" onclick="switchReport(\'{s}\',\'tff\')">TFF Report</button>'
-             if has_tff else
-             f'<button class="rtab disabled" title="Файл не завантажено">TFF Report</button>')
+             if has_tff else f'<button class="rtab disabled" title="Файл не завантажено">TFF Report</button>')
+    dg_btn=(f'<button class="rtab" data-rtype="dg" onclick="switchReport(\'{s}\',\'dg\')">Disaggregated</button>'
+            if has_disag else f'<button class="rtab disabled" title="Файл не завантажено">Disaggregated</button>')
     return(f'<div class="iview" id="iv_{s}" data-sid="{s}">'
            f'<div class="report-tabs"><span class="rtab-lbl">ТИП ЗВІТУ:</span>'
            f'<button class="rtab active" data-rtype="legacy" onclick="switchReport(\'{s}\',\'legacy\')">Legacy Report</button>'
-           +tff_btn+
-           f'<button class="rtab disabled" title="Файл не завантажено">Disaggregated</button>'
-           f'</div>'+legacy_sec+tff_sec+'</div>')
+           +tff_btn+dg_btn+
+           f'</div>'+legacy_sec+tff_sec+disag_sec+'</div>')
 
 # ================================================================
-# OVERVIEW TAB
+# OVERVIEW TAB (незмінно)
 # ================================================================
 def make_overview_tab():
     rows_html=[];rep_date='—';today_date='—'
@@ -812,6 +971,7 @@ def make_overview_tab():
     return(f'<div class="ov-meta">Звіт: <b>{rep_date}</b> &nbsp;|&nbsp; Оновлено: {today_date}</div>'
            f'<div class="ov-scroll"><table class="ov-table">{thead}<tbody>{"".join(rows_html)}</tbody></table></div>')
 
+
 AUTH_MODAL_HTML = """
 <div class="auth-overlay" id="authOverlay" onclick="if(event.target===this)closeAuth()">
   <div class="auth-box">
@@ -843,9 +1003,6 @@ AUTH_MODAL_HTML = """
 </div>
 """
 
-# ================================================================
-# HTML HEAD + CSS
-# ================================================================
 HTML_HEAD = """<!DOCTYPE html>
 <html lang="uk">
 <head>
@@ -859,16 +1016,18 @@ HTML_HEAD = """<!DOCTYPE html>
 html,body{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13px;}
 .t{color:var(--t);}
 .hdr{height:var(--hdr-h);padding:0 24px;background:var(--bg2);border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:300;}
-.hdr-center{position:absolute;left:50%;transform:translateX(-50%);text-align:center;pointer-events:none;}
+.hdr-left{display:flex;flex-direction:column;gap:2px;}
 .hdr-t{font-size:17px;font-weight:bold;color:#fff;letter-spacing:2px;}
 .dash-b{color:#4a9eff;}.dash-g{color:#20d483;}.dash-r{color:#f0515a;}
-.hdr-s{font-size:10px;color:var(--d);margin-top:2px;letter-spacing:1px;}
-.hdr-bc{font-size:11px;color:var(--d);margin-top:5px;letter-spacing:.6px;white-space:nowrap;}
+.hdr-s{font-size:10px;color:var(--d);letter-spacing:1px;}
+.hdr-center{position:absolute;left:50%;transform:translateX(-50%);text-align:center;pointer-events:none;}
+.hdr-bc{font-size:11px;color:var(--d);}
 .hdr-bc-pill{display:inline-flex;align-items:center;gap:2px;background:rgba(52,61,90,.75);border:1px solid var(--bd);border-radius:20px;padding:3px 12px;backdrop-filter:blur(4px);}
 .hdr-bc span{color:#dde2ee;font-weight:bold;}
 .hdr-bc .bc-sep{color:#4a5580;margin:0 5px;font-size:12px;}
 .hdr-r{text-align:right;font-size:11px;color:var(--d);line-height:2;}.hdr-r b{color:var(--t);}
 .tff-badge{display:inline-block;font-size:8px;padding:1px 5px;border-radius:2px;background:rgba(232,168,56,.2);color:#e8a838;border:1px solid #e8a83855;margin-left:6px;vertical-align:middle;}
+.dg-badge{display:inline-block;font-size:8px;padding:1px 5px;border-radius:2px;background:rgba(167,139,250,.2);color:#a78bfa;border:1px solid #a78bfa55;margin-left:4px;vertical-align:middle;}
 .auth-btn{padding:6px 16px;border:1px solid var(--g);border-radius:3px;background:transparent;color:var(--g);font-family:var(--f);font-size:11px;cursor:pointer;letter-spacing:1px;transition:all .15s;}
 .auth-btn:hover{background:rgba(32,212,131,.15);}.auth-btn.logged{border-color:var(--b);color:var(--b);}
 .sync-btn{padding:6px 10px;border:1px solid var(--bd);border-radius:3px;background:transparent;color:var(--d);font-family:var(--f);font-size:13px;cursor:pointer;transition:all .15s;}
@@ -1008,14 +1167,12 @@ table.ht tbody.mm-tbody tr.mm-yr td{opacity:.78;}
 </style>
 </head>
 <body>
-<script>const _cd={};const _ci={};const _tff={};const _ci_tff={};const Charts={};const BarChts={};const TffCharts={};const TffBarChts={};</script>
+<script>const _cd={};const _ci={};const _tff={};const _ci_tff={};const _dg={};const _ci_dg={};const Charts={};const BarChts={};const TffCharts={};const TffBarChts={};const DgCharts={};const DgBarChts={};</script>
 """
 
-# ================================================================
-# generate_html + main
-# ================================================================
-def generate_html(data, tff_data=None):
+def generate_html(data, tff_data=None, disag_data=None):
     if tff_data is None: tff_data={}
+    if disag_data is None: disag_data={}
     all_dates=[d['cur']['date'] for d in data.values()]
     report_date=max(all_dates) if all_dates else '—'
     updated=datetime.now().strftime('%d.%m.%Y %H:%M')
@@ -1026,16 +1183,18 @@ def generate_html(data, tff_data=None):
         act=' active'if first_cat else''
         cat_tabs.append(f'<button class="ctab{act}" data-c="{cat}" onclick="selCat(\'{cat}\')">{cat}<span class="tc">({len(available)})</span></button>')
         inst_btns=''.join(f'<button class="itab" data-cat="{cat}" data-i="{i}" onclick="selInst(\'{cat}\',\'{i}\')">{disp(i)}</button>' for i in available)
-        views=''.join(make_instrument_view(data[i],tff_data.get(i)) for i in available)
+        views=''.join(make_instrument_view(data[i], tff_data.get(i), disag_data.get(i)) for i in available)
         cat_sects.append(f'<div class="catsec{act}" id="cs_{cat}"><div class="itabs" id="itabs_{cat}">{inst_btns}</div><div class="iviews" id="iv_{cat}">{views}</div></div>')
         first_cat=False
     ov_html=make_overview_tab()
     db='<span class="dash-b">DAS</span><span class="dash-g">HBO</span><span class="dash-r">ARD</span>'
     badge=f' <span class="tff-badge">{len(tff_data)} TFF</span>' if tff_data else ''
+    dg_badge=f' <span class="dg-badge">{len(disag_data)} DG</span>' if disag_data else ''
     return(HTML_HEAD
-           +f'<header class="hdr"><div><div class="hdr-t">COT {db}</div>'
-           +f'<div class="hdr-s">COMMITMENTS OF TRADERS — CFTC{badge}</div>'
-           +f'<div class="hdr-bc" id="hdrBreadcrumb"></div></div>'
+           +f'<header class="hdr">'
+           +f'<div class="hdr-left"><div class="hdr-t">COT {db}</div>'
+           +f'<div class="hdr-s">COMMITMENTS OF TRADERS — CFTC{badge}{dg_badge}</div></div>'
+           +f'<div class="hdr-center"><div class="hdr-bc" id="hdrBreadcrumb"></div></div>'
            +f'<div style="display:flex;align-items:center;gap:16px">'
            +f'<div class="hdr-r">Звіт: <b>{report_date}</b><br>Оновлено: {updated}</div>'
            +f'<button class="sync-btn" onclick="openSyncModal()" title="Синхронізація налаштувань">⇄</button>'
@@ -1045,17 +1204,14 @@ def generate_html(data, tff_data=None):
            +f'<button class="mtab" data-mt="ov" onclick="selMain(\'ov\')">Overview</button></div>'
            +f'<div class="main-sec active" id="ms_cot"><div class="ctabs">{"".join(cat_tabs)}</div>{"".join(cat_sects)}</div>'
            +f'<div class="main-sec" id="ms_ov"><div style="padding:16px 24px">{ov_html}</div></div>'
-           +f'<div class="footer">COT DASHBOARD &bull; CFTC LEGACY + TFF &bull; {updated}</div>'
+           +f'<div class="footer">COT DASHBOARD &bull; CFTC LEGACY + TFF + DISAGGREGATED &bull; {updated}</div>'
            +AUTH_MODAL_HTML+HTML_FOOT)
 
-
-# ================================================================
-# HTML FOOT (JavaScript)
-# ================================================================
 HTML_FOOT = """
 <script>
 const CL_LS='#4a9eff',CL_CM='#20d483',CL_ST='#f0515a';
-const TFF_LEV='#e8a838',TFF_AM='#a78bfa',TFF_DL='#22d3ee';
+const TFF_LEV='#e8a838',TFF_AM='#4a9eff',TFF_DL='#20d483';
+const DG_MM='#a78bfa',DG_PM='#20d483',DG_SD='#f0b429';
 const CurPer={};
 let _loggedIn=false,_userEmail='';
 
@@ -1090,18 +1246,15 @@ function selMain(mt){
   if(mt==='cot'){const fc=document.querySelector('.ctab');if(fc)selCat(fc.dataset.c);}
 }
 
-// ── Перемикання між Legacy / TFF ──
 function switchReport(sid,type){
-  const view=document.getElementById('iv_'+sid);
-  if(!view) return;
+  const view=document.getElementById('iv_'+sid);if(!view)return;
   view.querySelectorAll('.rpt-sec').forEach(s=>s.style.display='none');
   const sec=document.getElementById('rpt_'+type+'_'+sid);
   if(sec) sec.style.display='';
   view.querySelectorAll('.rtab[data-rtype]').forEach(b=>b.classList.remove('active'));
   const activeTab=view.querySelector('.rtab[data-rtype="'+type+'"]');
   if(activeTab) activeTab.classList.add('active');
-  // Оновлюємо breadcrumb
-  _bcRpt = type==='tff'?'TFF Report':type==='legacy'?'Legacy Report':'Disaggregated';
+  _bcRpt=type==='tff'?'TFF Report':type==='dg'?'Disaggregated':'Legacy Report';
   updateBreadcrumb();
   const n=CurPer[sid]||52;
   if(type==='legacy'){
@@ -1110,6 +1263,9 @@ function switchReport(sid,type){
   } else if(type==='tff'){
     filterTffRows(sid,10);
     setTimeout(()=>{drawTffChart(sid,n);drawTffBars(sid,n);},30);
+  } else if(type==='dg'){
+    filterDgRows(sid,10);
+    setTimeout(()=>{drawDgChart(sid,n);drawDgBars(sid,n);},30);
   }
 }
 
@@ -1191,6 +1347,45 @@ function drawOneTffBar(cvId,dates,data,color){
       scales:{x:{display:false},y:{display:true,grid:{color:'rgba(52,61,90,.6)',lineWidth:.5},ticks:{color:'#8090b0',font:{family:'Courier New',size:8},maxTicksLimit:3,callback:v=>fmtV(v,true)},border:{display:false}}}}});
 }
 
+// ── DISAG Charts ──
+function setDgChartPer(btn,sid){
+  btn.closest('.period-btns').querySelectorAll('.per-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  const per=btn.dataset.per;const n=per==='1y'?52:per==='3y'?156:9999;
+  CurPer['dg_'+sid]=n;drawDgChart(sid,n);drawDgBars(sid,n);
+}
+function drawDgChart(sid,nWeeks){
+  const cv=document.getElementById('dg_cv_'+sid);if(!cv)return;
+  const key='dg_'+sid;if(DgCharts[key]){DgCharts[key].destroy();delete DgCharts[key];}
+  const d=_dg[sid];if(!d)return;
+  const n=Math.min(nWeeks,d.dates.length);
+  DgCharts[key]=new Chart(cv.getContext('2d'),{type:'line',data:{labels:d.dates.slice(-n),datasets:[
+    {label:'Man Money', data:d.mm.slice(-n),borderColor:DG_MM,backgroundColor:DG_MM+'22',borderWidth:1.5,pointRadius:0,tension:.3,fill:true},
+    {label:'Prod/Merch',data:d.pm.slice(-n),borderColor:DG_PM,backgroundColor:'transparent',borderWidth:1.5,pointRadius:0,tension:.3},
+    {label:'Swap Dlrs', data:d.sd.slice(-n),borderColor:DG_SD,backgroundColor:'transparent',borderWidth:1,  pointRadius:0,tension:.3,borderDash:[3,3]},
+  ]},options:{responsive:true,maintainAspectRatio:false,animation:false,
+    interaction:{mode:'index',intersect:false},
+    plugins:{legend:{display:false},tooltip:{backgroundColor:'#21263a',borderColor:'#343d5a',borderWidth:1,titleColor:'#dde2ee',bodyColor:'#dde2ee',titleFont:{family:'Courier New',size:10},bodyFont:{family:'Courier New',size:10},callbacks:{label:ctx=>' '+ctx.dataset.label+': '+fmtFull(ctx.parsed.y)}}},
+    scales:{x:{display:true,ticks:{color:'#8090b0',font:{family:'Courier New',size:8},maxTicksLimit:8,callback:function(v,i){return i%Math.ceil(n/8)===0?this.getLabelForValue(v):'';}},grid:{display:false},border:{display:false}},
+      y:{display:true,grid:{color:'rgba(52,61,90,.8)',lineWidth:.5},ticks:{color:'#8090b0',font:{family:'Courier New',size:9},maxTicksLimit:4,callback:v=>fmtV(v,true)},border:{display:false}}}}});
+}
+function drawDgBars(sid,nWeeks){
+  const d=_dg[sid];if(!d)return;
+  const n=Math.min(nWeeks,d.dates.length);const dates=d.dates.slice(-n);
+  drawOneDgBar('dg_barcv_mm_'+sid,dates,d.mm_d.slice(-n),DG_MM);
+  drawOneDgBar('dg_barcv_pm_'+sid,dates,d.pm_d.slice(-n),DG_PM);
+  drawOneDgBar('dg_barcv_sd_'+sid,dates,d.sd_d.slice(-n),DG_SD);
+}
+function drawOneDgBar(cvId,dates,data,color){
+  const cv=document.getElementById(cvId);if(!cv)return;
+  const key='dg_'+cvId;if(DgBarChts[key]){DgBarChts[key].destroy();delete DgBarChts[key];}
+  const colors=data.map(v=>v>=0?color+'cc':'rgba(240,81,90,.75)');
+  DgBarChts[key]=new Chart(cv.getContext('2d'),{type:'bar',data:{labels:dates,datasets:[{data:data,backgroundColor:colors,borderWidth:0,borderRadius:1}]},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,
+      plugins:{legend:{display:false},tooltip:{backgroundColor:'#21263a',borderColor:'#343d5a',borderWidth:1,titleColor:'#dde2ee',bodyColor:'#dde2ee',titleFont:{family:'Courier New',size:9},bodyFont:{family:'Courier New',size:9},callbacks:{label:ctx=>fmtFull(ctx.parsed.y)}}},
+      scales:{x:{display:false},y:{display:true,grid:{color:'rgba(52,61,90,.6)',lineWidth:.5},ticks:{color:'#8090b0',font:{family:'Courier New',size:8},maxTicksLimit:3,callback:v=>fmtV(v,true)},border:{display:false}}}}});
+}
+
 // ── PCT bar (Legacy) ──
 function pctSel(btn,sid){btn.closest('.psel-group').querySelectorAll('.psel').forEach(b=>b.classList.remove('active'));btn.classList.add('active');updatePctBar(sid);}
 function pperSel(btn,sid){btn.closest('.psel-group').querySelectorAll('.pper').forEach(b=>b.classList.remove('active'));btn.classList.add('active');updatePctBar(sid);}
@@ -1226,6 +1421,17 @@ function updateTffPctBar(sid){
   setPctBar(sid,'tff_',val);
 }
 
+// ── PCT bar (DISAG) ──
+function pctDgSel(btn,sid){btn.closest('.psel-group').querySelectorAll('.psel').forEach(b=>b.classList.remove('active'));btn.classList.add('active');updateDgPctBar(sid);}
+function pperDgSel(btn,sid){btn.closest('.psel-group').querySelectorAll('.pper').forEach(b=>b.classList.remove('active'));btn.classList.add('active');updateDgPctBar(sid);}
+function updateDgPctBar(sid){
+  const sec=document.getElementById('rpt_dg_'+sid);if(!sec)return;
+  const p=sec.querySelector('.psel.active')?.dataset.p||'mm';
+  const per=sec.querySelector('.pper.active')?.dataset.per||'all';
+  const val=_ci_dg[sid]?.[p]?.[per]??50;
+  setPctBar(sid,'dg_',val);
+}
+
 // ── Таблиці ──
 function setHist(btn,sid){
   const n=parseInt(btn.dataset.n);
@@ -1249,8 +1455,19 @@ function filterTffRows(sid,n){
     tr.style.display=parseInt(tr.dataset.row)<n?'':'none';
   });
 }
+function setDgHist(btn,sid){
+  const n=parseInt(btn.dataset.n);
+  btn.closest('.htable-hdr').querySelectorAll('.hbtn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');filterDgRows(sid,n);
+}
+function filterDgRows(sid,n){
+  const sec=document.getElementById('rpt_dg_'+sid);if(!sec)return;
+  sec.querySelectorAll('tbody.data-tbody tr').forEach(tr=>{
+    tr.style.display=parseInt(tr.dataset.row)<n?'':'none';
+  });
+}
 
-// ── Reports stances (localStorage + Flask sync) ──
+// ── Reports stances ──
 function setRpt(sid,rptId,stance){
   const rows=document.querySelectorAll('#rpt_'+sid+'_'+rptId);
   rows.forEach(row=>{
@@ -1259,33 +1476,18 @@ function setRpt(sid,rptId,stance){
     row.querySelector(cls)?.classList.add('active');
   });
   localStorage.setItem('rpt_'+sid+'_'+rptId,stance);
-  // Зберігаємо на сервері якщо залогінено
-  if(_loggedIn){
-    fetch('/api/rpt_stance',{method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({instrument:sid,report:rptId,stance})
-    }).catch(()=>{});
-  }
+  if(_loggedIn){fetch('/api/rpt_stance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({instrument:sid,report:rptId,stance})}).catch(()=>{});}
 }
 function loadRptStances(sid){
   const rptIds=['usda_crop','eia_petrol','usda_exp','cot_cftc','usda_wasde','usda_oil'];
-  // Спочатку з localStorage
   rptIds.forEach(rptId=>{
     const saved=localStorage.getItem('rpt_'+sid+'_'+rptId)||'neutral';
     applyRptStance(sid,rptId,saved);
   });
-  // Потім з сервера (перезаписує localStorage якщо залогінено)
   if(_loggedIn){
-    fetch('/api/rpt_stances?instrument='+sid)
-      .then(r=>r.json())
-      .then(data=>{
-        if(data&&data.stances){
-          Object.entries(data.stances).forEach(([rptId,stance])=>{
-            localStorage.setItem('rpt_'+sid+'_'+rptId,stance);
-            applyRptStance(sid,rptId,stance);
-          });
-        }
-      }).catch(()=>{});
+    fetch('/api/rpt_stances?instrument='+sid).then(r=>r.json()).then(data=>{
+      if(data&&data.stances){Object.entries(data.stances).forEach(([rptId,stance])=>{localStorage.setItem('rpt_'+sid+'_'+rptId,stance);applyRptStance(sid,rptId,stance);});}
+    }).catch(()=>{});
   }
 }
 function applyRptStance(sid,rptId,stance){
@@ -1295,19 +1497,11 @@ function applyRptStance(sid,rptId,stance){
     row.querySelector(cls)?.classList.add('active');
   });
 }
-// При логіні — завантажуємо всі stances одразу з сервера
 function loadAllStancesFromServer(){
-  fetch('/api/rpt_stances/all')
-    .then(r=>r.json())
-    .then(all=>{
-      if(!all) return;
-      Object.entries(all).forEach(([inst,reports])=>{
-        Object.entries(reports).forEach(([rptId,stance])=>{
-          localStorage.setItem('rpt_'+inst+'_'+rptId,stance);
-          applyRptStance(inst,rptId,stance);
-        });
-      });
-    }).catch(()=>{});
+  fetch('/api/rpt_stances/all').then(r=>r.json()).then(all=>{
+    if(!all) return;
+    Object.entries(all).forEach(([inst,reports])=>{Object.entries(reports).forEach(([rptId,stance])=>{localStorage.setItem('rpt_'+inst+'_'+rptId,stance);applyRptStance(inst,rptId,stance);});});
+  }).catch(()=>{});
 }
 
 // ── Форматування ──
@@ -1332,24 +1526,17 @@ function authTab(t){
 }
 function showAuthMsg(id,text,isErr){const el=document.getElementById(id);el.textContent=text;el.className='auth-msg '+(isErr?'err':'ok');el.style.display='block';}
 async function doAuthLogin(){
-  const email=document.getElementById('al-email').value.trim();
-  const pass=document.getElementById('al-pass').value;
+  const email=document.getElementById('al-email').value.trim();const pass=document.getElementById('al-pass').value;
   if(!email||!pass){showAuthMsg('al-msg','Заповніть всі поля',true);return;}
-  try{
-    const res=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pass})});
-    const data=await res.json();
+  try{const res=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pass})});const data=await res.json();
     if(data.ok){setLoggedIn(data.email);closeAuth();}else showAuthMsg('al-msg',data.error||'Помилка входу',true);
   }catch(e){showAuthMsg('al-msg','Сервер недоступний',true);}
 }
 async function doAuthReg(){
-  const email=document.getElementById('ar-email').value.trim();
-  const pass=document.getElementById('ar-pass').value;
-  const pass2=document.getElementById('ar-pass2').value;
+  const email=document.getElementById('ar-email').value.trim();const pass=document.getElementById('ar-pass').value;const pass2=document.getElementById('ar-pass2').value;
   if(!email||!pass){showAuthMsg('ar-msg','Заповніть всі поля',true);return;}
   if(pass!==pass2){showAuthMsg('ar-msg','Паролі не збігаються',true);return;}
-  try{
-    const res=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pass})});
-    const data=await res.json();
+  try{const res=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pass})});const data=await res.json();
     if(data.ok){showAuthMsg('ar-msg','Успішно! Тепер увійдіть.',false);setTimeout(()=>authTab('login'),1500);}
     else showAuthMsg('ar-msg',data.error||'Помилка реєстрації',true);
   }catch(e){showAuthMsg('ar-msg','Сервер недоступний',true);}
@@ -1359,13 +1546,9 @@ function setLoggedIn(email){
   _loggedIn=true;_userEmail=email;
   const btn=document.getElementById('authBtn');
   if(btn){btn.textContent='● '+email.split('@')[0].toUpperCase().substring(0,8);btn.classList.add('logged');}
-  const authLogged=document.getElementById('auth-logged');
-  const authOut=document.getElementById('auth-loggedout');
-  const emailEl=document.getElementById('auth-email-display');
-  if(authLogged)authLogged.style.display='';
-  if(authOut)authOut.style.display='none';
-  if(emailEl)emailEl.textContent=email;
-  // Завантажуємо всі збережені stances з сервера одразу
+  document.getElementById('auth-logged').style.display='';
+  document.getElementById('auth-loggedout').style.display='none';
+  document.getElementById('auth-email-display').textContent=email;
   loadAllStancesFromServer();
 }
 function setLoggedOut(){
@@ -1377,57 +1560,41 @@ function setLoggedOut(){
 }
 fetch('/api/me').then(r=>r.json()).then(d=>{if(d.logged_in)setLoggedIn(d.email);}).catch(()=>{});
 
-// ── Breadcrumb ──────────────────────────────────────────────────
-let _bcCat='', _bcInst='', _bcRpt='Legacy Report';
+// ── Breadcrumb (по центру хедера) ──────────────────────────────
+let _bcCat='',_bcInst='',_bcRpt='Legacy Report';
 function updateBreadcrumb(){
-  const el=document.getElementById('hdrBreadcrumb');
-  if(!el)return;
+  const el=document.getElementById('hdrBreadcrumb');if(!el)return;
   const parts=[
     _bcCat?`<span>${_bcCat}</span>`:'',
     _bcInst?`<span class="bc-sep">›</span><span>${_bcInst}</span>`:'',
-    _bcRpt ?`<span class="bc-sep">›</span><span>${_bcRpt}</span>` :'',
+    _bcRpt?`<span class="bc-sep">›</span><span>${_bcRpt}</span>`:'',
   ].filter(Boolean).join('');
-  el.innerHTML = parts ? `<span class="hdr-bc-pill">${parts}</span>` : '';
+  el.innerHTML=parts?`<span class="hdr-bc-pill">${parts}</span>`:'';
 }
 
-// ── Issue 3: Sync stances via encoded string (без сервера) ──────
-// Функції збереження/відновлення налаштувань через код-рядок
+// ── Sync stances ──
 function exportStances(){
-  const data={};
-  for(let i=0;i<localStorage.length;i++){
-    const k=localStorage.key(i);
-    if(k&&k.startsWith('rpt_')) data[k]=localStorage.getItem(k);
-  }
-  const encoded=btoa(unescape(encodeURIComponent(JSON.stringify(data))));
-  return encoded;
+  const data={};for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith('rpt_'))data[k]=localStorage.getItem(k);}
+  return btoa(unescape(encodeURIComponent(JSON.stringify(data))));
 }
 function importStances(code){
-  try{
-    const data=JSON.parse(decodeURIComponent(escape(atob(code))));
-    Object.entries(data).forEach(([k,v])=>{if(k.startsWith('rpt_'))localStorage.setItem(k,v);});
-    return true;
-  }catch(e){return false;}
+  try{const data=JSON.parse(decodeURIComponent(escape(atob(code))));Object.entries(data).forEach(([k,v])=>{if(k.startsWith('rpt_'))localStorage.setItem(k,v);});return true;}
+  catch(e){return false;}
 }
 function openSyncModal(){
   const code=exportStances();
-  const modal=document.createElement('div');
-  modal.id='syncModal';
+  const modal=document.createElement('div');modal.id='syncModal';
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:2000;display:flex;align-items:center;justify-content:center;';
   modal.innerHTML=`<div style="background:#21263a;border:1px solid #343d5a;border-radius:8px;padding:28px;width:420px;max-width:95vw;font-family:Courier New,monospace;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-      <div style="font-size:11px;color:#fff;letter-spacing:1px;">СИНХРОНІЗАЦІЯ НАЛАШТУВАНЬ</div>
-      <button onclick="document.getElementById('syncModal').remove()" style="background:none;border:none;color:#8090b0;cursor:pointer;font-size:16px;">✕</button>
-    </div>
-    <div style="font-size:9px;color:#8090b0;margin-bottom:6px;">КОД НАЛАШТУВАНЬ (скопіюйте і вставте на іншому пристрої):</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;"><div style="font-size:11px;color:#fff;letter-spacing:1px;">СИНХРОНІЗАЦІЯ НАЛАШТУВАНЬ</div><button onclick="document.getElementById('syncModal').remove()" style="background:none;border:none;color:#8090b0;cursor:pointer;font-size:16px;">✕</button></div>
+    <div style="font-size:9px;color:#8090b0;margin-bottom:6px;">КОД НАЛАШТУВАНЬ:</div>
     <textarea id="syncCode" style="width:100%;height:80px;background:#13162a;border:1px solid #343d5a;color:#20d483;font-family:Courier New,monospace;font-size:9px;padding:8px;border-radius:4px;resize:none;">${code}</textarea>
     <div style="display:flex;gap:8px;margin-top:12px;">
       <button onclick="navigator.clipboard.writeText(document.getElementById('syncCode').value).then(()=>{this.textContent='✓ Скопійовано!';setTimeout(()=>this.textContent='Копіювати',1500)})" style="flex:1;padding:8px;background:rgba(32,212,131,.15);border:1px solid #20d483;color:#20d483;font-family:Courier New,monospace;font-size:10px;border-radius:4px;cursor:pointer;">Копіювати</button>
-      <button onclick="const c=document.getElementById('syncCode').value;if(importStances(c)){alert('✅ Налаштування завантажено!');document.getElementById('syncModal').remove();}else{alert('❌ Невірний код');}" style="flex:1;padding:8px;background:rgba(74,158,255,.15);border:1px solid #4a9eff;color:#4a9eff;font-family:Courier New,monospace;font-size:10px;border-radius:4px;cursor:pointer;">Завантажити</button>
+      <button onclick="const c=document.getElementById('syncCode').value;if(importStances(c)){alert('✅ Завантажено!');document.getElementById('syncModal').remove();}else{alert('❌ Невірний код');}" style="flex:1;padding:8px;background:rgba(74,158,255,.15);border:1px solid #4a9eff;color:#4a9eff;font-family:Courier New,monospace;font-size:10px;border-radius:4px;cursor:pointer;">Завантажити</button>
     </div>
-    <div style="font-size:8px;color:#4a7090;margin-top:10px;line-height:1.5;">Вставте код на іншому пристрої, натисніть "Завантажити" — і налаштування L/N/S відновляться.</div>
   </div>`;
-  document.body.appendChild(modal);
-  modal.addEventListener('click',e=>{if(e.target===modal)modal.remove();});
+  document.body.appendChild(modal);modal.addEventListener('click',e=>{if(e.target===modal)modal.remove();});
 }
 const firstCat=document.querySelector('.ctab');
 if(firstCat)selCat(firstCat.dataset.c);
@@ -1439,7 +1606,7 @@ if(firstCat)selCat(firstCat.dataset.c);
 def main():
     print()
     print("="*55)
-    print("   COT Dashboard Generator v14 — Legacy + TFF")
+    print("   COT Dashboard Generator v15 — Legacy + TFF + DISAG")
     print("="*55)
     print()
     OUTPUT_FILE.parent.mkdir(parents=True,exist_ok=True)
@@ -1447,24 +1614,19 @@ def main():
     except FileNotFoundError as e: print(e); return
     if not data: print("❌  Дані порожні."); return
     tff_data=load_tff_data()
+    disag_data=load_disag_data()
     print("🔧  Генеруємо HTML...")
-    html=generate_html(data,tff_data)
-    OUTPUT_FILE.write_text(html,encoding='utf-8')
+    html=generate_html(data, tff_data, disag_data)
+    OUTPUT_FILE.write_text(html, encoding='utf-8')
     kb=OUTPUT_FILE.stat().st_size/1024
     print(f"✅  Збережено: {OUTPUT_FILE}  ({kb:.0f} KB)")
-    FLASK_URL = "http://localhost:5000"
-    print(f"🌐  Відкриваємо браузер → {FLASK_URL}")
-    print(f"   Файл: {OUTPUT_FILE}")
-    print()
-    print("   ┌─────────────────────────────────────────────┐")
-    print("   │  Flask сервер має бути запущений!!           │")
-    print(f"   │  Відкрийте:  {FLASK_URL}              │")
-    print("   │  Запуск:     python app.py                  │")
-    print("   └─────────────────────────────────────────────┘")
+    FLASK_URL="http://localhost:5000"
+    print(f"🌐  Відкриваємо: {FLASK_URL}")
     import os
     if not webbrowser.open(FLASK_URL):
         try: os.startfile(str(OUTPUT_FILE))
         except: pass
+    print(f"   Файл: {OUTPUT_FILE}")
     print("\n✨  Готово!\n")
 
 if __name__=='__main__':
