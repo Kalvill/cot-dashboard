@@ -968,8 +968,33 @@ def make_overview_tab():
            f'<th>NET CM</th><th>CHG CM</th><th>%OI CHG</th>'
            f'<th style="color:{COLOR_LS}">COT LS</th><th style="color:{COLOR_CM}">COT CM</th><th style="color:{COLOR_ST}">COT ST</th>'
            f'<th>SM DIV</th><th>SM 6M</th><th>SM 3M</th></tr></thead>')
-    return(f'<div class="ov-meta">Звіт: <b>{rep_date}</b> &nbsp;|&nbsp; Оновлено: {today_date}</div>'
-           f'<div class="ov-scroll"><table class="ov-table">{thead}<tbody>{"".join(rows_html)}</tbody></table></div>')
+    # Збираємо дані для SM DIV графіків
+    sm_chart_data = []
+    for item in OVERVIEW_TABLE:
+        if not isinstance(item, dict): continue
+        label = item.get('asset','')
+        sm_chart_data.append({
+            'label': label,
+            'div':   item.get('sm_div',   0) or 0,
+            'div_6m':item.get('sm_div_6m',0) or 0,
+            'div_3m':item.get('sm_div_3m',0) or 0,
+        })
+    sm_json = json.dumps(sm_chart_data, ensure_ascii=False)
+
+    sm_parts = [
+        '<div class="ov-meta">Звіт: <b>' + rep_date + '</b> &nbsp;|&nbsp; Оновлено: ' + today_date + '</div>',
+        '<div class="ov-scroll"><table class="ov-table">' + thead + '<tbody>' + ''.join(rows_html) + '</tbody></table></div>',
+        '<div class="ov-sm-chart-wrap">',
+        '<div class="ov-sm-tabs">',
+        '<button class="ov-sm-tab active" onclick="selSmTab(this,\'div\')">SM DIV</button>',
+        '<button class="ov-sm-tab" onclick="selSmTab(this,\'div_6m\')">SM 6M</button>',
+        '<button class="ov-sm-tab" onclick="selSmTab(this,\'div_3m\')">SM 3M</button>',
+        '</div>',
+        '<div class="ov-sm-cv-wrap"><canvas id="ovSmChart"></canvas></div>',
+        '</div>',
+        '<script>window._ovSmInit=' + sm_json + ';</script>',
+    ]
+    return ''.join(sm_parts)
 
 
 AUTH_MODAL_HTML = """
@@ -1154,7 +1179,12 @@ table.ht tbody.mm-tbody tr.mm-yr td{opacity:.78;}
 .ov-table .ov-asset{text-align:left;color:var(--t);font-weight:bold;}
 .ov-table .ov-group td{background:var(--bg3);color:var(--d);font-size:8px;letter-spacing:1px;padding:4px 10px;text-align:left;}
 .ov-table tr:hover td{background:rgba(52,61,90,.4)!important;}
-.ov-cot-cell{display:flex;align-items:center;gap:6px;justify-content:flex-end;}.ov-bar-bg{width:50px;height:5px;background:var(--bg3);border-radius:2px;overflow:hidden;flex-shrink:0;}.ov-bar-fill{height:100%;border-radius:2px;}.ov-cot-val{font-size:10px;color:var(--t);min-width:30px;text-align:right;}
+.ov-cot-cell{display:flex;align-items:center;gap:6px;justify-content:flex-end;}
+.ov-sm-chart-wrap{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;margin-top:16px;overflow:hidden;}
+.ov-sm-tabs{display:flex;gap:0;padding:8px 16px 0;border-bottom:1px solid var(--bd);}
+.ov-sm-tab{padding:6px 18px;border:none;background:transparent;color:#b0bcd4;font-family:var(--f);font-size:11px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;letter-spacing:.5px;}
+.ov-sm-tab:hover{color:#fff;}.ov-sm-tab.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:bold;}
+.ov-sm-cv-wrap{padding:14px 16px 16px;height:220px;position:relative;}.ov-bar-bg{width:50px;height:5px;background:var(--bg3);border-radius:2px;overflow:hidden;flex-shrink:0;}.ov-bar-fill{height:100%;border-radius:2px;}.ov-cot-val{font-size:10px;color:var(--t);min-width:30px;text-align:right;}
 .g{color:var(--g);}.r{color:var(--r);}.d{color:var(--d);}
 .footer{text-align:center;padding:14px;color:var(--d);font-size:9px;letter-spacing:1px;border-top:1px solid var(--bd);margin-top:4px;}
 @media(max-width:640px){
@@ -1244,6 +1274,7 @@ function selMain(mt){
   document.querySelector('[data-mt="'+mt+'"]').classList.add('active');
   document.getElementById('ms_'+mt).classList.add('active');
   if(mt==='cot'){const fc=document.querySelector('.ctab');if(fc)selCat(fc.dataset.c);}
+  if(mt==='ov'){if(window._ovSmInit)initOvSmChart(_ovSmKey||'div');}
 }
 
 function switchReport(sid,type){
@@ -1598,6 +1629,40 @@ function openSyncModal(){
 }
 const firstCat=document.querySelector('.ctab');
 if(firstCat)selCat(firstCat.dataset.c);
+
+// ── Overview SM DIV bar chart ──
+let _ovSmChart=null;let _ovSmKey='div';
+function selSmTab(btn,key){
+  document.querySelectorAll('.ov-sm-tab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  _ovSmKey=key;
+  initOvSmChart(key);
+}
+function initOvSmChart(key){
+  const cv=document.getElementById('ovSmChart');if(!cv)return;
+  if(_ovSmChart){_ovSmChart.destroy();_ovSmChart=null;}
+  const src=window._ovSmInit||[];const labels=src.map(d=>d.label);
+  const vals=src.map(d=>d[key]||0);
+  const colors=vals.map(v=>v>=0?'rgba(32,212,131,.75)':'rgba(240,81,90,.75)');
+  const bdrColors=vals.map(v=>v>=0?'#20d483':'#f0515a');
+  const titles={'div':'SM DIV — All Time','div_6m':'SM DIV — 6 Months','div_3m':'SM DIV — 3 Months'};
+  _ovSmChart=new Chart(cv.getContext('2d'),{
+    type:'bar',
+    data:{labels,datasets:[{data:vals,backgroundColor:colors,borderColor:bdrColors,borderWidth:1,borderRadius:2,label:titles[key]||'SM DIV'}]},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,
+      plugins:{legend:{display:false},
+        title:{display:true,text:titles[key]||'SM DIV',color:'#dde2ee',font:{family:'Courier New',size:11},padding:{bottom:8}},
+        tooltip:{backgroundColor:'#21263a',borderColor:'#343d5a',borderWidth:1,titleColor:'#dde2ee',bodyColor:'#dde2ee',
+          titleFont:{family:'Courier New',size:10},bodyFont:{family:'Courier New',size:10},
+          callbacks:{label:ctx=>{const v=ctx.parsed.y;return ' '+v.toFixed(2);}}}},
+      scales:{
+        x:{ticks:{color:'#8090b0',font:{family:'Courier New',size:9},maxRotation:45,minRotation:30},
+           grid:{color:'rgba(52,61,90,.5)',lineWidth:.5},border:{display:false}},
+        y:{display:true,grid:{color:'rgba(52,61,90,.6)',lineWidth:.5},
+           ticks:{color:'#8090b0',font:{family:'Courier New',size:9},callback:v=>v.toFixed(2)},
+           border:{display:false},
+           min:-1,max:1}}}});
+}
 </script>
 </body>
 </html>
