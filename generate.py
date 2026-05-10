@@ -151,7 +151,7 @@ def make_sparkline(series,color,h=38):
            f'<polyline points="{line}" fill="none" stroke="{color}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>'
            f'<circle cx="{lx}" cy="{ly}" r="2.5" fill="{color}"/></svg>')
 
-def make_gauge_svg(value,color,size=74):
+def make_gauge_svg(value,color,size=74,label='COT INDEX'):
     value=max(0.0,min(100.0,float(value)));cx=cy=size/2;r=size*0.40
     START_SVG=140.0;SWEEP=240.0
     def pt(d):
@@ -166,7 +166,7 @@ def make_gauge_svg(value,color,size=74):
            +(f'<path d="{fg}" stroke="{color}" stroke-width="3" fill="none" stroke-linecap="round"/>' if fg else '')
            +f'<circle cx="{v[0]}" cy="{v[1]}" r="4" fill="{color}"/>'
            f'<circle cx="{s[0]}" cy="{s[1]}" r="2.5" fill="#252d48" stroke="{color}" stroke-width="1"/>'
-           f'<text x="{tx}" y="{ty-6}" text-anchor="middle" dominant-baseline="middle" font-family="Courier New,monospace" font-size="7" fill="{color}" opacity="0.7">COT INDEX</text>'
+           f'<text x="{tx}" y="{ty-6}" text-anchor="middle" dominant-baseline="middle" font-family="Courier New,monospace" font-size="7" fill="{color}" opacity="0.7">{label}</text>'
            f'<text x="{tx}" y="{ty+6}" text-anchor="middle" dominant-baseline="middle" font-family="Courier New,monospace" font-size="13" font-weight="bold" fill="{color}">{value:.1f}</text></svg>')
 def gauge_color(value,oi=False):
     if oi: return '#dde2ee'
@@ -175,7 +175,7 @@ def gauge_color(value,oi=False):
     if v>85: return '#20d483'
     return '#dde2ee'
 
-def make_metric_card(lbl,val,chg,chg_pct,spark_series,spark_color,oi=False,gauge_val=50.0,sub_text='COT Index: —'):
+def make_metric_card(lbl,val,chg,chg_pct,spark_series,spark_color,oi=False,gauge_val=50.0,sub_text='COT Index: —',ranked_val=None):
     spark=make_sparkline(spark_series,spark_color)
     try: ci=int(round(float(chg)))
     except: ci=0
@@ -184,14 +184,21 @@ def make_metric_card(lbl,val,chg,chg_pct,spark_series,spark_color,oi=False,gauge
         else 'background:rgba(240,81,90,.20);border-radius:3px;padding:2px 7px;display:inline-block;' if ci<0
         else 'padding:2px 7px;display:inline-block;')
     val_str=(f'<span class="t">{fv(val)}</span>' if oi else f'<span class="{cc(val)}">{fv(val,sign=True)}</span>')
-    gcol=gauge_color(gauge_val,oi=oi);g=make_gauge_svg(gauge_val,gcol)
+    gcol=gauge_color(gauge_val,oi=oi); g=make_gauge_svg(gauge_val,gcol,size=72,label='COT INDEX')
+    # COT INDEX Ranked (M) — другий gauge поруч
+    if ranked_val is not None and not oi:
+        rgcol=gauge_color(ranked_val)
+        rg=make_gauge_svg(ranked_val,rgcol,size=58,label='RANK')
+        gauge_col=f'<div class="mc-right mc-gauges"><div class="mc-gauge-wrap">{g}</div><div class="mc-gauge-wrap">{rg}</div></div>'
+    else:
+        gauge_col=f'<div class="mc-right">{g}</div>'
     return(f'<div class="mc"><div class="mc-lbl">{lbl}</div>'
            f'<div class="mc-inner"><div class="mc-left">'
            f'<div class="mc-val">{val_str}</div>'
            f'<div class="mc-chg-wrap"><span class="{cc_}" style="{bg}">{ar(chg)} {fv_full(abs(ci))}<span class="mc-wtag"> за тиждень</span></span></div>'
            f'<div class="mc-pct {cc_}">{chg_pct}</div>'
            +(f'<div class="mc-sub">{sub_text}</div>' if sub_text else '')
-           +f'</div><div class="mc-right">{g}</div></div>{spark}</div>')
+           +f'</div>'+gauge_col+f'</div>{spark}</div>')
 
 def analysis_row(group_label,group_color,net,cl,cs,chg,chg_pct):
     dc='g'if net>0 else'r'
@@ -296,6 +303,22 @@ def read_sheet(xl,name,overview):
         ov=overview.get(sid(name),{})
         def cot_idx(series,all_key):
             return{'all':ov.get(all_key,calc_cot_index(series)),'3y':calc_cot_index(series,156),'1y':calc_cot_index(series,52),'6m':calc_cot_index(series,26),'3m':calc_cot_index(series,13)}
+        # COT INDEX Ranked (M) з колонок 87-101 (значення 0-1 → ×100)
+        def gm(ci):
+            if ci>=df.shape[1]: return None
+            v=pd.to_numeric(df.iloc[valid_idx[0] if hasattr(valid_idx,'__len__') else 0, ci],errors='coerce')
+            return round(float(v)*100,1) if pd.notna(v) else None
+        # Беремо значення COT INDEX(M) з останнього рядка відсортованого df
+        def gcm(ci):
+            if ci>=df.shape[1]: return None
+            try:
+                v=pd.to_numeric(df.iloc[-1, ci], errors='coerce')  # df вже відсортований по даті
+                return round(float(v)*100,1) if pd.notna(v) and float(v)>0 else None
+            except: return None
+        # Колонки (0-based): All Time: LS=87,CM=88,ST=89 | 3y: 90,91,92 | 1y: 93,94,95 | 6mo: 96,97,98 | 3mo: 99,100,101
+        cot_idx_m={'ls':{'all':gcm(87),'3y':gcm(90),'1y':gcm(93),'6m':gcm(96),'3m':gcm(99)},
+                   'cm':{'all':gcm(88),'3y':gcm(91),'1y':gcm(94),'6m':gcm(97),'3m':gcm(100)},
+                   'st':{'all':gcm(89),'3y':gcm(92),'1y':gcm(95),'6m':gcm(98),'3m':gcm(101)}}
         def stats(net_s,cl_s=None,cs_s=None):
             def mm(s):
                 sv=[float(v) for v in s if v!=0];s1y=sv[-52:] if len(sv)>=52 else sv
@@ -321,7 +344,7 @@ def read_sheet(xl,name,overview):
         oi_chg=round(oi_cur-oi_prev,0)
         _oi_st=stats(oi_all)
         oi_cap=round(oi_cur/_oi_st['max_all']*100,1) if _oi_st.get('max_all',0)>0 else 50.0
-        return{'name':name,'display':disp(name),'sid':sid(name),'chart':chart,'hist':hist,'stats_ls':stats(ls_net,ls_cl,ls_cs),'stats_cm':stats(cm_net,cm_cl,cm_cs),'stats_st':stats(st_net),'stats_oi':stats(oi_all),'cot_idx':{'ls':cot_idx(ls_net,'cot_ls_all'),'cm':cot_idx(cm_net,'cot_cm_all'),'st':cot_idx(st_net,'cot_st_all')},'sm':{'div':ov.get('sm_div',0.0),'div_3m':ov.get('sm_div_3m',0.0),'div_6m':ov.get('sm_div_6m',0.0)},'spark':{'ls':ls_net,'cm':cm_net,'st':st_net,'oi':oi_all},'oi_capacity':oi_cap,'cur':{'date':all_dates[i0],'ls_net':ls_net[i0],'cm_net':cm_net[i0],'st_net':st_net[i0],'ls_pct':ls_pct[i0],'cm_pct':cm_pct[i0],'st_pct':st_pct[i0],'ls_cl':ls_cl[i0],'ls_cs':ls_cs[i0],'cm_cl':cm_cl[i0],'cm_cs':cm_cs[i0],'oi':oi_cur,'oi_pct':oi_pct,'ls_chg':ls_chg,'cm_chg':cm_chg,'st_chg':st_chg,'oi_chg':oi_chg,'ls_chg_pct':pct_change(ls_chg,ls_net[i0]),'cm_chg_pct':pct_change(cm_chg,cm_net[i0]),'st_chg_pct':pct_change(st_chg,st_net[i0]),'oi_chg_pct':fp(oi_pct,signed=True)}}
+        return{'name':name,'display':disp(name),'sid':sid(name),'chart':chart,'hist':hist,'stats_ls':stats(ls_net,ls_cl,ls_cs),'stats_cm':stats(cm_net,cm_cl,cm_cs),'stats_st':stats(st_net),'stats_oi':stats(oi_all),'cot_idx':{'ls':cot_idx(ls_net,'cot_ls_all'),'cm':cot_idx(cm_net,'cot_cm_all'),'st':cot_idx(st_net,'cot_st_all')},'cot_idx_m':cot_idx_m,'sm':{'div':ov.get('sm_div',0.0),'div_3m':ov.get('sm_div_3m',0.0),'div_6m':ov.get('sm_div_6m',0.0)},'spark':{'ls':ls_net,'cm':cm_net,'st':st_net,'oi':oi_all},'oi_capacity':oi_cap,'cur':{'date':all_dates[i0],'ls_net':ls_net[i0],'cm_net':cm_net[i0],'st_net':st_net[i0],'ls_pct':ls_pct[i0],'cm_pct':cm_pct[i0],'st_pct':st_pct[i0],'ls_cl':ls_cl[i0],'ls_cs':ls_cs[i0],'cm_cl':cm_cl[i0],'cm_cs':cm_cs[i0],'oi':oi_cur,'oi_pct':oi_pct,'ls_chg':ls_chg,'cm_chg':cm_chg,'st_chg':st_chg,'oi_chg':oi_chg,'ls_chg_pct':pct_change(ls_chg,ls_net[i0]),'cm_chg_pct':pct_change(cm_chg,cm_net[i0]),'st_chg_pct':pct_change(st_chg,st_net[i0]),'oi_chg_pct':fp(oi_pct,signed=True)}}
     except Exception as e: print(f"  ❌  {name}: {e}"); return None
 
 def load_all():
@@ -848,12 +871,78 @@ def make_hist_table(hist,stats_ls,stats_cm,stats_st,stats_oi,sm):
 # ================================================================
 # INSTRUMENT VIEW
 # ================================================================
+def _make_ranked_section(s, cot_m):
+    """Вбудована секція COT INDEX RANKED (M) всередині pct-panel"""
+    if not cot_m: return ''
+    ini = cot_m.get('ls',{}).get('all') or 50.0
+    ini_pos=min(max(ini,0),100)
+    ini_color='#f0515a'if ini<15 else('#20d483'if ini>85 else'#dde2ee')
+    ini_lbl='екстрем. шорт'if ini<15 else('екстрем. лонг'if ini>85 else'нейтральна зона')
+    return(f'<div class="panel pct-panel" id="pctm_panel_{s}">'
+           f'<div class="plbl" style="margin-bottom:6px">COT INDEX RANKED (M)</div>'
+           f'<div class="pct-sel-row"><div class="psel-group">'
+           f'<button class="psm active" data-p="ls" onclick="pctMSel(this,\'{s}\')">LS</button>'
+           f'<button class="psm" data-p="cm" onclick="pctMSel(this,\'{s}\')">CM</button>'
+           f'<button class="psm" data-p="st" onclick="pctMSel(this,\'{s}\')">ST</button>'
+           f'</div><div class="psel-sep"></div><div class="psel-group">'
+           f'<button class="ppm active" data-per="all" onclick="pperMSel(this,\'{s}\')">All</button>'
+           f'<button class="ppm" data-per="3y"  onclick="pperMSel(this,\'{s}\')">3Y</button>'
+           f'<button class="ppm" data-per="1y"  onclick="pperMSel(this,\'{s}\')">1Y</button>'
+           f'<button class="ppm" data-per="6m"  onclick="pperMSel(this,\'{s}\')">6M</button>'
+           f'<button class="ppm" data-per="3m"  onclick="pperMSel(this,\'{s}\')">3M</button>'
+           f'</div></div>'
+           f'<div class="pct-val-row">'
+           f'<span id="pctmval_{s}" style="font-size:16px;font-weight:bold;color:{ini_color}">{ini:.1f}%</span>'
+           f'<span id="pctmcls_{s}" style="font-size:11px;color:#8090b0;margin-left:8px;">— {ini_lbl}</span>'
+           f'</div>'
+           f'<div class="pbar-wrap"><div class="pbar-bg"><div class="pbar-lo"></div><div class="pbar-hi"></div>'
+           f'<div class="ptick" style="left:15%"></div><div class="ptick" style="left:85%"></div>'
+           f'<div class="pbar-mk" id="pctmmk_{s}" style="left:{ini_pos:.1f}%;background:#e8a838"></div></div>'
+           f'<div class="ptick-labels"><span class="ptlbl" style="left:15%">15%</span>'
+           f'<span id="pctmcur_{s}" class="ptlbl ptlbl-cur" style="left:{ini_pos:.1f}%">{ini:.1f}%</span>'
+           f'<span class="ptlbl" style="left:85%">85%</span></div></div>'
+           f'<div class="pbar-lb"><span>0%</span><span>50%</span><span>100%</span></div></div>')
+
+def _make_ranked_block(s, cot_m, default_group='ls'):
+    """Блок COT INDEX Ranked (M) під перцентилем"""
+    if not cot_m or all(v is None for v in cot_m.get(default_group,{}).values()):
+        return ''
+    ini_group = default_group
+    ini = cot_m.get(ini_group,{}).get('all') or 50.0
+    ini_pos=min(max(ini,0),100)
+    ini_color='#f0515a'if ini<15 else('#20d483'if ini>85 else'#dde2ee')
+    ini_lbl='екстрем. шорт'if ini<15 else('екстрем. лонг'if ini>85 else'нейтральна зона')
+    return(f'<div class="panel pct-panel" id="pctm_panel_{s}" style="margin-top:8px">'
+           f'<div class="plbl">ПЕРЦЕНТИЛЬ (COT INDEX RANKED M)</div>'
+           f'<div class="pct-sel-row"><div class="psel-group">'
+           f'<button class="psel active" data-p="ls" onclick="pctMSel(this,\'{s}\')">LS</button>'
+           f'<button class="psel" data-p="cm" onclick="pctMSel(this,\'{s}\')">CM</button>'
+           f'<button class="psel" data-p="st" onclick="pctMSel(this,\'{s}\')">ST</button>'
+           f'</div><div class="psel-sep"></div><div class="psel-group">'
+           f'<button class="pper active" data-per="all" onclick="pperMSel(this,\'{s}\')">All</button>'
+           f'<button class="pper" data-per="3y"  onclick="pperMSel(this,\'{s}\')">3Y</button>'
+           f'<button class="pper" data-per="1y"  onclick="pperMSel(this,\'{s}\')">1Y</button>'
+           f'<button class="pper" data-per="6m"  onclick="pperMSel(this,\'{s}\')">6M</button>'
+           f'<button class="pper" data-per="3m"  onclick="pperMSel(this,\'{s}\')">3M</button>'
+           f'</div></div>'
+           f'<div class="pct-val-row">'
+           f'<span id="pctmval_{s}" style="font-size:16px;font-weight:bold;color:{ini_color}">{ini:.1f}%</span>'
+           f'<span id="pctmcls_{s}" style="font-size:11px;color:#8090b0;margin-left:8px;">— {ini_lbl}</span>'
+           f'</div>'
+           f'<div class="pbar-wrap"><div class="pbar-bg"><div class="pbar-lo"></div><div class="pbar-hi"></div>'
+           f'<div class="ptick" style="left:15%"></div><div class="ptick" style="left:85%"></div>'
+           f'<div class="pbar-mk" id="pctmmk_{s}" style="left:{ini_pos:.1f}%"></div></div>'
+           f'<div class="ptick-labels"><span class="ptlbl" style="left:15%">15%</span>'
+           f'<span id="pctmcur_{s}" class="ptlbl ptlbl-cur" style="left:{ini_pos:.1f}%">{ini:.1f}%</span>'
+           f'<span class="ptlbl" style="left:85%">85%</span></div></div>'
+           f'<div class="pbar-lb"><span>0%</span><span>50%</span><span>100%</span></div></div>')
+
 def make_instrument_view(d,tff=None,disag=None):
     c=d['cur'];s=d['sid'];sm=d['sm']
     has_tff=tff is not None;has_disag=disag is not None
-    mc_ls=make_metric_card('LARGE SPEC (NETTO)',c['ls_net'],c['ls_chg'],c['ls_chg_pct'],d['spark']['ls'],COLOR_LS,gauge_val=d['cot_idx']['ls']['all'],sub_text="")
-    mc_cm=make_metric_card('COMMERCIALS (NETTO)',c['cm_net'],c['cm_chg'],c['cm_chg_pct'],d['spark']['cm'],COLOR_CM,gauge_val=d['cot_idx']['cm']['all'],sub_text="")
-    mc_st=make_metric_card('SMALL TRADERS (NETTO)',c['st_net'],c['st_chg'],c['st_chg_pct'],d['spark']['st'],COLOR_ST,gauge_val=d['cot_idx']['st']['all'],sub_text="")
+    mc_ls=make_metric_card('LARGE SPEC (NETTO)',c['ls_net'],c['ls_chg'],c['ls_chg_pct'],d['spark']['ls'],COLOR_LS,gauge_val=d['cot_idx']['ls']['all'],sub_text="",ranked_val=d.get('cot_idx_m',{}).get('ls',{}).get('all'))
+    mc_cm=make_metric_card('COMMERCIALS (NETTO)',c['cm_net'],c['cm_chg'],c['cm_chg_pct'],d['spark']['cm'],COLOR_CM,gauge_val=d['cot_idx']['cm']['all'],sub_text="",ranked_val=d.get('cot_idx_m',{}).get('cm',{}).get('all'))
+    mc_st=make_metric_card('SMALL TRADERS (NETTO)',c['st_net'],c['st_chg'],c['st_chg_pct'],d['spark']['st'],COLOR_ST,gauge_val=d['cot_idx']['st']['all'],sub_text="",ranked_val=d.get('cot_idx_m',{}).get('st',{}).get('all'))
     mc_oi=make_metric_card('OPEN INTEREST',c['oi'],c['oi_chg'],c['oi_chg_pct'],d['spark']['oi'],'#a0aac0',oi=True,gauge_val=d.get('oi_capacity',50.0),sub_text=f"зміна: {fv(int(c['oi_chg']),True,sign=True)}")
     analysis_panel=(f'<div class="panel">'
                     +analysis_row('LARGE SPEC',COLOR_LS,c['ls_net'],c['ls_cl'],c['ls_cs'],c['ls_chg'],c['ls_chg_pct'])
@@ -888,7 +977,7 @@ def make_instrument_view(d,tff=None,disag=None):
                f'<span id="pctcur_{s}" class="ptlbl ptlbl-cur" style="left:{ini_pos:.1f}%">{fp(ini)}</span>'
                f'<span class="ptlbl" style="left:85%">85%</span></div></div>'
                f'<div class="pbar-lb"><span>0%</span><span>50%</span><span>100%</span></div></div>'
-               f'<script>_ci["{s}"]={cj};</script>')
+                   + f'<script>_ci["{s}"]={cj};_ci_m["{s}"]={json.dumps(d.get("cot_idx_m",{}),ensure_ascii=False)};</script>')
     cj2=json.dumps(d['chart'],ensure_ascii=False)
     chart_block=(f'<div class="chartbox"><div class="chartbox-hdr"><div class="plbl" style="margin:0">ЧИСТІ ПОЗИЦІЇ</div>'
                  f'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="period-btns">'
@@ -913,7 +1002,14 @@ def make_instrument_view(d,tff=None,disag=None):
                  f'<button class="hbtn" data-n="26" onclick="setHist(this,\'{s}\')">26</button>'
                  f'<button class="hbtn" data-n="52" onclick="setHist(this,\'{s}\')">52</button>'
                  f'</div></div><div class="htable-scroll">{tbl_html}</div></div>')
-    mid=f'<div class="mid">{analysis_panel}{sm_panel}{rpts}{pct_panel}</div>'
+    # Ranked блок — окрема панель під стандартним перцентилем
+    ranked_panel = _make_ranked_section(s, d.get('cot_idx_m',{}))
+    # Обгортаємо обидві pct-панелі у flex-колонку для 4-го grid-item
+    pct_combined = (f'<div style="display:flex;flex-direction:column;gap:8px">'
+                    + pct_panel
+                    + ranked_panel
+                    + '</div>')
+    mid=f'<div class="mid">{analysis_panel}{sm_panel}{rpts}{pct_combined}</div>'
     legacy_sec=(f'<div class="rpt-sec" id="rpt_legacy_{s}">'
                 f'<div class="mcards">{mc_ls}{mc_cm}{mc_st}{mc_oi}</div>'
                 +mid+bar_block+chart_block+table_block+'</div>')
@@ -1032,7 +1128,7 @@ HTML_HEAD = """<!DOCTYPE html>
 <html lang="uk">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=1440">
 <title>COT Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
@@ -1139,8 +1235,8 @@ html,body{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13p
 .rb{width:20px;height:20px;border-radius:3px;border:1px solid var(--bd);background:var(--bg3);color:var(--d);font-family:var(--f);font-size:9px;font-weight:bold;cursor:pointer;line-height:20px;text-align:center;padding:0;}
 .rb:hover{border-color:var(--t);color:var(--t);}.rb-l.active{background:rgba(32,212,131,.25);border-color:var(--g);color:var(--g);}.rb-s.active{background:rgba(240,81,90,.20);border-color:var(--r);color:var(--r);}.rb-n.active{background:var(--bg3);border-color:var(--d);color:var(--d);}
 .pct-sel-row{display:flex;gap:5px;align-items:center;margin-bottom:10px;flex-wrap:wrap;}.psel-group{display:flex;gap:3px;}.psel-sep{width:1px;height:16px;background:var(--bd);margin:0 3px;}
-.psel,.pper{padding:2px 8px;border:1px solid var(--bd);border-radius:3px;cursor:pointer;color:#b0bcd4;font-family:var(--f);font-size:10px;background:transparent;}
-.psel:hover,.pper:hover{border-color:var(--accent);color:#fff;}.psel.active,.pper.active{background:var(--bg3);color:var(--accent);border-color:var(--accent);}
+.psel,.pper,.psm,.ppm{padding:2px 8px;border:1px solid var(--bd);border-radius:3px;cursor:pointer;color:#b0bcd4;font-family:var(--f);font-size:10px;background:transparent;}
+.psel:hover,.pper:hover,.psm:hover,.ppm:hover{border-color:var(--accent);color:#fff;}.psel.active,.pper.active,.psm.active,.ppm.active{background:var(--bg3);color:var(--accent);border-color:var(--accent);}
 .pct-val-row{margin-bottom:8px;}
 .pbar-wrap{position:relative;margin-bottom:3px;}.pbar-bg{background:var(--bg3);border-radius:3px;height:18px;position:relative;overflow:hidden;}
 .pbar-lo{position:absolute;left:0;top:0;height:100%;background:rgba(240,81,90,.3);width:15%;}.pbar-hi{position:absolute;right:0;top:0;height:100%;background:rgba(32,212,131,.3);width:15%;}
@@ -1180,6 +1276,8 @@ table.ht tbody.mm-tbody tr.mm-yr td{opacity:.78;}
 .ov-table .ov-group td{background:var(--bg3);color:var(--d);font-size:8px;letter-spacing:1px;padding:4px 10px;text-align:left;}
 .ov-table tr:hover td{background:rgba(52,61,90,.4)!important;}
 .ov-cot-cell{display:flex;align-items:center;gap:6px;justify-content:flex-end;}
+.mc-gauges{display:flex;flex-direction:column;gap:6px;flex-shrink:0;align-items:flex-end;}
+.mc-gauge-wrap{display:flex;flex-direction:column;align-items:center;}
 .ov-sm-chart-wrap{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;margin-top:16px;overflow:hidden;}
 .ov-sm-tabs{display:flex;gap:0;padding:8px 16px 0;border-bottom:1px solid var(--bd);}
 .ov-sm-tab{padding:6px 18px;border:none;background:transparent;color:#b0bcd4;font-family:var(--f);font-size:11px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;letter-spacing:.5px;}
@@ -1197,7 +1295,7 @@ table.ht tbody.mm-tbody tr.mm-yr td{opacity:.78;}
 </style>
 </head>
 <body>
-<script>const _cd={};const _ci={};const _tff={};const _ci_tff={};const _dg={};const _ci_dg={};const Charts={};const BarChts={};const TffCharts={};const TffBarChts={};const DgCharts={};const DgBarChts={};</script>
+<script>const _cd={};const _ci={};const _ci_m={};const _tff={};const _ci_tff={};const _dg={};const _ci_dg={};const Charts={};const BarChts={};const TffCharts={};const TffBarChts={};const DgCharts={};const DgBarChts={};</script>
 """
 
 def generate_html(data, tff_data=None, disag_data=None):
@@ -1439,6 +1537,27 @@ function setPctBar(sid,pfx,val){
   if(valEl){valEl.style.color=col;valEl.textContent=val.toFixed(1)+'%';}
   if(lblEl)lblEl.textContent=lbl;
   if(curEl){curEl.style.left=pos+'%';curEl.textContent=val.toFixed(1)+'%';}
+}
+
+// ── PCT bar (COT INDEX Ranked M) ──
+function pctMSel(btn,sid){btn.closest('.psel-group').querySelectorAll('.psm').forEach(b=>b.classList.remove('active'));btn.classList.add('active');updateMPctBar(sid);}
+function pperMSel(btn,sid){btn.closest('.psel-group').querySelectorAll('.ppm').forEach(b=>b.classList.remove('active'));btn.classList.add('active');updateMPctBar(sid);}
+function updateMPctBar(sid){
+  const mk=document.getElementById('pctmmk_'+sid);if(!mk)return;
+  const panel=mk.closest('.pct-panel');if(!panel)return;
+  const p=panel.querySelector('.psm.active')?.dataset.p||'ls';
+  const per=panel.querySelector('.ppm.active')?.dataset.per||'all';
+  const val=(_ci_m[sid]?.[p]?.[per])??50;
+  const pos=Math.min(Math.max(val,0),100);
+  const col=val<15?'#f0515a':val>85?'#20d483':'#dde2ee';
+  const lbl=val<15?'— екстрем. шорт':val>85?'— екстрем. лонг':'— нейтральна зона';
+  const vEl=document.getElementById('pctmval_'+sid);
+  const lEl=document.getElementById('pctmcls_'+sid);
+  const cEl=document.getElementById('pctmcur_'+sid);
+  if(mk)mk.style.left=pos+'%';
+  if(vEl){vEl.style.color=col;vEl.textContent=val!=null?val.toFixed(1)+'%':'—';}
+  if(lEl)lEl.textContent=lbl;
+  if(cEl){cEl.style.left=pos+'%';cEl.textContent=val!=null?val.toFixed(1)+'%':'—';}
 }
 
 // ── PCT bar (TFF) ──
