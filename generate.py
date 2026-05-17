@@ -1035,11 +1035,23 @@ def make_instrument_view(d,tff=None,disag=None):
              if has_tff else f'<button class="rtab disabled" title="Файл не завантажено">TFF Report</button>')
     dg_btn=(f'<button class="rtab" data-rtype="dg" onclick="switchReport(\'{s}\',\'dg\')">Disaggregated</button>'
             if has_disag else f'<button class="rtab disabled" title="Файл не завантажено">Disaggregated</button>')
+    CROP_LINK_SIDS = {'CORN','WHEAT','SOYBEAN','SOYBEAN_MEAL','SOYBEAN_OIL','COTTON','RICE'}
+    crop_sheet_map = {'CORN':'corn','WHEAT':'springwheat','SOYBEAN':'soybeans','SOYBEAN_MEAL':'soybeans','SOYBEAN_OIL':'soybeans','COTTON':'cotton','RICE':'rice'}
+    if s in CROP_LINK_SIDS:
+        crop_cid = crop_sheet_map.get(s, s.lower())
+        crop_btn = (f'<button class="rtab" data-rtype="crop" onclick="switchReport(\'{s}\',\'crop\')">🌾 Crop Progress</button>')
+        # Вбудована crop секція всередині iview
+        crop_sec = (f'<div class="rpt-sec" id="rpt_crop_{s}" style="display:none">'
+                    f'<div id="crop_embed_{s}"></div>'
+                    f'</div>')
+    else:
+        crop_btn = ''
+        crop_sec = ''
     return(f'<div class="iview" id="iv_{s}" data-sid="{s}">'
            f'<div class="report-tabs"><span class="rtab-lbl">ТИП ЗВІТУ:</span>'
            f'<button class="rtab active" data-rtype="legacy" onclick="switchReport(\'{s}\',\'legacy\')">Legacy Report</button>'
-           +tff_btn+dg_btn+
-           f'</div>'+legacy_sec+tff_sec+disag_sec+'</div>')
+           +tff_btn+dg_btn+crop_btn+
+           f'</div>'+legacy_sec+tff_sec+disag_sec+crop_sec+'</div>')
 
 # ================================================================
 # OVERVIEW TAB (незмінно)
@@ -1385,11 +1397,12 @@ def generate_html(data, tff_data=None, disag_data=None, crop_data=None):
            +f'<button class="sync-btn" onclick="openSyncModal()" title="Синхронізація налаштувань">⇄</button>'
            +f'<button class="auth-btn" id="authBtn" onclick="openAuth()">УВІЙТИ</button>'
            +f'</div></header>'
-           +f'<div class="main-tabs"><button class="mtab active" data-mt="cot" onclick="selMain(\'cot\')">COT Dashboard</button>'
+           +f'<div class="main-tabs">'
            +f'<button class="mtab" data-mt="ov" onclick="selMain(\'ov\')">Overview</button>'
+           +f'<button class="mtab active" data-mt="cot" onclick="selMain(\'cot\')">COT Dashboard</button>'
            +f'<button class="mtab" data-mt="crop" onclick="selMain(\'crop\')">🌾 Crop Progress</button></div>'
-           +f'<div class="main-sec active" id="ms_cot"><div class="ctabs">{"".join(cat_tabs)}</div>{"".join(cat_sects)}</div>'
            +f'<div class="main-sec" id="ms_ov"><div style="padding:16px 24px">{ov_html}</div></div>'
+           +f'<div class="main-sec active" id="ms_cot"><div class="ctabs">{"".join(cat_tabs)}</div>{"".join(cat_sects)}</div>'
            +f'<div class="main-sec" id="ms_crop">{make_crop_tab(crop_data) if crop_data else ""}</div>'
            +f'<div class="footer">COT DASHBOARD &bull; CFTC LEGACY + TFF + DISAGGREGATED &bull; {updated}</div>'
            +AUTH_MODAL_HTML+HTML_FOOT)
@@ -1455,6 +1468,24 @@ function switchReport(sid,type){
   } else if(type==='dg'){
     filterDgRows(sid,10);
     setTimeout(()=>{drawDgChart(sid,n);drawDgBars(sid,n);},30);
+  } else if(type==='crop'){
+    // Копіюємо Crop Progress контент прямо в iview
+    const embed=document.getElementById('crop_embed_'+sid);
+    if(embed&&!embed.dataset.loaded){
+      const cid=({'CORN':'corn','WHEAT':'springwheat','SOYBEAN':'soybeans',
+                  'SOYBEAN_MEAL':'soybeans','SOYBEAN_OIL':'soybeans',
+                  'COTTON':'cotton','RICE':'rice'})[sid]||sid.toLowerCase();
+      const src=document.getElementById('cp_'+cid);
+      if(src){
+        embed.innerHTML=src.innerHTML;
+        embed.dataset.loaded='1';
+        embed.dataset.cid=cid;
+        // Ініціалізуємо графіки після рендеру
+        setTimeout(()=>{
+          if(window.selCrop)selCrop(cid);
+        },100);
+      }
+    }
   }
 }
 
@@ -2150,6 +2181,12 @@ def make_crop_tab(crop_data):
                 + make_crop_gauge(cur_f, avg_f, color, size=58) +
                 f'</div>'
                 # bars
+                # bar-рядок 2026 (поточний)
+                f'<div class="cp-sc-bar-row">'
+                f'<span class="cp-sc-bl">2026</span>'
+                f'<div class="cp-sc-bg"><div class="cp-sc-fill" style="width:{bar_cur:.0f}%;background:{color}"></div></div>'
+                f'<span class="cp-sc-bv" style="color:{color}">{int(cur_f)}%</span>'
+                f'</div>'
                 # bar-рядок Avg
                 f'<div class="cp-sc-bar-row">'
                 f'<span class="cp-sc-bl">Avg</span>'
