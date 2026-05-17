@@ -45,6 +45,22 @@ TFF_DATA_START = 19  # перший рядок даних TFF = pandas інде�
 DISAG_COL={'date':1,'mm_cl':4,'mm_cs':5,'mm_net':8,'pm_cl':11,'pm_cs':12,'pm_net':15,'sd_cl':18,'sd_cs':19,'sd_net':22,'oi':34}
 DISAG_DATA_START=20
 
+CROP_FILE = BASE_DIR / "data" / "ALL_Crops_Dashboard.xlsx"
+
+CROP_META = {
+    'Corn':         {'emoji':'🌽','sid':'CORN',        'color':'#f59420','tv':'ZC1!',
+                     'stages':[('Planted',1,2,3),('Emerged',4,5,6),('Silked',7,8,9),('Dough',10,11,12),('Dent',13,14,15),('Mature',16,17,18),('Harvested',19,20,21)]},
+    'Soybeans':     {'emoji':'🫘','sid':'SOYBEAN',      'color':'#20d483','tv':'ZS1!',
+                     'stages':[('Planted',1,2,3),('Emerged',4,5,6),('Blooming',7,8,9),('Setting Pods',10,11,12),('Dropping Leaves',13,14,15),('Harvested',16,17,18)]},
+    'Spring_Wheat': {'emoji':'🌾','sid':'SPRING WHEAT','color':'#a78bfa','tv':'MWE1!',
+                     'stages':[('Planted',1,2,3),('Emerged',4,5,6),('Headed',7,8,9),('Harvested',10,11,12)]},
+    'Cotton':       {'emoji':'🌿','sid':'COTTON',       'color':'#22d3ee','tv':'CT1!',
+                     'stages':[('Planted',1,2,3),('Squaring',4,5,6),('Blooming',7,8,9),('Bolls Open',10,11,12),('Harvested',13,14,15)]},
+    'Rice':         {'emoji':'🌾','sid':'RICE',         'color':'#f0b429','tv':'ZR1!',
+                     'stages':[('Planted',1,2,3),('Emerged',4,5,6),('Headed',7,8,9),('Harvested',10,11,12)]},
+}
+
+
 REPORTS=[
     {'id':'usda_crop', 'name':'USDA Crop Progress','sched':'Пн 22:00 (кві-лис)','tag':None},
     {'id':'eia_petrol','name':'EIA Petroleum',     'sched':'Ср 16:30',           'tag':None},
@@ -1285,6 +1301,47 @@ table.ht tbody.mm-tbody tr.mm-yr td{opacity:.78;}
 .ov-sm-cv-wrap{padding:14px 16px 16px;height:220px;position:relative;}.ov-bar-bg{width:50px;height:5px;background:var(--bg3);border-radius:2px;overflow:hidden;flex-shrink:0;}.ov-bar-fill{height:100%;border-radius:2px;}.ov-cot-val{font-size:10px;color:var(--t);min-width:30px;text-align:right;}
 .g{color:var(--g);}.r{color:var(--r);}.d{color:var(--d);}
 .footer{text-align:center;padding:14px;color:var(--d);font-size:9px;letter-spacing:1px;border-top:1px solid var(--bd);margin-top:4px;}
+.cp-wrap{padding:16px 24px;}
+.cp-tabs{display:flex;gap:0;padding:0;border-bottom:2px solid var(--bd);margin-bottom:16px;}
+.cp-tab{padding:8px 20px;border:none;background:transparent;color:#b0bcd4;font-family:var(--f);font-size:12px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;letter-spacing:.3px;}
+.cp-tab:hover{color:#fff;}.cp-tab.active{color:#fff;font-weight:bold;}
+.cp-panel{display:none;}.cp-panel.active{display:block;}
+.cp-panel-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;padding:12px 16px;background:var(--bg2);border:1px solid var(--bd);border-radius:5px;}
+.cp-stages-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-bottom:12px;}
+.cp-stage-card{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:12px 14px;}
+.cp-stage-card.cp-dim{opacity:.35;}
+.cp-stage-name{font-size:9px;color:var(--d);letter-spacing:.5px;margin-bottom:6px;text-transform:uppercase;}
+.cp-stage-cur{font-size:30px;font-weight:bold;line-height:1.1;margin-bottom:8px;}
+.cp-stage-bars{margin-bottom:8px;}
+.cp-bar-row{display:flex;align-items:center;gap:6px;margin-bottom:4px;}
+.cp-bar-lbl{font-size:8px;color:var(--d);width:26px;flex-shrink:0;}
+.cp-bar-bg{flex:1;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;}
+.cp-bar-fill{height:100%;border-radius:3px;}
+.cp-bar-val{font-size:9px;width:32px;text-align:right;flex-shrink:0;}
+.cp-stage-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;border-top:1px solid var(--bd);padding-top:6px;margin-top:2px;}
+.cp-stage-lw,.cp-stage-ly{font-size:9px;color:var(--d);}
+.cp-vs-badge{font-size:10px;padding:2px 8px;border-radius:12px;font-weight:bold;}
+.cp-vs-badge.g{background:rgba(32,212,131,.15);border:1px solid #20d483;color:#20d483;}
+.cp-vs-badge.r{background:rgba(240,81,90,.15);border:1px solid #f0515a;color:#f0515a;}
+.cp-vs-badge.d{color:var(--d);font-size:9px;}
+.cp-chart-wrap{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:14px 16px;margin-bottom:12px;}
+.cp-chart-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;font-size:10px;color:#fff;letter-spacing:.5px;}
+.cp-chart-leg{display:flex;gap:12px;font-size:10px;color:var(--d);align-items:center;}
+.cp-summary-wrap{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;overflow:hidden;margin-top:4px;}
+.cp-summary-hdr{padding:8px 14px;font-size:9px;color:#fff;letter-spacing:.5px;border-bottom:1px solid var(--bd);}
+.cp-sum-table{width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap;}
+.cp-sum-table th{padding:5px 10px;background:var(--bg3);font-size:9px;color:var(--d);font-weight:normal;text-align:right;letter-spacing:.3px;}
+.cp-sum-table th:first-child{text-align:left;}
+.cp-sum-table td{padding:5px 10px;border-bottom:1px solid var(--bg3);text-align:right;}
+.cp-sum-table tr:hover td{background:rgba(52,61,90,.4)!important;}
+.cp-sum-group td{background:var(--bg3);font-weight:bold;font-size:10px;padding:6px 10px;text-align:left;border-left:3px solid transparent;}
+.cp-sum-stage{color:var(--d);font-size:10px;text-align:left;}
+.cp-mini-bar{display:inline-block;width:44px;height:4px;background:var(--bg3);border-radius:2px;overflow:hidden;margin-right:5px;vertical-align:middle;}
+.cp-mini-bar div{height:100%;border-radius:2px;}
+.cp-badge-wrap{display:inline-flex;align-items:center;justify-content:center;}
+.cp-badge{display:inline-flex;align-items:center;justify-content:center;font-size:8px;padding:1px 6px;border-radius:10px;}
+.cp-badge.g{background:rgba(32,212,131,.15);border:1px solid #20d48355;color:#20d483;}
+.cp-badge.r{background:rgba(240,81,90,.15);border:1px solid #f0515a55;color:#f0515a;}
 @media(max-width:640px){
   :root{--hdr-h:56px;}.hdr{padding:8px 12px;height:auto;min-height:var(--hdr-h);flex-wrap:wrap;}
   .mcards{grid-template-columns:1fr 1fr;gap:8px;}.mid{grid-template-columns:1fr 1fr;gap:8px;}
@@ -1295,10 +1352,10 @@ table.ht tbody.mm-tbody tr.mm-yr td{opacity:.78;}
 </style>
 </head>
 <body>
-<script>const _cd={};const _ci={};const _ci_m={};const _tff={};const _ci_tff={};const _dg={};const _ci_dg={};const Charts={};const BarChts={};const TffCharts={};const TffBarChts={};const DgCharts={};const DgBarChts={};</script>
+<script>const _cd={};const _ci={};const _ci_m={};const _tff={};const _ci_tff={};const _dg={};const _ci_dg={};const _cpData={};const Charts={};const BarChts={};const TffCharts={};const TffBarChts={};const DgCharts={};const DgBarChts={};</script>
 """
 
-def generate_html(data, tff_data=None, disag_data=None):
+def generate_html(data, tff_data=None, disag_data=None, crop_data=None):
     if tff_data is None: tff_data={}
     if disag_data is None: disag_data={}
     all_dates=[d['cur']['date'] for d in data.values()]
@@ -1329,9 +1386,11 @@ def generate_html(data, tff_data=None, disag_data=None):
            +f'<button class="auth-btn" id="authBtn" onclick="openAuth()">УВІЙТИ</button>'
            +f'</div></header>'
            +f'<div class="main-tabs"><button class="mtab active" data-mt="cot" onclick="selMain(\'cot\')">COT Dashboard</button>'
-           +f'<button class="mtab" data-mt="ov" onclick="selMain(\'ov\')">Overview</button></div>'
+           +f'<button class="mtab" data-mt="ov" onclick="selMain(\'ov\')">Overview</button>'
+           +f'<button class="mtab" data-mt="crop" onclick="selMain(\'crop\')">🌾 Crop Progress</button></div>'
            +f'<div class="main-sec active" id="ms_cot"><div class="ctabs">{"".join(cat_tabs)}</div>{"".join(cat_sects)}</div>'
            +f'<div class="main-sec" id="ms_ov"><div style="padding:16px 24px">{ov_html}</div></div>'
+           +f'<div class="main-sec" id="ms_crop">{make_crop_tab(crop_data) if crop_data else ""}</div>'
            +f'<div class="footer">COT DASHBOARD &bull; CFTC LEGACY + TFF + DISAGGREGATED &bull; {updated}</div>'
            +AUTH_MODAL_HTML+HTML_FOOT)
 
@@ -1373,6 +1432,7 @@ function selMain(mt){
   document.getElementById('ms_'+mt).classList.add('active');
   if(mt==='cot'){const fc=document.querySelector('.ctab');if(fc)selCat(fc.dataset.c);}
   if(mt==='ov'){if(window._ovSmInit)initOvSmChart(_ovSmKey||'div');}
+  if(mt==='crop'){const f=document.querySelector('.cp-tab.active');if(f)f.click();}
 }
 
 function switchReport(sid,type){
@@ -1787,6 +1847,632 @@ function initOvSmChart(key){
 </html>
 """
 
+
+def load_crop_data():
+    """Читає ALL_Crops_Dashboard.xlsx і повертає dict з даними."""
+    if not CROP_FILE.exists():
+        print(f"  ⚠  Crop файл не знайдено: {CROP_FILE}"); return {}
+    print(f"\n📂  {CROP_FILE}")
+    xl = pd.ExcelFile(CROP_FILE)
+
+    # ── 1. All Crops summary ──
+    summary = []
+    try:
+        df = xl.parse('All Crops', header=None)
+        for i in range(8, 38):
+            row = df.iloc[i]
+            crop  = str(row.iloc[0]).strip()
+            stage = str(row.iloc[1]).strip().replace('\n',' ')
+            cur   = str(row.iloc[2]).strip()
+            avg   = str(row.iloc[3]).strip()
+            vs    = str(row.iloc[4]).strip()
+            sym   = str(row.iloc[5]).strip() if df.shape[1]>5 else ''
+            lw    = str(row.iloc[6]).strip() if df.shape[1]>6 else ''
+            ly    = str(row.iloc[7]).strip() if df.shape[1]>7 else ''
+            if not crop or crop=='nan': continue
+            try: float(cur)
+            except:
+                if cur not in('—',): continue
+            summary.append({'crop':crop,'stage':stage,'cur':cur,'avg':avg,'vs':vs,'sym':sym,'lw':lw,'ly':ly})
+    except Exception as e: print(f"  ⚠  All Crops: {e}")
+
+    # ── 2. Historical per-crop ──
+    hist = {}
+    for sheet, meta in CROP_META.items():
+        if sheet not in xl.sheet_names: continue
+        try:
+            cdf = xl.parse(sheet, header=None)
+            rows = []
+            for ri in range(5, min(40, len(cdf))):
+                week = str(cdf.iloc[ri, 0]).strip()
+                if not week or week=='nan': continue
+                entry = {'week': week}
+                for stage_name, c26, cavg, c25 in meta['stages']:
+                    try:
+                        v26  = cdf.iloc[ri, c26];  vavg = cdf.iloc[ri, cavg]; v25 = cdf.iloc[ri, c25]
+                        to_f = lambda x: (float(x) if str(x).strip() not in('nan','—','') else -1)
+                        v26f  = to_f(v26); vavgf = to_f(vavg); v25f = to_f(v25)
+                        if v26f >= 0 or vavgf >= 0:
+                            entry[stage_name] = {'cur': v26f if v26f>=0 else None,
+                                                 'avg': vavgf if vavgf>=0 else None,
+                                                 'y25': v25f if v25f>=0 else None}
+                    except: pass
+                rows.append(entry)
+            hist[sheet] = rows
+        except Exception as e: print(f"  ⚠  {sheet}: {e}")
+
+    result = {'summary': summary, 'hist': hist}
+    crops_loaded = len([r for r in summary if r['cur'] not in('0','—','',)])
+    print(f"  ✓  Crop Progress: {len(summary)} рядків, {crops_loaded} з даними\n")
+    return result
+
+
+
+# ================================================================
+# CROP PROGRESS UPDATED — make_crop_tab v2
+
+def make_crop_gauge(cur, avg, color, size=64):
+    """Gauge з двома дугами: основна (cur) + прозора (avg 5yr)."""
+    import math as _m
+    cur  = max(0.0, min(100.0, float(cur  or 0)))
+    avg  = max(0.0, min(100.0, float(avg  or 0)))
+    cx = cy = size / 2
+    r_outer = size * 0.40
+    r_inner = size * 0.28
+    START_DEG = 140.0
+    SWEEP     = 240.0
+    def pt(r, deg):
+        a = _m.radians(deg)
+        return round(cx + r * _m.cos(a), 2), round(cy + r * _m.sin(a), 2)
+    # outer arc (track)
+    s_o  = pt(r_outer, START_DEG)
+    e_o  = pt(r_outer, START_DEG + SWEEP)
+    # outer fill (2026)
+    vs   = cur / 100.0 * SWEEP
+    v_o  = pt(r_outer, START_DEG + vs)
+    fg_o = f"M{s_o[0]},{s_o[1]} A{r_outer:.1f},{r_outer:.1f} 0 {1 if vs>180 else 0},1 {v_o[0]},{v_o[1]}" if cur>0 else None
+    # inner arc (5yr avg) — lighter
+    s_i  = pt(r_inner, START_DEG)
+    e_i  = pt(r_inner, START_DEG + SWEEP)
+    va   = avg / 100.0 * SWEEP
+    v_i  = pt(r_inner, START_DEG + va)
+    fg_i = f"M{s_i[0]},{s_i[1]} A{r_inner:.1f},{r_inner:.1f} 0 {1 if va>180 else 0},1 {v_i[0]},{v_i[1]}" if avg>0 else None
+    tx, ty = round(cx,1), round(cy + r_outer * 0.22, 1)
+    return (
+        f'<svg viewBox="0 0 {size} {size}" width="{size}" height="{size}" '
+        f'xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;display:block">'
+        # track outer
+        f'<path d="M{s_o[0]},{s_o[1]} A{r_outer:.1f},{r_outer:.1f} 0 1,1 {e_o[0]},{e_o[1]}" '
+        f'stroke="#252d48" stroke-width="3" fill="none" stroke-linecap="round"/>'
+        # track inner
+        f'<path d="M{s_i[0]},{s_i[1]} A{r_inner:.1f},{r_inner:.1f} 0 1,1 {e_i[0]},{e_i[1]}" '
+        f'stroke="#1e2538" stroke-width="2.5" fill="none" stroke-linecap="round"/>'
+        # avg fill (inner, transparent color)
+        + (f'<path d="{fg_i}" stroke="{color}55" stroke-width="2.5" fill="none" stroke-linecap="round"/>' if fg_i else '')
+        # cur fill (outer, solid)
+        + (f'<path d="{fg_o}" stroke="{color}" stroke-width="3" fill="none" stroke-linecap="round"/>' if fg_o else '')
+        # dot at current position
+        + f'<circle cx="{v_o[0]}" cy="{v_o[1]}" r="3.5" fill="{color}"/>'
+        # label
+        f'<text x="{tx}" y="{ty-5}" text-anchor="middle" font-family="Courier New,monospace" '
+        f'font-size="5.5" fill="{color}" opacity="0.7">%</text>'
+        f'<text x="{tx}" y="{ty+6}" text-anchor="middle" font-family="Courier New,monospace" '
+        f'font-size="12" font-weight="bold" fill="{color}">{cur:.0f}</text>'
+        f'</svg>'
+    )
+
+# ================================================================
+
+# Точний маппінг колонок для кожного аркуша (0-based)
+CROP_SHEET_COLS = {
+    'Corn': {
+        'week': 0,
+        'stages': [
+            ('Planted',    1, 2, 3),
+            ('Emerged',    4, 5, 6),
+            ('Silked',     7, 8, 9),
+            ('Dough',     10,11,12),
+            ('Dent',      13,14,15),
+            ('Mature',    16,17,18),
+            ('Harvested', 19,20,21),
+        ]
+    },
+    'Soybeans': {
+        'week': 0,
+        'stages': [
+            ('Planted',         1, 2, 3),
+            ('Emerged',         4, 5, 6),
+            ('Blooming',        7, 8, 9),
+            ('Setting Pods',   10,11,12),
+            ('Dropping Leaves',13,14,15),
+            ('Harvested',      16,17,18),
+        ]
+    },
+    'Winter_Wheat': {
+        'week': 0,
+        'stages': [
+            ('Planted (Fall)',   1, 2,14),
+            ('Emerged (Fall)',   4, 5,15),
+            ('Headed (Spring)', 7, 8,16),
+            ('Harvested',      10,11,17),
+        ]
+    },
+    'Spring_Wheat': {
+        'week': 0,
+        'stages': [
+            ('Planted',   1, 2, 3),
+            ('Emerged',   4, 5, 6),
+            ('Headed',    7, 8, 9),
+            ('Harvested',10,11,12),
+        ]
+    },
+    'Cotton': {
+        'week': 0,
+        'stages': [
+            ('Planted',    1, 2, 3),
+            ('Squaring',   4, 5, 6),
+            ('Blooming',   7, 8, 9),
+            ('Bolls Open',10,11,12),
+            ('Harvested', 13,14,15),
+        ]
+    },
+    'Rice': {
+        'week': 0,
+        'stages': [
+            ('Planted',   1, 2, 3),
+            ('Emerged',   4, 5, 6),
+            ('Headed',    7, 8, 9),
+            ('Harvested',10,11,12),
+        ]
+    },
+}
+
+def _parse_crop_sheet(xl, sheet_name):
+    """Читає аркуш культури, повертає list рядків {week, stage→{cur,avg,y25}}"""
+    cfg = CROP_SHEET_COLS.get(sheet_name)
+    if not cfg: return []
+    df = xl.parse(sheet_name, header=None)
+    rows = []
+    for ri in range(5, len(df)):
+        week = str(df.iloc[ri, cfg['week']]).strip()
+        if not week or week=='nan' or week.startswith('Source'): continue
+        entry = {'week': week}
+        for stage_name, c26, cavg, c25 in cfg['stages']:
+            def gv(ci):
+                if ci >= df.shape[1]: return None
+                v = df.iloc[ri, ci]
+                try:
+                    f = float(v)
+                    return None if f < 0 else f   # -1 = future data
+                except: return None
+            entry[stage_name] = {'cur': gv(c26), 'avg': gv(cavg), 'y25': gv(c25)}
+        rows.append(entry)
+    return rows
+
+
+def make_crop_tab(crop_data):
+    """Crop Progress вкладка v2 — оновлена"""
+    if not crop_data:
+        return '<p style="padding:24px;color:#8090b0">Файл ALL_Crops_Dashboard.xlsx не знайдено</p>'
+
+    import json as _json
+
+    summary  = crop_data.get('summary', [])
+    hist_raw = crop_data.get('hist', {})
+
+    # Re-parse sheets for accurate data
+    try:
+        xl = pd.ExcelFile(CROP_FILE)
+        sheet_rows = {s: _parse_crop_sheet(xl, s) for s in CROP_SHEET_COLS if s in xl.sheet_names}
+    except Exception as e:
+        sheet_rows = hist_raw
+        print(f"  ⚠ make_crop_tab re-parse: {e}")
+
+    # Group All Crops summary by crop
+    by_crop = {}
+    for row in summary:
+        c = row['crop']
+        if c not in by_crop: by_crop[c] = []
+        by_crop[c].append(row)
+
+    CROP_ORDER = [
+        ('🌽', 'Corn',         'Corn',         'ZC1!',  '#f59420'),
+        ('🫘', 'Soybeans',     'Soybeans',     'ZS1!',  '#20d483'),
+        ('❄️', 'Winter Wheat', 'Winter_Wheat', 'ZW1!',  '#a78bfa'),
+        ('🌾', 'Spring Wheat', 'Spring_Wheat', 'MWE1!', '#4a9eff'),
+        ('🌿', 'Cotton',       'Cotton',       'CT1!',  '#22d3ee'),
+        ('🍚', 'Rice',         'Rice',         'ZR1!',  '#f0b429'),
+    ]
+
+    def fmt_pct(v):
+        if v is None: return '—'
+        return f'{int(round(v))}%'
+
+    def vs_badge(v_str):
+        if not v_str or v_str=='—': return ''
+        try:
+            v = float(v_str.replace('+','').replace('pts','').replace(' ',''))
+        except: return f'<span style="color:var(--d);font-size:9px">{v_str}</span>'
+        col = '#20d483' if v>0 else '#f0515a' if v<0 else '#8090b0'
+        bg  = 'rgba(32,212,131,.13)' if v>0 else 'rgba(240,81,90,.13)'
+        bdr = '#20d483' if v>0 else '#f0515a'
+        # v_str вже може мати знак (+5 pts) — використовуємо як є
+        display = v_str.strip()
+        if not display.startswith(('+','-')) and v>0:
+            display = '+' + display
+        return f'<span style="font-size:9px;padding:1px 7px;border-radius:10px;background:{bg};border:1px solid {bdr};color:{col};font-weight:bold">{display}</span>'
+
+    # ── Stage cards ──
+    def stage_cards_html(sheet_key, color, summary_rows):
+        rows_by_stage = {r['stage'].split('(')[0].strip(): r for r in summary_rows}
+        cfg = CROP_SHEET_COLS.get(sheet_key, {})
+        stages = [s[0] for s in cfg.get('stages', [])]
+
+        cards = ''
+        for stage_name in stages:
+            # Find matching summary row
+            def safe_f(x, default=0):
+                try:
+                    v=float(x)
+                    import math
+                    return default if math.isnan(v) else v
+                except: return default
+            srow = None
+            for k, r in rows_by_stage.items():
+                if stage_name.lower().startswith(k.lower()[:6]) or k.lower().startswith(stage_name.lower()[:6]):
+                    srow = r; break
+            if not srow:
+                # Stage with no data — still show
+                cards += (f'<div class="cp-sc">'
+                          f'<div class="cp-sc-name">{stage_name.upper()}</div>'
+                          f'<div class="cp-sc-cur" style="color:var(--d)">—</div>'
+                          f'<div class="cp-sc-row"><span class="cp-sc-sub" style="color:var(--d)">Avg —</span></div>'
+                          f'<div class="cp-sc-row"><span class="cp-sc-sub" style="color:var(--d)">2025: —</span></div>'
+                          f'</div>')
+                continue
+
+            cur_f = safe_f(srow.get('cur',0))
+            avg_f = safe_f(srow.get('avg',0))
+            lw_f  = safe_f(srow.get('lw',0))
+            ly_f  = safe_f(srow.get('ly',0))
+
+            bar_cur = min(max(cur_f,0),100)
+            bar_avg = min(max(avg_f,0),100)
+
+            cards += (
+                f'<div class="cp-sc">'
+                f'<div class="cp-sc-name">{stage_name.upper()}</div>'
+                f'<div class="cp-sc-top" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'
+                f'<div style="display:flex;flex-direction:column">'
+                f'<div class="cp-sc-cur" style="color:{color}">{int(cur_f)}%</div>'
+                + f'<div style="margin-top:2px">' + vs_badge(srow['vs']) + f'</div>' +
+                f'</div>'
+                + make_crop_gauge(cur_f, avg_f, color, size=58) +
+                f'</div>'
+                # bars
+                # bar-рядок Avg
+                f'<div class="cp-sc-bar-row">'
+                f'<span class="cp-sc-bl">Avg</span>'
+                f'<div class="cp-sc-bg"><div class="cp-sc-fill" style="width:{bar_avg:.0f}%;background:#4a5580"></div></div>'
+                f'<span class="cp-sc-bv" style="color:var(--d)">{int(avg_f)}%</span>'
+                f'</div>'
+                # bar-рядок 2025
+                f'<div class="cp-sc-bar-row">'
+                f'<span class="cp-sc-bl">2025</span>'
+                f'<div class="cp-sc-bg"><div class="cp-sc-fill" style="width:{min(max(ly_f,0),100):.0f}%;background:#343d5a"></div></div>'
+                f'<span class="cp-sc-bv" style="color:var(--d)">{int(ly_f)}%</span>'
+                f'</div>'
+                # bar-рядок LW (мин.тиждень)
+                f'<div class="cp-sc-bar-row">'
+                f'<span class="cp-sc-bl">LW</span>'
+                f'<div class="cp-sc-bg"><div class="cp-sc-fill" style="width:{min(max(lw_f,0),100):.0f}%;background:{color}55"></div></div>'
+                f'<span class="cp-sc-bv" style="color:var(--d)">{int(lw_f)}%</span>'
+                f'</div>'
+                f'<div style="border-top:1px solid var(--bd);margin:5px 0 2px"></div>'
+                f'</div>'
+            )
+        return cards
+
+    # ── Chart JSON per crop (all stages × weeks) ──
+    def chart_json(sheet_key, color):
+        rows = sheet_rows.get(sheet_key, [])
+        cfg  = CROP_SHEET_COLS.get(sheet_key, {})
+        stages = [s[0] for s in cfg.get('stages', [])]
+        # Collect stage colors (hue shift from base color)
+        stage_colors = {
+            0: color,
+            1: color+'cc',
+            2: color+'99',
+            3: color+'77',
+            4: color+'55',
+            5: color+'44',
+            6: color+'33',
+        }
+        # Build datasets
+        weeks   = [r['week'] for r in rows]
+        datasets = []
+        for si, stage_name in enumerate(stages):
+            cur_vals = [r.get(stage_name,{}).get('cur') for r in rows]
+            avg_vals = [r.get(stage_name,{}).get('avg') for r in rows]
+            # 2026 actual
+            datasets.append({'label': stage_name, 'data': cur_vals,
+                              'type':'cur', 'color': stage_colors.get(si, color+'55')})
+            # 5yr avg dashed
+            datasets.append({'label': stage_name+' Avg', 'data': avg_vals,
+                              'type':'avg', 'color': stage_colors.get(si, color+'55')})
+        return _json.dumps({'weeks': weeks, 'stages': stages, 'datasets': datasets}, ensure_ascii=False)
+
+    # ── Weekly table (like Excel) ──
+    def weekly_table_html(sheet_key, color):
+        rows = sheet_rows.get(sheet_key, [])
+        if not rows: return '<p style="color:var(--d);padding:12px">Немає даних</p>'
+        cfg    = CROP_SHEET_COLS.get(sheet_key, {})
+        stages = [s[0] for s in cfg.get('stages', [])]
+        ns = len(stages)
+
+        # Header
+        thead_r1 = '<th class="cp-wt-date">Week</th>'
+        for sn in stages:
+            r,g,b = int(color[1:3],16), int(color[3:5],16), int(color[5:7],16)
+            bg = f'background:rgba({r},{g},{b},.18);border-left:2px solid {color}88'
+            thead_r1 += f'<th colspan="3" class="cp-wt-th" style="{bg}">{sn}</th>'
+        thead_r2 = '<th></th>'
+        for _ in stages:
+            sp = 'background:var(--bg3);color:var(--d)'
+            thead_r2 += f'<th class="cp-wt-sub" style="{sp}">2026</th><th class="cp-wt-sub" style="{sp}">Avg</th><th class="cp-wt-sub" style="{sp}">2025</th>'
+
+        # Body rows (newest first)
+        body = ''
+        # Фільтруємо рядки де є хоч якийсь Avg (щоб не показувати порожні)
+        valid_rows = [r for r in rows if any(
+            r.get(s,{}).get('avg') is not None for s in stages)]
+        for row in valid_rows:
+            tds = f'<td class="cp-wt-date">{row["week"]}</td>'
+            for sn in stages:
+                sv = row.get(sn, {})
+                cur = sv.get('cur'); avg = sv.get('avg'); y25 = sv.get('y25')
+                def td(v, is_cur=False):
+                    try:
+                        vf = float(v)
+                    except (TypeError, ValueError):
+                        return '<td class="cp-wt-val d">—</td>'
+                    import math
+                    if v is None or math.isnan(vf) or vf == 0:
+                        return '<td class="cp-wt-val d">—</td>'
+                    c = color if is_cur else 'var(--d)'
+                    fw = 'font-weight:bold;' if is_cur else ''
+                    return f'<td class="cp-wt-val" style="color:{c};{fw}">{int(round(vf))}%</td>'
+                tds += td(cur, True) + td(avg) + td(y25)
+            body += f'<tr>{tds}</tr>'
+
+        cols = f'<colgroup><col style="width:72px">' + f'<col><col><col>' * ns + '</colgroup>'
+        return (f'<div style="overflow-x:auto">'
+                f'<table class="cp-wt">{cols}'
+                f'<thead><tr>{thead_r1}</tr><tr>{thead_r2}</tr></thead>'
+                f'<tbody>{body}</tbody></table></div>')
+
+    # ── Build tabs & panels ──
+    tabs_html = ''
+    panels_html = ''
+    all_chart_data = {}
+    first = True
+
+    for emoji, label, sheet_key, tv, color in CROP_ORDER:
+        cid = sheet_key.replace('_','').lower()
+        act = ' active' if first else ''
+
+        # Summary rows for this crop
+        sum_rows = []
+        for crop_name, rows in by_crop.items():
+            short = label.split()[0].lower()
+            if short in crop_name.lower() or sheet_key.lower().replace('_',' ') in crop_name.lower():
+                sum_rows = rows; break
+
+        # Stage cards
+        sc_html = stage_cards_html(sheet_key, color, sum_rows)
+
+        # Chart data
+        cj = chart_json(sheet_key, color)
+        all_chart_data[cid] = cj
+
+        # Weekly table
+        wt_html = weekly_table_html(sheet_key, color)
+
+        # Latest date from data
+        rows_data = sheet_rows.get(sheet_key, [])
+        actual = [r for r in rows_data if any(r.get(s,{}).get('cur') is not None for s in CROP_SHEET_COLS.get(sheet_key,{}).get('stages',[{}])) ]
+        latest_date = actual[-1]['week'] if actual else '—'
+
+        tabs_html += (
+            f'<button class="cp-tab{act}" data-crop="{cid}" onclick="selCrop(\'{cid}\')"'
+            f' style="{"border-bottom-color:"+color if first else ""}">'
+            f'{emoji} {label}</button>'
+        )
+
+        panels_html += (
+            f'<div class="cp-panel{"" + act}" id="cp_{cid}">'
+            # ── Header ──
+            f'<div class="cp-phdr">'
+            f'<div style="display:flex;align-items:center;gap:12px">'
+            f'<span style="font-size:26px">{emoji}</span>'
+            f'<div><div style="font-size:13px;font-weight:bold;color:#fff;letter-spacing:.8px">{label}</div>'
+            f'<div style="font-size:9px;color:var(--d)">USDA NASS &nbsp;|&nbsp; {tv} &nbsp;|&nbsp; Останні дані: {latest_date}</div>'
+            f'</div></div>'
+            f'<div style="font-size:9px;color:var(--d)">Crop Progress Report</div>'
+            f'</div>'
+            # ── Stage cards ──
+            f'<div class="cp-sg">{sc_html}</div>'
+            # ── Charts section ──
+            f'<div class="cp-charts-wrap">'
+            # Перемикач графіків (як фото3 — tabs для LS/CM/ST)
+            f'<div class="cp-chart-top">'
+            f'<div class="cp-chart-lbl">ДИНАМІКА ПОСІВУ</div>'
+            f'<div class="cp-stage-btns" id="cpStBtns_{cid}">'
+        )
+        # Stage selector buttons
+        cfg = CROP_SHEET_COLS.get(sheet_key, {})
+        stg_list = [s[0] for s in cfg.get('stages', [])]
+        for si, sn in enumerate(stg_list):
+            act2 = ' active' if si==0 else ''
+            panels_html += (f'<button class="cp-stbtn{act2}" data-stage="{sn}" '
+                            f'onclick="selCropStage(\'{cid}\',this)">{sn}</button>')
+
+        panels_html += (
+            f'</div></div>'
+            # Лінійний графік вибраної стадії (2026 vs Avg vs 2025)
+            f'<div class="cp-line-wrap"><canvas id="cpLine_{cid}"></canvas></div>'
+            # S-curve графік (всі стадії разом)
+            f'<div class="cp-scurve-hdr">КРИВІ РОЗВИТКУ СЕЗОНУ (всі стадії)</div>'
+            f'<div class="cp-scurve-wrap"><canvas id="cpScurve_{cid}"></canvas></div>'
+            f'</div>'
+            # ── Weekly table ──
+            f'<div class="cp-wt-hdr">ТИЖНЕВА СТАТИСТИКА</div>'
+            + wt_html +
+            f'<script>_cpData["{cid}"]={cj};</script>'
+            f'</div>'
+        )
+        first = False
+
+    # ── CSS ──
+    css = """
+<style>
+/* Crop Progress v2 */
+.cp-wrap{padding:16px 24px;}
+.cp-tabs{display:flex;gap:0;border-bottom:2px solid var(--bd);margin-bottom:14px;}
+.cp-tab{padding:8px 18px;border:none;background:transparent;color:#b0bcd4;font-family:var(--f);font-size:11px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;}
+.cp-tab:hover{color:#fff;}.cp-tab.active{color:#fff;font-weight:bold;}
+.cp-panel{display:none;}.cp-panel.active{display:block;}
+.cp-phdr{display:flex;justify-content:space-between;align-items:center;background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:12px 16px;margin-bottom:12px;}
+/* Stage cards */
+.cp-sg{display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:8px;margin-bottom:12px;}
+.cp-sc{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:11px 13px;}
+.cp-sc-name{font-size:8px;color:var(--d);letter-spacing:.6px;text-transform:uppercase;margin-bottom:4px;}
+.cp-sc-cur{font-size:28px;font-weight:bold;line-height:1.1;margin-bottom:7px;}
+.cp-sc-bar-row{display:flex;align-items:center;gap:5px;margin-bottom:3px;}
+.cp-sc-bl{font-size:8px;color:var(--d);width:24px;flex-shrink:0;}
+.cp-sc-bg{flex:1;height:5px;background:var(--bg3);border-radius:2px;overflow:hidden;}
+.cp-sc-fill{height:100%;border-radius:2px;}
+.cp-sc-bv{font-size:8px;width:28px;text-align:right;flex-shrink:0;}
+.cp-sc-meta{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:6px;padding-top:5px;border-top:1px solid var(--bd);}
+.cp-sc-meta2{margin-top:3px;}
+.cp-sc-sub{font-size:9px;color:var(--d);}
+/* Charts */
+.cp-charts-wrap{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:14px 16px;margin-bottom:10px;}
+.cp-chart-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;}
+.cp-chart-lbl{font-size:9px;color:#fff;letter-spacing:.5px;}
+.cp-stage-btns{display:flex;gap:3px;flex-wrap:wrap;}
+.cp-stbtn{padding:2px 8px;border:1px solid var(--bd);border-radius:3px;cursor:pointer;color:#b0bcd4;font-family:var(--f);font-size:9px;background:transparent;}
+.cp-stbtn:hover{border-color:var(--accent);color:#fff;}
+.cp-stbtn.active{background:var(--bg3);color:var(--accent);border-color:var(--accent);}
+.cp-line-wrap{height:130px;position:relative;margin-bottom:12px;}
+.cp-scurve-hdr{font-size:9px;color:#fff;letter-spacing:.5px;margin-bottom:8px;padding-top:8px;border-top:1px solid var(--bd);}
+.cp-scurve-wrap{height:160px;position:relative;}
+/* Weekly table */
+.cp-wt-hdr{font-size:9px;color:#fff;letter-spacing:.5px;padding:8px 0 6px;margin-top:10px;}
+table.cp-wt{width:100%;border-collapse:collapse;font-size:10px;white-space:nowrap;}
+table.cp-wt th{padding:4px 8px;background:var(--bg3);font-weight:normal;font-size:8px;letter-spacing:.3px;text-align:right;border-bottom:1px solid var(--bd);}
+table.cp-wt .cp-wt-date{text-align:left;color:var(--d);}
+table.cp-wt .cp-wt-th{text-align:center;}
+table.cp-wt .cp-wt-sub{text-align:right;color:var(--d);}
+table.cp-wt td{padding:4px 8px;border-bottom:1px solid var(--bg3);text-align:right;}
+table.cp-wt .cp-wt-val{text-align:right;}
+table.cp-wt .cp-wt-val.d{color:var(--d);}
+table.cp-wt tr:hover td{background:rgba(52,61,90,.4)!important;}
+</style>
+"""
+
+    # ── JS ──
+    js = """
+<script>
+(function(){
+const _CROP_CHARTS={};
+
+function drawCropLine(cid, stageName){
+  const cv=document.getElementById('cpLine_'+cid); if(!cv)return;
+  if(_CROP_CHARTS['line_'+cid]){_CROP_CHARTS['line_'+cid].destroy();}
+  const d=_cpData[cid]; if(!d)return;
+  const di=d.datasets.find(ds=>ds.label===stageName&&ds.type==='cur');
+  const da=d.datasets.find(ds=>ds.label===stageName+' Avg'&&ds.type==='avg');
+  const d25=d.datasets.find(ds=>ds.label===stageName+' 2025'||ds.type==='y25');
+  const weeks=d.weeks;
+  // Build 2025 data from sheet_rows if available (passed as separate key)
+  const cur25=(d.y25||{})[stageName]||null;
+  const color=di?di.color:'#f59420';
+  const datasets=[
+    {label:'2026',data:di?di.data:[],borderColor:color,backgroundColor:color+'22',borderWidth:2,pointRadius:3,tension:.3,fill:true,spanGaps:false},
+    {label:'5yr Avg',data:da?da.data:[],borderColor:'#4a5580',backgroundColor:'transparent',borderWidth:1.5,pointRadius:0,tension:.3,spanGaps:false},
+  ];
+  if(cur25){datasets.push({label:'2025',data:cur25,borderColor:'#8090b0',backgroundColor:'transparent',borderWidth:1,pointRadius:0,tension:.3,borderDash:[3,3],spanGaps:false});}
+  _CROP_CHARTS['line_'+cid]=new Chart(cv.getContext('2d'),{
+    type:'line',data:{labels:weeks,datasets},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,
+      interaction:{mode:'index',intersect:false},
+      plugins:{legend:{display:false},tooltip:{backgroundColor:'#21263a',borderColor:'#343d5a',borderWidth:1,titleColor:'#dde2ee',bodyColor:'#dde2ee',titleFont:{family:'Courier New',size:9},bodyFont:{family:'Courier New',size:9},callbacks:{label:ctx=>ctx.dataset.label+': '+(ctx.parsed.y!=null?ctx.parsed.y+'%':'—')}}},
+      scales:{x:{ticks:{color:'#8090b0',font:{family:'Courier New',size:8}},grid:{display:false},border:{display:false}},
+        y:{min:0,max:100,grid:{color:'rgba(52,61,90,.6)',lineWidth:.5},ticks:{color:'#8090b0',font:{family:'Courier New',size:8},callback:v=>v+'%'},border:{display:false}}}}
+  });
+}
+
+function drawCropScurve(cid){
+  const cv=document.getElementById('cpScurve_'+cid); if(!cv)return;
+  if(_CROP_CHARTS['sc_'+cid]){_CROP_CHARTS['sc_'+cid].destroy();}
+  const d=_cpData[cid]; if(!d)return;
+  const weeks=d.weeks;
+  // Only 2026 actual per stage
+  const datasets=d.datasets.filter(ds=>ds.type==='cur').map(ds=>({
+    label:ds.label,data:ds.data,borderColor:ds.color,
+    backgroundColor:ds.color.length>7?ds.color:ds.color+'33',
+    borderWidth:1.5,pointRadius:2,tension:.3,fill:false,spanGaps:false
+  }));
+  _CROP_CHARTS['sc_'+cid]=new Chart(cv.getContext('2d'),{
+    type:'line',data:{labels:weeks,datasets},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,
+      interaction:{mode:'index',intersect:false},
+      plugins:{legend:{display:true,labels:{color:'#8090b0',font:{family:'Courier New',size:8},boxWidth:12}},
+        tooltip:{backgroundColor:'#21263a',borderColor:'#343d5a',borderWidth:1,titleColor:'#dde2ee',bodyColor:'#dde2ee',titleFont:{family:'Courier New',size:9},bodyFont:{family:'Courier New',size:9},callbacks:{label:ctx=>ctx.dataset.label+': '+(ctx.parsed.y!=null?ctx.parsed.y+'%':'—')}}},
+      scales:{x:{ticks:{color:'#8090b0',font:{family:'Courier New',size:8}},grid:{display:false},border:{display:false}},
+        y:{min:0,max:100,grid:{color:'rgba(52,61,90,.6)',lineWidth:.5},ticks:{color:'#8090b0',font:{family:'Courier New',size:8},callback:v=>v+'%'},border:{display:false}}}}
+  });
+}
+
+window.selCropStage=function(cid,btn){
+  document.querySelectorAll('#cpStBtns_'+cid+' .cp-stbtn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  drawCropLine(cid, btn.dataset.stage);
+};
+
+window.selCrop=function(cid){
+  document.querySelectorAll('.cp-tab').forEach(b=>{b.classList.remove('active');b.style.borderBottomColor='';});
+  document.querySelectorAll('.cp-panel').forEach(p=>p.classList.remove('active'));
+  const btn=document.querySelector('[data-crop="'+cid+'"]');
+  if(btn){btn.classList.add('active');
+    const d=_cpData[cid];const color=(d&&d.datasets&&d.datasets[0])?d.datasets[0].color:'#f59420';
+    btn.style.borderBottomColor=color;}
+  const panel=document.getElementById('cp_'+cid);
+  if(panel){panel.classList.add('active');}
+  const firstBtn=document.querySelector('#cpStBtns_'+cid+' .cp-stbtn.active')||document.querySelector('#cpStBtns_'+cid+' .cp-stbtn');
+  if(firstBtn){firstBtn.classList.add('active');drawCropLine(cid,firstBtn.dataset.stage);}
+  drawCropScurve(cid);
+};
+
+// Init first
+setTimeout(()=>{
+  const f=document.querySelector('.cp-tab.active');
+  if(f){const c=f.dataset.crop;
+    const d=_cpData[c];const color=(d&&d.datasets&&d.datasets[0])?d.datasets[0].color:'#f59420';
+    f.style.borderBottomColor=color;
+    const fb=document.querySelector('#cpStBtns_'+c+' .cp-stbtn.active')||document.querySelector('#cpStBtns_'+c+' .cp-stbtn');
+    if(fb){fb.classList.add('active');drawCropLine(c,fb.dataset.stage);}
+    drawCropScurve(c);
+  }
+},120);
+})();
+</script>
+"""
+
+    return f'{css}<div class="cp-wrap"><div class="cp-tabs">{tabs_html}</div><div class="cp-panels">{panels_html}</div></div>{js}'
+
+
 def main():
     print()
     print("="*55)
@@ -1799,8 +2485,9 @@ def main():
     if not data: print("❌  Дані порожні."); return
     tff_data=load_tff_data()
     disag_data=load_disag_data()
+    crop_data=load_crop_data()
     print("🔧  Генеруємо HTML...")
-    html=generate_html(data, tff_data, disag_data)
+    html=generate_html(data, tff_data, disag_data, crop_data)
     OUTPUT_FILE.write_text(html, encoding='utf-8')
     kb=OUTPUT_FILE.stat().st_size/1024
     print(f"✅  Збережено: {OUTPUT_FILE}  ({kb:.0f} KB)")
@@ -1815,3 +2502,7 @@ def main():
 
 if __name__=='__main__':
     main()
+
+# ================================================================
+# CROP PROGRESS — читання та UI
+# ================================================================
