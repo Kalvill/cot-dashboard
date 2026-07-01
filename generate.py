@@ -326,10 +326,23 @@ def read_sheet(xl,name,overview):
             return round(float(v)*100,1) if pd.notna(v) else None
         # Беремо значення COT INDEX(M) з останнього рядка відсортованого df
         def gcm(ci):
+            # COT INDEX Ranked(M): у файлі значення зберігаються як частка 0..1.
+            # ЗАХИСТ: якщо на позиції випадково опиниться дата/timestamp або
+            # інше сміття (як було у старому файлі до появи ranked-колонок),
+            # pd.to_numeric дасть наносекунди (~1e15) -> відсікаємо діапазоном.
             if ci>=df.shape[1]: return None
             try:
-                v=pd.to_numeric(df.iloc[-1, ci], errors='coerce')  # df вже відсортований по даті
-                return round(float(v)*100,1) if pd.notna(v) and float(v)>0 else None
+                raw=df.iloc[-1, ci]
+                # дати/timestamp одразу відкидаємо
+                if isinstance(raw, pd.Timestamp): return None
+                v=pd.to_numeric(raw, errors='coerce')
+                if not pd.notna(v): return None
+                v=float(v)
+                if v<=0: return None
+                if v<=1.0:      pct=round(v*100,1)   # частка -> %
+                elif v<=100.0:  pct=round(v,1)        # вже у %
+                else:           return None           # аномалія (timestamp тощо)
+                return pct
             except: return None
         # Колонки (0-based): All Time: LS=87,CM=88,ST=89 | 3y: 90,91,92 | 1y: 93,94,95 | 6mo: 96,97,98 | 3mo: 99,100,101
         cot_idx_m={'ls':{'all':gcm(87),'3y':gcm(90),'1y':gcm(93),'6m':gcm(96),'3m':gcm(99)},
@@ -890,6 +903,13 @@ def make_hist_table(hist,stats_ls,stats_cm,stats_st,stats_oi,sm):
 def _make_ranked_section(s, cot_m):
     """Вбудована секція COT INDEX RANKED (M) всередині pct-panel"""
     if not cot_m: return ''
+    # Якщо жодного валідного значення немає у всіх групах — не показуємо панель
+    _has_any = any(
+        (cot_m.get(g,{}) or {}).get(p) is not None
+        for g in ('ls','cm','st')
+        for p in ('all','3y','1y','6m','3m')
+    )
+    if not _has_any: return ''
     ini = cot_m.get('ls',{}).get('all') or 50.0
     ini_pos=min(max(ini,0),100)
     ini_color='#f0515a'if ini<15 else('#20d483'if ini>85 else'#dde2ee')
@@ -1638,7 +1658,18 @@ function updateMPctBar(sid){
   const panel=mk.closest('.pct-panel');if(!panel)return;
   const p=panel.querySelector('.psm.active')?.dataset.p||'ls';
   const per=panel.querySelector('.ppm.active')?.dataset.per||'all';
-  const val=(_ci_m[sid]?.[p]?.[per])??50;
+  let val=_ci_m[sid]?.[p]?.[per];
+  // ЗАХИСТ: null/undefined/нескінченність/поза діапазоном -> показуємо '—'
+  if(val==null||!isFinite(val)||val<0||val>100){
+    const vEl=document.getElementById('pctmval_'+sid);
+    const lEl=document.getElementById('pctmcls_'+sid);
+    const cEl=document.getElementById('pctmcur_'+sid);
+    if(mk)mk.style.left='50%';
+    if(vEl){vEl.style.color='#8090b0';vEl.textContent='—';}
+    if(lEl)lEl.textContent='— немає даних';
+    if(cEl){cEl.style.left='50%';cEl.textContent='—';}
+    return;
+  }
   const pos=Math.min(Math.max(val,0),100);
   const col=val<15?'#f0515a':val>85?'#20d483':'#dde2ee';
   const lbl=val<15?'— екстрем. шорт':val>85?'— екстрем. лонг':'— нейтральна зона';
