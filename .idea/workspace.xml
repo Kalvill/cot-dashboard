@@ -4,9 +4,9 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="555262c3-5dd2-4d7e-aea2-edaa9b0911e9" name="Changes" comment="Update23">
-      <change afterPath="$PROJECT_DIR$/fix_v17.py" afterDir="false" />
+    <list default="true" id="555262c3-5dd2-4d7e-aea2-edaa9b0911e9" name="Changes" comment="Update24">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fix_v17.py" beforeDir="false" afterPath="$PROJECT_DIR$/fix_v17.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/generate.py" beforeDir="false" afterPath="$PROJECT_DIR$/generate.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/output/cot_dashboard.html" beforeDir="false" afterPath="$PROJECT_DIR$/output/cot_dashboard.html" afterDir="false" />
     </list>
@@ -45,25 +45,25 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "Python.app.executor": "Run",
-    "Python.debug_excel.executor": "Run",
-    "Python.fix.executor": "Run",
-    "Python.fix_v16.executor": "Run",
-    "Python.fix_v17.executor": "Run",
-    "Python.generate.executor": "Run",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
-    "codeWithMe.voiceChat.enabledByDefault": "false",
-    "git-widget-placeholder": "main",
-    "last_opened_file_path": "C:/Users/Lenovo/PytonProjects/COTDASHBOARD/.idea",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;Python.app.executor&quot;: &quot;Run&quot;,
+    &quot;Python.debug_excel.executor&quot;: &quot;Run&quot;,
+    &quot;Python.fix.executor&quot;: &quot;Run&quot;,
+    &quot;Python.fix_v16.executor&quot;: &quot;Run&quot;,
+    &quot;Python.fix_v17.executor&quot;: &quot;Run&quot;,
+    &quot;Python.generate.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
+    &quot;codeWithMe.voiceChat.enabledByDefault&quot;: &quot;false&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/Lenovo/PytonProjects/COTDASHBOARD/.idea&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="C:\Users\Lenovo\PytonProjects\COTDASHBOARD\.idea" />
@@ -88,7 +88,8 @@
       <workItem from="1782682164923" duration="2201000" />
       <workItem from="1782802095134" duration="1116000" />
       <workItem from="1782892545280" duration="1331000" />
-      <workItem from="1782973761202" duration="2850000" />
+      <workItem from="1782973761202" duration="3493000" />
+      <workItem from="1783025146908" duration="1944000" />
     </task>
     <task id="LOCAL-00001" summary="Update1">
       <option name="closed" value="true" />
@@ -298,7 +299,15 @@
       <option name="project" value="LOCAL" />
       <updated>1782893804597</updated>
     </task>
-    <option name="localTasksCounter" value="27" />
+    <task id="LOCAL-00027" summary="Update24">
+      <option name="closed" value="true" />
+      <created>1782978018764</created>
+      <option name="number" value="00027" />
+      <option name="presentableId" value="LOCAL-00027" />
+      <option name="project" value="LOCAL" />
+      <updated>1782978018764</updated>
+    </task>
+    <option name="localTasksCounter" value="28" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -328,13 +337,14 @@
     <MESSAGE value="Update21" />
     <MESSAGE value="Update22" />
     <MESSAGE value="Update23" />
-    <option name="LAST_COMMIT_MESSAGE" value="Update23" />
+    <MESSAGE value="Update24" />
+    <option name="LAST_COMMIT_MESSAGE" value="Update24" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/cot_dashboard_main$app.coverage" NAME="app Coverage Results" MODIFIED="1782670951423" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/cot_dashboard_main$fix.coverage" NAME="fix Coverage Results" MODIFIED="1782893258958" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
-    <SUITE FILE_PATH="coverage/cot_dashboard_main$fix_v17.coverage" NAME="fix_v17 Coverage Results" MODIFIED="1782977801400" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
-    <SUITE FILE_PATH="coverage/cot_dashboard_main$generate.coverage" NAME="generate Coverage Results" MODIFIED="1782977809302" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/cot_dashboard_main$fix_v17.coverage" NAME="fix_v17 Coverage Results" MODIFIED="1783028709264" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/cot_dashboard_main$generate.coverage" NAME="generate Coverage Results" MODIFIED="1783028713224" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/cot_dashboard_main$fix_v16.coverage" NAME="fix_v16 Coverage Results" MODIFIED="1782976344550" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
   </component>
 </project>

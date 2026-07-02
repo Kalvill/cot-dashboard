@@ -281,20 +281,27 @@ def read_overview(xl):
         try: rep_date=safe_date(raw.iloc[1,2]);today_date=safe_date(raw.iloc[1,5])
         except: rep_date='—';today_date='—'
         OVERVIEW_TABLE.append(('_meta',rep_date,today_date))
+        OV_GROUP_UA={'CURRENCIES':'ВАЛЮТИ','METALS':'МЕТАЛИ','METALAS':'МЕТАЛИ',
+                     'INDEXES':'ІНДЕКСИ','ENERGY':'ЕНЕРГІЯ','SOFTS':'СОФТИ',
+                     'GRAINS':'ЗЕРНОВІ','CRYPTO':'КРИПТО'}
         cur_group=''
         for i in range(4,len(raw)):
             row=raw.iloc[i]
+            grp0=str(row.iloc[0]).strip() if pd.notna(row.iloc[0]) else ''
             asset=str(row.iloc[1]).strip() if pd.notna(row.iloc[1]) else ''
+            # Група — текстова назва у колонці A, коли колонка B порожня
+            if (not asset or asset=='nan') and grp0 and grp0!='nan' and not grp0.replace('.','').replace(',','').isdigit():
+                cur_group=OV_GROUP_UA.get(grp0.upper(),grp0)
+                OVERVIEW_TABLE.append(('_group',cur_group));continue
             if not asset or asset=='nan': continue
             def safe(c):
                 v=pd.to_numeric(row.iloc[c],errors='coerce'); return float(v) if pd.notna(v) else None
             cot_ls=safe(4)
-            if cot_ls is None:
-                cur_group=asset;OVERVIEW_TABLE.append(('_group',asset));continue
+            if cot_ls is None: continue  # рядок без даних (напр. ETH CASH) — пропускаємо
             s_=OVERVIEW_TO_SID.get(asset,asset)
             sm_div=safe(8);sm_div_3m=safe(18);sm_div_6m=safe(19)
             result[s_]={'cot_ls_all':round(cot_ls*100,1),'cot_cm_all':round((safe(5) or 0)*100,1),'cot_st_all':round((safe(6) or 0)*100,1),'sm_div':round(sm_div or 0,3),'sm_div_3m':round(sm_div_3m or 0,3),'sm_div_6m':round(sm_div_6m or 0,3)}
-            OVERVIEW_TABLE.append({'asset':asset,'sid':s_,'group':cur_group,'net_ls':safe(2),'net_cm':safe(3),'cot_ls':round(cot_ls*100,1),'cot_cm':round((safe(5) or 0)*100,1),'cot_st':round((safe(6) or 0)*100,1),'chg_ls':safe(10),'chg_cm':safe(12),'oi_chg_pct':safe(14),'sm_div':sm_div,'sm_div_3m':sm_div_3m,'sm_div_6m':sm_div_6m})
+            OVERVIEW_TABLE.append({'asset':asset,'sid':s_,'group':cur_group,'net_ls':safe(2),'net_cm':safe(3),'chg_pct_ls':safe(9),'chg_pct_cm':safe(11),'cot_ls':round(cot_ls*100,1),'cot_cm':round((safe(5) or 0)*100,1),'cot_st':round((safe(6) or 0)*100,1),'chg_ls':safe(10),'chg_cm':safe(12),'oi_chg_pct':safe(14),'sm_div':sm_div,'sm_div_3m':sm_div_3m,'sm_div_6m':sm_div_6m})
     except Exception as e: print(f"  ⚠  overview: {e}")
     return result
 
@@ -360,12 +367,17 @@ def read_sheet(xl,name,overview):
         chart={'dates':cdf['_dt'].dt.strftime('%d.%m.%Y').tolist(),'ls':ls_w,'cm':cm_w,'st':st_w,'oi':oi_w,'ld':compute_delta(ls_w),'cd':compute_delta(cm_w),'sd':compute_delta(st_w)}
         hdf=df.tail(HISTORY).reset_index(drop=True)
         def gch(idx): return to_num(hdf.iloc[:,idx]) if idx<hdf.shape[1] else [0.0]*len(hdf)
+        def gch_pct(idx):
+            # %-колонки: у файлі частки 0..1 -> множимо на 100 (сирі значення, без округлення to_num)
+            if idx>=hdf.shape[1]: return [None]*len(hdf)
+            _v=pd.to_numeric(hdf.iloc[:,idx],errors='coerce')
+            return [round(float(x)*100,1) if pd.notna(x) else None for x in _v]
         def gch_sm(idx,fkey):
             if idx<hdf.shape[1]:
                 vals=pd.to_numeric(hdf.iloc[:,idx],errors='coerce').tolist()
                 if any(v is not None and not(v!=v) for v in vals): return vals
             return [ov.get(fkey,None)]*len(hdf)
-        hist={'dates':hdf['_dt'].dt.strftime('%d.%m.%Y').tolist(),'ls_cl':gch(COL['ls_cl']),'ls_cs':gch(COL['ls_cs']),'ls_net':gch(COL['ls_net']),'cm_cl':gch(COL['cm_cl']),'cm_cs':gch(COL['cm_cs']),'cm_net':gch(COL['cm_net']),'st_cl':gch(COL['st_cl']),'st_cs':gch(COL['st_cs']),'st_net':gch(COL['st_net']),'oi':gch(oi_col),'sm_div_row':gch_sm(57,'sm_div'),'sm_div_6m_row':gch_sm(58,'sm_div_6m'),'sm_div_3m_row':gch_sm(59,'sm_div_3m')}
+        hist={'dates':hdf['_dt'].dt.strftime('%d.%m.%Y').tolist(),'ls_cl':gch(COL['ls_cl']),'ls_cs':gch(COL['ls_cs']),'ls_net':gch(COL['ls_net']),'cm_cl':gch(COL['cm_cl']),'cm_cs':gch(COL['cm_cs']),'cm_net':gch(COL['cm_net']),'st_cl':gch(COL['st_cl']),'st_cs':gch(COL['st_cs']),'st_net':gch(COL['st_net']),'oi':gch(oi_col),'ls_pct_row':gch_pct(6),'ls_oich_row':gch_pct(7),'cm_pct_row':gch_pct(13),'cm_oich_row':gch_pct(14),'st_pct_row':gch_pct(20),'st_oich_row':gch_pct(21),'sm_div_row':gch_sm(57,'sm_div'),'sm_div_6m_row':gch_sm(58,'sm_div_6m'),'sm_div_3m_row':gch_sm(59,'sm_div_3m')}
         oi_cur=float(oi_all[i0]);oi_prev=float(oi_all[i1])
         oi_pct=round((oi_cur-oi_prev)/abs(oi_prev)*100,2) if oi_prev!=0 else 0.0
         ls_chg=round(float(ls_net[i0])-float(ls_net[i1]),0)
@@ -850,17 +862,18 @@ def make_hist_table(hist,stats_ls,stats_cm,stats_st,stats_oi,sm):
     sub_ls=f'{sp};border-left:2px solid rgba(74,158,255,.5)'
     sub_cm=f'{sp};border-left:2px solid rgba(32,212,131,.5)'
     sub_st=f'{sp};border-left:2px solid rgba(240,81,90,.5)'
-    colgroup='<colgroup><col style="width:84px"><col><col><col><col><col><col><col><col><col><col style="width:82px"><col style="width:50px"><col style="width:50px"><col style="width:50px"></colgroup>'
+    _grpcols='<col><col><col style="width:56px"><col style="width:56px"><col>'
+    colgroup='<colgroup><col style="width:84px">'+_grpcols*3+'<col style="width:82px"><col style="width:50px"><col style="width:50px"><col style="width:50px"></colgroup>'
     thead=(f'<thead><tr class="th-row1"><th class="th-corner"></th>'
-           f'<th colspan="3" class="th-group" style="{ls_bg}">LARGE SPECULATORS</th>'
-           f'<th colspan="3" class="th-group" style="{cm_bg}">COMMERCIALS</th>'
-           f'<th colspan="3" class="th-group" style="{st_bg}">SMALL TRADERS</th>'
+           f'<th colspan="5" class="th-group" style="{ls_bg}">LARGE SPECULATORS</th>'
+           f'<th colspan="5" class="th-group" style="{cm_bg}">COMMERCIALS</th>'
+           f'<th colspan="5" class="th-group" style="{st_bg}">SMALL TRADERS</th>'
            f'<th class="th-group" style="{oi_bg}">OI</th>'
            f'<th colspan="3" class="th-group sm-th-group" style="{sm_bg}">SM DIV</th></tr>'
            f'<tr class="th-row2"><th class="th-date th-left">ДАТА</th>'
-           f'<th style="{sub_ls}">CHG L</th><th style="{sp}">CHG S</th><th class="sep-r" style="{sp}">NET POS</th>'
-           f'<th style="{sub_cm}">CHG L</th><th style="{sp}">CHG S</th><th class="sep-r" style="{sp}">NET POS</th>'
-           f'<th style="{sub_st}">CHG L</th><th style="{sp}">CHG S</th><th class="sep-r" style="{sp}">NET POS</th>'
+           f'<th style="{sub_ls}">CHG L</th><th style="{sp}">CHG S</th><th style="{sp}">%N/OI</th><th style="{sp}">%OIΔ</th><th class="sep-r" style="{sp}">NET POS</th>'
+           f'<th style="{sub_cm}">CHG L</th><th style="{sp}">CHG S</th><th style="{sp}">%N/OI</th><th style="{sp}">%OIΔ</th><th class="sep-r" style="{sp}">NET POS</th>'
+           f'<th style="{sub_st}">CHG L</th><th style="{sp}">CHG S</th><th style="{sp}">%N/OI</th><th style="{sp}">%OIΔ</th><th class="sep-r" style="{sp}">NET POS</th>'
            f'<th style="{oi_bg}" class="th-oi">All</th>'
            f'<th class="sm-th">All</th><th class="sm-th">6M</th><th class="sm-th">3M</th></tr></thead>')
     def mm_v(v,cls=''): return f'<td class="mm-val {cls}">{fv_full(v,sign=True)}</td>'
@@ -870,7 +883,7 @@ def make_hist_table(hist,stats_ls,stats_cm,stats_st,stats_oi,sm):
         except: return '<td class="sm-td d">–</td>'
     def grp(st,key,col):
         cl_d=st.get('cl') or{};cs_d=st.get('cs') or{}
-        return mm_v(cl_d.get(key,0),col)+mm_v(cs_d.get(key,0),col)+mm_v(st.get(key,0),col)
+        return mm_v(cl_d.get(key,0),col)+mm_v(cs_d.get(key,0),col)+'<td class="mm-val"></td><td class="mm-val"></td>'+mm_v(st.get(key,0),col)
     mm_rows=('<tr class="mm-row"><td class="mm-lbl">MAX</td>'+grp(stats_ls,'max_all','g')+grp(stats_cm,'max_all','g')+grp(stats_st,'max_all','g')+mm_v(stats_oi['max_all'],'')+sm_mini(sm['div'])+sm_mini(sm['div_6m'])+sm_mini(sm['div_3m'])+'</tr>'
              '<tr class="mm-row"><td class="mm-lbl">MIN</td>'+grp(stats_ls,'min_all','r')+grp(stats_cm,'min_all','r')+grp(stats_st,'min_all','r')+mm_v(stats_oi['min_all'],'')+'<td class="sm-td"></td><td class="sm-td"></td><td class="sm-td"></td></tr>'
              '<tr class="mm-row mm-yr"><td class="mm-lbl">MAX 1Y</td>'+grp(stats_ls,'max_1y','g')+grp(stats_cm,'max_1y','g')+grp(stats_st,'max_1y','g')+mm_v(stats_oi['max_1y'],'')+'<td class="sm-td"></td><td class="sm-td"></td><td class="sm-td"></td></tr>'
@@ -885,18 +898,30 @@ def make_hist_table(hist,stats_ls,stats_cm,stats_st,stats_oi,sm):
             if f2==0: return '<td class="sm-td d"></td>'
             c='g'if f2>0 else'r'; return f'<td class="sm-td {c}">{f2:+.3f}</td>'
         except: return '<td class="sm-td d"></td>'
+    def td_pct(v):
+        # %-клітинка: аномалії (ділення на ~0 у файлі) ховаємо
+        try: f2=float(v)
+        except: return '<td class="pctc d">—</td>'
+        if f2!=f2 or abs(f2)>999: return '<td class="pctc d">—</td>'
+        _st=''
+        if f2>30:    _st=' style="background:rgba(32,212,131,.30)"'
+        elif f2<-30: _st=' style="background:rgba(240,81,90,.30)"'
+        return f'<td class="pctc {cc(f2)}"{_st}>{f2:+.0f}%</td>'
+    lsp=hist.get('ls_pct_row',[None]*n);lso=hist.get('ls_oich_row',[None]*n)
+    cmp_=hist.get('cm_pct_row',[None]*n);cmo=hist.get('cm_oich_row',[None]*n)
+    stp=hist.get('st_pct_row',[None]*n);sto=hist.get('st_oich_row',[None]*n)
     sv=hist.get('sm_div_row',[None]*n);s6=hist.get('sm_div_6m_row',[None]*n);s3=hist.get('sm_div_3m_row',[None]*n)
     rows=[]
     for i in range(n-1,-1,-1):
         ri=n-1-i
         rows.append(f'<tr data-row="{ri}"><td class="date-col">{hist["dates"][i]}</td>'
-                    +td_chg(hist['ls_cl'][i],m_ls_cl)+td_chg(hist['ls_cs'][i],m_ls_cs)+td_net(hist['ls_net'][i],' sep-r')
-                    +td_chg(hist['cm_cl'][i],m_cm_cl)+td_chg(hist['cm_cs'][i],m_cm_cs)+td_net(hist['cm_net'][i],' sep-r')
-                    +td_chg(hist['st_cl'][i],m_st_cl)+td_chg(hist['st_cs'][i],m_st_cs)+td_net(hist['st_net'][i],' sep-r')
+                    +td_chg(hist['ls_cl'][i],m_ls_cl)+td_chg(hist['ls_cs'][i],m_ls_cs)+td_pct(lsp[i])+td_pct(lso[i])+td_net(hist['ls_net'][i],' sep-r')
+                    +td_chg(hist['cm_cl'][i],m_cm_cl)+td_chg(hist['cm_cs'][i],m_cm_cs)+td_pct(cmp_[i])+td_pct(cmo[i])+td_net(hist['cm_net'][i],' sep-r')
+                    +td_chg(hist['st_cl'][i],m_st_cl)+td_chg(hist['st_cs'][i],m_st_cs)+td_pct(stp[i])+td_pct(sto[i])+td_net(hist['st_net'][i],' sep-r')
                     +f'<td class="t">{fv_full(hist["oi"][i])}</td>'
                     +sm_cell(sv[i])+sm_cell(s6[i])+sm_cell(s3[i])+'</tr>')
     data_tbody=f'<tbody class="data-tbody">{"".join(rows)}</tbody>'
-    return '<table class="ht">'+colgroup+thead+mm_tbody+data_tbody+'</table>'
+    return '<table class="ht ht-legacy">'+colgroup+thead+mm_tbody+data_tbody+'</table>'
 
 # ================================================================
 # INSTRUMENT VIEW
@@ -1081,7 +1106,7 @@ def make_overview_tab():
     rows_html=[];rep_date='—';today_date='—'
     for item in OVERVIEW_TABLE:
         if isinstance(item,tuple) and item[0]=='_meta': rep_date=item[1];today_date=item[2];continue
-        if isinstance(item,tuple) and item[0]=='_group': rows_html.append(f'<tr class="ov-group"><td colspan="12">{item[1]}</td></tr>');continue
+        if isinstance(item,tuple) and item[0]=='_group': rows_html.append(f'<tr class="ov-group"><td colspan="13">{item[1]}</td></tr>');continue
         if not isinstance(item,dict): continue
         d=item
         def fnum(v,sign=False,pct=False):
@@ -1101,16 +1126,24 @@ def make_overview_tab():
         def sm_fmt(v):
             if v is None: return '<span class="d">—</span>'
             cls='g'if float(v)>0 else('r'if float(v)<0 else'd'); return f'<span class="{cls}">{float(v):+.2f}</span>'
+        def fpct(v):
+            # частка 0..1 -> %; аномалії ховаємо
+            if v is None: return '<span class="d">—</span>'
+            v2=float(v)*100
+            if abs(v2)>999: return '<span class="d">—</span>'
+            cls='g'if v2>0 else('r'if v2<0 else'd')
+            return f'<span class="{cls}">{v2:+.1f}%</span>'
         rows_html.append(f'<tr class="ov-row"><td class="ov-asset">{d["asset"]}</td>'
                          f'<td>{fnum(d["net_ls"],sign=True)}</td><td>{fnum(d["chg_ls"],sign=True)}</td>'
+                         f'<td>{fpct(d.get("chg_pct_ls"))}</td>'
                          f'<td>{fnum(d["net_cm"],sign=True)}</td><td>{fnum(d["chg_cm"],sign=True)}</td>'
-                         f'<td>{fnum(d["oi_chg_pct"],pct=True)}</td>'
+                         f'<td>{fpct(d.get("chg_pct_cm"))}</td>'
                          f'<td><div class="ov-cot-cell">{pct_bar(d["cot_ls"])}<span class="ov-cot-val">{d["cot_ls"]:.0f}%</span></div></td>'
                          f'<td><div class="ov-cot-cell">{pct_bar(d["cot_cm"])}<span class="ov-cot-val">{d["cot_cm"]:.0f}%</span></div></td>'
                          f'<td><div class="ov-cot-cell">{pct_bar(d["cot_st"])}<span class="ov-cot-val">{d["cot_st"]:.0f}%</span></div></td>'
                          f'<td>{sm_fmt(d["sm_div"])}</td><td>{sm_fmt(d["sm_div_6m"])}</td><td>{sm_fmt(d["sm_div_3m"])}</td></tr>')
-    thead=(f'<thead><tr><th class="ov-asset">ASSET</th><th>NET LS</th><th>CHG LS</th>'
-           f'<th>NET CM</th><th>CHG CM</th><th>%OI CHG</th>'
+    thead=(f'<thead><tr><th class="ov-asset">ASSET</th><th>NET LS</th><th>CHG LS</th><th>%OIΔ</th>'
+           f'<th>NET CM</th><th>CHG CM</th><th>%OIΔ</th>'
            f'<th style="color:{COLOR_LS}">COT LS</th><th style="color:{COLOR_CM}">COT CM</th><th style="color:{COLOR_ST}">COT ST</th>'
            f'<th>SM DIV</th><th>SM 6M</th><th>SM 3M</th></tr></thead>')
     # Збираємо дані для SM DIV графіків
@@ -1300,7 +1333,7 @@ html,body{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13p
 .chart-leg{display:flex;gap:10px;font-size:10px;color:var(--d);align-items:center;flex-wrap:wrap;}
 .ll{display:inline-block;width:14px;height:2px;border-radius:1px;vertical-align:middle;margin-right:4px;}
 .ll-dash{display:inline-block;width:14px;height:0;border-top:2px dashed;vertical-align:middle;}
-.cw{height:140px;position:relative;}.bar-charts-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}.bar-lbl{font-size:8px;letter-spacing:.5px;margin-bottom:6px;}.bar-cw{height:80px;position:relative;}
+.cw{height:140px;position:relative;}.bar-charts-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}.bar-lbl{font-size:8px;letter-spacing:.5px;margin-bottom:6px;}.bar-cw{height:170px;position:relative;}
 .htable-wrap{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;overflow:hidden;margin-bottom:12px;}
 .htable-hdr{padding:7px 14px;border-bottom:1px solid var(--bd);font-size:10px;color:#fff;letter-spacing:.5px;display:flex;align-items:center;justify-content:space-between;}
 .hsel{display:flex;gap:4px;}.hbtn{padding:2px 10px;border:1px solid var(--bd);border-radius:3px;cursor:pointer;color:#b0bcd4;font-family:var(--f);font-size:11px;background:transparent;}
@@ -1312,14 +1345,20 @@ table.ht td{padding:4px 8px;border-bottom:1px solid var(--bg3);text-align:right;
 table.ht .date-col{text-align:left;color:var(--d);background:var(--bg3);}
 table.ht tr:hover td{background:rgba(52,61,90,.5)!important;}
 table.ht .sep-r{border-right:1px solid var(--bd);}.sm-td{text-align:center;font-size:10px;padding:4px 6px;}
-table.ht tbody td:nth-child(2){border-left:2px solid rgba(74,158,255,.45);}
-table.ht tbody td:nth-child(5){border-left:2px solid rgba(32,212,131,.45);}
-table.ht tbody td:nth-child(8){border-left:2px solid rgba(240,81,90,.45);}
-table.ht[id^="tff_tbl_"] tbody td:nth-child(5){border-left-color:rgba(240,180,41,.45);}
-table.ht[id^="tff_tbl_"] tbody td:nth-child(8){border-left-color:rgba(32,212,131,.45);}
-table.ht[id^="dg_tbl_"] tbody td:nth-child(2){border-left-color:rgba(167,139,250,.45);}
-table.ht[id^="dg_tbl_"] tbody td:nth-child(5){border-left-color:rgba(32,212,131,.45);}
-table.ht[id^="dg_tbl_"] tbody td:nth-child(8){border-left-color:rgba(240,180,41,.45);}
+table.ht.ht-legacy tbody td:nth-child(2){border-left:2px solid rgba(74,158,255,.45);}
+table.ht.ht-legacy tbody td:nth-child(7){border-left:2px solid rgba(32,212,131,.45);}
+table.ht.ht-legacy tbody td:nth-child(12){border-left:2px solid rgba(240,81,90,.45);}
+table.ht[id^="tff_tbl_"] tbody td:nth-child(2){border-left:2px solid rgba(74,158,255,.45);}
+table.ht[id^="tff_tbl_"] tbody td:nth-child(5){border-left:2px solid rgba(240,180,41,.45);}
+table.ht[id^="tff_tbl_"] tbody td:nth-child(8){border-left:2px solid rgba(32,212,131,.45);}
+table.ht[id^="dg_tbl_"] tbody td:nth-child(2){border-left:2px solid rgba(167,139,250,.45);}
+table.ht[id^="dg_tbl_"] tbody td:nth-child(5){border-left:2px solid rgba(32,212,131,.45);}
+table.ht[id^="dg_tbl_"] tbody td:nth-child(8){border-left:2px solid rgba(240,180,41,.45);}
+table.ht .pctc{font-size:10px;}
+table.ht.ht-legacy td{color:#fff;}
+table.ht.ht-legacy td.date-col,table.ht.ht-legacy .mm-lbl{color:var(--d);}
+table.ht.ht-legacy tbody td{border-right:1px solid rgba(128,144,176,.13);}
+table.ht.ht-legacy tbody td.sep-r,table.ht.ht-legacy tbody td.date-col{border-right:1px solid var(--bd);}
 table.ht tbody.mm-tbody{border-bottom:3px solid var(--bd);}
 table.ht tbody.mm-tbody td{background:var(--bg3);text-align:right;border-bottom:1px solid rgba(52,61,90,.8);padding:4px 8px;}
 table.ht tbody.mm-tbody .mm-lbl{text-align:left;font-size:8px;color:var(--d);letter-spacing:.5px;font-weight:bold;}

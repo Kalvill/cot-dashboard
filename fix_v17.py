@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-fix_v17.py (v2) — патч для generate.py (після v16):
-  1. SMALL TRADERS: MAX/MIN для CHG L / CHG S показували 0 —
-     тепер st_cl/st_cs зчитуються і передаються у stats()
-  2. Вертикальні кольорові лінії (синя/зелена/червона) у тижневій
-     таблиці тепер ідуть через ВСЮ таблицю, а не лише заголовок.
-     Для TFF і Disaggregated — аналогічно з їхніми кольорами.
+fix_v20.py — патч для generate.py (після v19), вкладка Overview:
+  1. Групи (ВАЛЮТИ / МЕТАЛИ / ІНДЕКСИ / ...) читаються з колонки A
+     аркуша overview і показуються рядками-розділювачами.
+     Рядки без даних (напр. ETH CASH) більше не ламають групування.
+  2. Новий порядок колонок:
+     NET LS | CHG LS | %OIΔ | NET CM | CHG CM | %OIΔ | COT LS/CM/ST | SM...
+     (%OIΔ — це Chg % LS (кол.J) та Chg % CM (кол.L) з overview,
+      ті самі значення що %OIΔ у тижневій таблиці)
+     Стара єдина колонка %OI CHG прибрана.
 
-Запуск:  python fix_v17.py   (у папці проєкту, поруч з generate.py)
+Запуск:  python fix_v20.py   (у папці проєкту, поруч з generate.py)
 """
 
-import shutil, sys, re
+import shutil, sys
 from pathlib import Path
 
 GEN = Path(__file__).parent / "generate.py"
-BAK = Path(__file__).parent / "generate_v16_backup.py"
+BAK = Path(__file__).parent / "generate_v19_backup.py"
 
 if not GEN.exists():
     print(f"❌  Не знайдено {GEN}"); sys.exit(1)
@@ -25,8 +28,10 @@ shutil.copy(GEN, BAK)
 print(f"💾  Бекап: {BAK.name}")
 
 ok = True
-def patch(name, old, new, count=1):
+def patch(name, old, new, count=1, skip_if=None):
     global src, ok
+    if skip_if and skip_if in src:
+        print(f"✓   [{name}] вже застосовано — пропускаю"); return
     found = src.count(old)
     if found != count:
         print(f"❌  [{name}] знайдено {found} входжень (очікувалось {count}) — ПРОПУЩЕНО")
@@ -35,61 +40,82 @@ def patch(name, old, new, count=1):
     src = src.replace(old, new)
     print(f"✓   [{name}]")
 
-def patch_re(name, pattern, new, count=1):
-    """Заміна за регулярним виразом (стійка до пробілів)."""
-    global src, ok
-    matches = re.findall(pattern, src)
-    if len(matches) != count:
-        print(f"❌  [{name}] regex знайшов {len(matches)} входжень (очікувалось {count}) — ПРОПУЩЕНО")
-        # діагностика: показати рядки з ключовим словом
-        for ln in src.splitlines():
-            if 'stats_st' in ln:
-                print(f"    ↳ рядок у файлі: {ln.strip()[:120]}")
-        ok = False
-        return
-    src = re.sub(pattern, new, src, count=count)
-    print(f"✓   [{name}]")
+# ================================================================
+# 1) ГРУПИ З КОЛОНКИ A + пропуск порожніх рядків
+# ================================================================
+patch("1: групи з колонки A",
+    """        cur_group=''
+        for i in range(4,len(raw)):
+            row=raw.iloc[i]
+            asset=str(row.iloc[1]).strip() if pd.notna(row.iloc[1]) else ''
+            if not asset or asset=='nan': continue
+            def safe(c):
+                v=pd.to_numeric(row.iloc[c],errors='coerce'); return float(v) if pd.notna(v) else None
+            cot_ls=safe(4)
+            if cot_ls is None:
+                cur_group=asset;OVERVIEW_TABLE.append(('_group',asset));continue
+""",
+    """        OV_GROUP_UA={'CURRENCIES':'ВАЛЮТИ','METALS':'МЕТАЛИ','METALAS':'МЕТАЛИ',
+                     'INDEXES':'ІНДЕКСИ','ENERGY':'ЕНЕРГІЯ','SOFTS':'СОФТИ',
+                     'GRAINS':'ЗЕРНОВІ','CRYPTO':'КРИПТО'}
+        cur_group=''
+        for i in range(4,len(raw)):
+            row=raw.iloc[i]
+            grp0=str(row.iloc[0]).strip() if pd.notna(row.iloc[0]) else ''
+            asset=str(row.iloc[1]).strip() if pd.notna(row.iloc[1]) else ''
+            # Група — текстова назва у колонці A, коли колонка B порожня
+            if (not asset or asset=='nan') and grp0 and grp0!='nan' and not grp0.replace('.','').replace(',','').isdigit():
+                cur_group=OV_GROUP_UA.get(grp0.upper(),grp0)
+                OVERVIEW_TABLE.append(('_group',cur_group));continue
+            if not asset or asset=='nan': continue
+            def safe(c):
+                v=pd.to_numeric(row.iloc[c],errors='coerce'); return float(v) if pd.notna(v) else None
+            cot_ls=safe(4)
+            if cot_ls is None: continue  # рядок без даних (напр. ETH CASH) — пропускаємо
+""",
+    skip_if="OV_GROUP_UA")
 
 # ================================================================
-# 1) SMALL TRADERS — зчитуємо st_cl/st_cs і рахуємо MAX/MIN
+# 2) НОВІ ДАНІ У РЯДКУ ТАБЛИЦІ: Chg % LS (кол.9), Chg % CM (кол.11)
 # ================================================================
+patch("2a: chg_pct_ls/cm у OVERVIEW_TABLE",
+    "'net_ls':safe(2),'net_cm':safe(3),",
+    "'net_ls':safe(2),'net_cm':safe(3),'chg_pct_ls':safe(9),'chg_pct_cm':safe(11),")
 
-# 1a: якщо вже застосовано попереднім запуском — пропускаємо тихо
-if "st_cl=gc(COL['st_cl'])" in src:
-    print("✓   [1a] вже застосовано — пропускаю")
-else:
-    patch("1a: зчитування st_cl/st_cs у read_sheet",
-        "        cm_cl=gc(COL['cm_cl']);cm_cs=gc(COL['cm_cs'])",
-        "        cm_cl=gc(COL['cm_cl']);cm_cs=gc(COL['cm_cs'])\n"
-        "        st_cl=gc(COL['st_cl']);st_cs=gc(COL['st_cs'])")
+patch("2b: helper fpct",
+    """        def sm_fmt(v):
+            if v is None: return '<span class="d">—</span>'
+            cls='g'if float(v)>0 else('r'if float(v)<0 else'd'); return f'<span class="{cls}">{float(v):+.2f}</span>'""",
+    """        def sm_fmt(v):
+            if v is None: return '<span class="d">—</span>'
+            cls='g'if float(v)>0 else('r'if float(v)<0 else'd'); return f'<span class="{cls}">{float(v):+.2f}</span>'
+        def fpct(v):
+            # частка 0..1 -> %; аномалії ховаємо
+            if v is None: return '<span class="d">—</span>'
+            v2=float(v)*100
+            if abs(v2)>999: return '<span class="d">—</span>'
+            cls='g'if v2>0 else('r'if v2<0 else'd')
+            return f'<span class="{cls}">{v2:+.1f}%</span>'""",
+    skip_if="def fpct(v):")
 
-# 1b: гнучкий пошук 'stats_st': stats(st_net) з будь-якими пробілами
-if re.search(r"'stats_st'\s*:\s*stats\(\s*st_net\s*,\s*st_cl", src):
-    print("✓   [1b] вже застосовано — пропускаю")
-else:
-    patch_re("1b: stats_st тепер з CHG L / CHG S",
-        r"'stats_st'\s*:\s*stats\(\s*st_net\s*\)",
-        "'stats_st':stats(st_net,st_cl,st_cs)")
+patch("2c: заголовки таблиці",
+    """    thead=(f'<thead><tr><th class="ov-asset">ASSET</th><th>NET LS</th><th>CHG LS</th>'
+           f'<th>NET CM</th><th>CHG CM</th><th>%OI CHG</th>'""",
+    """    thead=(f'<thead><tr><th class="ov-asset">ASSET</th><th>NET LS</th><th>CHG LS</th><th>%OIΔ</th>'
+           f'<th>NET CM</th><th>CHG CM</th><th>%OIΔ</th>'""")
 
-# ================================================================
-# 2) ВЕРТИКАЛЬНІ ЛІНІЇ ЧЕРЕЗ ВСЮ ТАБЛИЦЮ
-#    Колонки CHG L кожної групи: 2 (LS/AM/MM), 5 (CM/LEV/PM), 8 (ST/DL/SD)
-# ================================================================
+patch("2d: клітинки рядка — новий порядок",
+    """                         f'<td>{fnum(d["net_ls"],sign=True)}</td><td>{fnum(d["chg_ls"],sign=True)}</td>'
+                         f'<td>{fnum(d["net_cm"],sign=True)}</td><td>{fnum(d["chg_cm"],sign=True)}</td>'
+                         f'<td>{fnum(d["oi_chg_pct"],pct=True)}</td>'""",
+    """                         f'<td>{fnum(d["net_ls"],sign=True)}</td><td>{fnum(d["chg_ls"],sign=True)}</td>'
+                         f'<td>{fpct(d.get("chg_pct_ls"))}</td>'
+                         f'<td>{fnum(d["net_cm"],sign=True)}</td><td>{fnum(d["chg_cm"],sign=True)}</td>'
+                         f'<td>{fpct(d.get("chg_pct_cm"))}</td>'""")
 
-if 'table.ht tbody td:nth-child(2)' in src:
-    print("✓   [2a] вже застосовано — пропускаю")
-else:
-    patch("2a: CSS вертикальні лінії у tbody",
-        "table.ht .sep-r{border-right:1px solid var(--bd);}.sm-td{text-align:center;font-size:10px;padding:4px 6px;}",
-        "table.ht .sep-r{border-right:1px solid var(--bd);}.sm-td{text-align:center;font-size:10px;padding:4px 6px;}\n"
-        "table.ht tbody td:nth-child(2){border-left:2px solid rgba(74,158,255,.45);}\n"
-        "table.ht tbody td:nth-child(5){border-left:2px solid rgba(32,212,131,.45);}\n"
-        "table.ht tbody td:nth-child(8){border-left:2px solid rgba(240,81,90,.45);}\n"
-        "table.ht[id^=\"tff_tbl_\"] tbody td:nth-child(5){border-left-color:rgba(240,180,41,.45);}\n"
-        "table.ht[id^=\"tff_tbl_\"] tbody td:nth-child(8){border-left-color:rgba(32,212,131,.45);}\n"
-        "table.ht[id^=\"dg_tbl_\"] tbody td:nth-child(2){border-left-color:rgba(167,139,250,.45);}\n"
-        "table.ht[id^=\"dg_tbl_\"] tbody td:nth-child(5){border-left-color:rgba(32,212,131,.45);}\n"
-        "table.ht[id^=\"dg_tbl_\"] tbody td:nth-child(8){border-left-color:rgba(240,180,41,.45);}")
+patch("2e: colspan групи 12→13",
+    '<tr class="ov-group"><td colspan="12">',
+    '<tr class="ov-group"><td colspan="13">')
 
 # ================================================================
 if not ok:
@@ -97,4 +123,4 @@ if not ok:
     sys.exit(1)
 
 GEN.write_text(src, encoding='utf-8')
-print(f"\n✅  generate.py оновлено (v17). Запусти: python generate.py")
+print(f"\n✅  generate.py оновлено (v20). Запусти: python generate.py")
