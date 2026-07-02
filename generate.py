@@ -313,6 +313,7 @@ def read_sheet(xl,name,overview):
         ls_net=gc(COL['ls_net']);cm_net=gc(COL['cm_net']);st_net=gc(COL['st_net'])
         ls_cl=gc(COL['ls_cl']);ls_cs=gc(COL['ls_cs'])
         cm_cl=gc(COL['cm_cl']);cm_cs=gc(COL['cm_cs'])
+        st_cl=gc(COL['st_cl']);st_cs=gc(COL['st_cs'])
         ls_pct=norm_pct(gc(COL['ls_pct']));cm_pct=norm_pct(gc(COL['cm_pct']));st_pct=norm_pct(gc(COL['st_pct']))
         oi_all=gc(oi_col);all_dates=df['_dt'].dt.strftime('%d.%m.%Y').tolist()
         i0=-1;i1=-2 if len(all_dates)>1 else -1
@@ -373,7 +374,7 @@ def read_sheet(xl,name,overview):
         oi_chg=round(oi_cur-oi_prev,0)
         _oi_st=stats(oi_all)
         oi_cap=round(oi_cur/_oi_st['max_all']*100,1) if _oi_st.get('max_all',0)>0 else 50.0
-        return{'name':name,'display':disp(name),'sid':sid(name),'chart':chart,'hist':hist,'stats_ls':stats(ls_net,ls_cl,ls_cs),'stats_cm':stats(cm_net,cm_cl,cm_cs),'stats_st':stats(st_net),'stats_oi':stats(oi_all),'cot_idx':{'ls':cot_idx(ls_net,'cot_ls_all'),'cm':cot_idx(cm_net,'cot_cm_all'),'st':cot_idx(st_net,'cot_st_all')},'cot_idx_m':cot_idx_m,'sm':{'div':ov.get('sm_div',0.0),'div_3m':ov.get('sm_div_3m',0.0),'div_6m':ov.get('sm_div_6m',0.0)},'spark':{'ls':ls_net,'cm':cm_net,'st':st_net,'oi':oi_all},'oi_capacity':oi_cap,'cur':{'date':all_dates[i0],'ls_net':ls_net[i0],'cm_net':cm_net[i0],'st_net':st_net[i0],'ls_pct':ls_pct[i0],'cm_pct':cm_pct[i0],'st_pct':st_pct[i0],'ls_cl':ls_cl[i0],'ls_cs':ls_cs[i0],'cm_cl':cm_cl[i0],'cm_cs':cm_cs[i0],'oi':oi_cur,'oi_pct':oi_pct,'ls_chg':ls_chg,'cm_chg':cm_chg,'st_chg':st_chg,'oi_chg':oi_chg,'ls_chg_pct':pct_change(ls_chg,ls_net[i0]),'cm_chg_pct':pct_change(cm_chg,cm_net[i0]),'st_chg_pct':pct_change(st_chg,st_net[i0]),'oi_chg_pct':fp(oi_pct,signed=True)}}
+        return{'name':name,'display':disp(name),'sid':sid(name),'chart':chart,'hist':hist,'stats_ls':stats(ls_net,ls_cl,ls_cs),'stats_cm':stats(cm_net,cm_cl,cm_cs),'stats_st':stats(st_net,st_cl,st_cs),'stats_oi':stats(oi_all),'cot_idx':{'ls':cot_idx(ls_net,'cot_ls_all'),'cm':cot_idx(cm_net,'cot_cm_all'),'st':cot_idx(st_net,'cot_st_all')},'cot_idx_m':cot_idx_m,'sm':{'div':ov.get('sm_div',0.0),'div_3m':ov.get('sm_div_3m',0.0),'div_6m':ov.get('sm_div_6m',0.0)},'spark':{'ls':ls_net,'cm':cm_net,'st':st_net,'oi':oi_all},'oi_capacity':oi_cap,'cur':{'date':all_dates[i0],'ls_net':ls_net[i0],'cm_net':cm_net[i0],'st_net':st_net[i0],'ls_pct':ls_pct[i0],'cm_pct':cm_pct[i0],'st_pct':st_pct[i0],'ls_cl':ls_cl[i0],'ls_cs':ls_cs[i0],'cm_cl':cm_cl[i0],'cm_cs':cm_cs[i0],'oi':oi_cur,'oi_pct':oi_pct,'ls_chg':ls_chg,'cm_chg':cm_chg,'st_chg':st_chg,'oi_chg':oi_chg,'ls_chg_pct':pct_change(ls_chg,ls_net[i0]),'cm_chg_pct':pct_change(cm_chg,cm_net[i0]),'st_chg_pct':pct_change(st_chg,st_net[i0]),'oi_chg_pct':fp(oi_pct,signed=True)}}
     except Exception as e: print(f"  ❌  {name}: {e}"); return None
 
 def load_all():
@@ -694,7 +695,7 @@ def make_tff_view(tff,s,reports_panel_html):
                  f'<button class="hbtn" data-n="26" onclick="setTffHist(this,\'{s}\')">26</button>'
                  f'<button class="hbtn" data-n="52" onclick="setTffHist(this,\'{s}\')">52</button>'
                  f'</div></div><div class="htable-scroll">{tbl}</div></div>')
-    mid=f'<div class="tff-mid">{reports_panel_html}{pct}</div>'
+    mid=f'<div class="tff-mid">{pct}</div>'
     return(f'<div class="rpt-sec" id="rpt_tff_{s}" style="display:none">'+cards+analysis+mid+bars+chart+table_block+'</div>')
 
 # ================================================================
@@ -828,7 +829,7 @@ def make_disag_view(dg,s,reports_panel_html):
                  f'<button class="hbtn" data-n="26" onclick="setDgHist(this,\'{s}\')">26</button>'
                  f'<button class="hbtn" data-n="52" onclick="setDgHist(this,\'{s}\')">52</button>'
                  f'</div></div><div class="htable-scroll">{tbl}</div></div>')
-    mid=f'<div class="tff-mid">{reports_panel_html}{pct}</div>'
+    mid=f'<div class="tff-mid">{pct}</div>'
     return(f'<div class="rpt-sec" id="rpt_dg_{s}" style="display:none">'+cards+analysis+mid+bars+chart+table_block+'</div>')
 
 # ================================================================
@@ -987,7 +988,7 @@ def make_instrument_view(d,tff=None,disag=None):
     sm_panel=(f'<div class="panel sm-panel"><div class="plbl">SM DIVERGENCE</div>'
               +sm_bar(sm['div'],'All time')+sm_bar(sm['div_6m'],'6 months')+sm_bar(sm['div_3m'],'3 months')
               +f'<div class="sm-hint">+ бичача &nbsp;|&nbsp; − ведмежа</div></div>')
-    rpts=make_reports_panel(s)
+    # v16: панель ЗВІТИ видалена з усіх видів
     ini=d['cot_idx']['ls']['all'];ini_pos=min(max(ini,0),100)
     ini_color='#f0515a'if ini<15 else('#20d483'if ini>85 else'#dde2ee')
     ini_lbl='екстрем. шорт'if ini<15 else('екстрем. лонг'if ini>85 else'нейтральна зона')
@@ -1045,7 +1046,7 @@ def make_instrument_view(d,tff=None,disag=None):
                     + pct_panel
                     + ranked_panel
                     + '</div>')
-    mid=f'<div class="mid">{analysis_panel}{sm_panel}{rpts}{pct_combined}</div>'
+    mid=f'<div class="mid">{analysis_panel}{sm_panel}{pct_combined}</div>'
     legacy_sec=(f'<div class="rpt-sec" id="rpt_legacy_{s}">'
                 f'<div class="mcards">{mc_ls}{mc_cm}{mc_st}{mc_oi}</div>'
                 +mid+bar_block+chart_block+table_block+'</div>')
@@ -1239,7 +1240,7 @@ html,body{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13p
 .mc-val{font-size:clamp(18px,2.5vw,34px);font-weight:bold;line-height:1.1;}
 .mc-chg-wrap{margin-top:6px;font-size:12px;}.mc-wtag{font-size:9px;color:var(--d);margin-left:3px;}
 .mc-pct{font-size:10px;margin-top:2px;opacity:.85;}.mc-sub{font-size:10px;color:var(--d);margin-top:3px;}
-.mid{display:grid;grid-template-columns:1fr 160px 190px 1fr;gap:8px;margin-bottom:12px;}
+.mid{display:grid;grid-template-columns:1fr 180px 1fr;gap:8px;margin-bottom:12px;}
 .panel{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:12px 14px;}
 .plbl{font-size:9px;color:#fff;letter-spacing:.5px;margin-bottom:10px;}
 .arow{margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--bd);}.arow:last-child{margin:0;padding:0;border:none;}
@@ -1263,7 +1264,7 @@ html,body{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13p
 .tff-ag-item{display:flex;flex-direction:column;gap:4px;}
 .tff-a-dnet{border-top:1px solid var(--bd);padding-top:8px;display:flex;flex-direction:column;align-items:center;}
 .tff-a-bignet{font-size:clamp(18px,2vw,26px);font-weight:bold;text-align:right;margin-top:10px;padding-top:8px;border-top:1px solid var(--bd);}
-.tff-mid{display:grid;grid-template-columns:190px 1fr;gap:8px;margin-bottom:12px;}
+.tff-mid{display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:12px;}
 .sm-panel{display:flex;flex-direction:column;justify-content:space-between;}
 .sm-row{margin-bottom:8px;}.sm-lbl{font-size:9px;color:var(--d);margin-bottom:3px;}
 .sm-bar-bg{background:var(--bg3);border-radius:10px;height:8px;position:relative;overflow:hidden;}
@@ -1311,6 +1312,14 @@ table.ht td{padding:4px 8px;border-bottom:1px solid var(--bg3);text-align:right;
 table.ht .date-col{text-align:left;color:var(--d);background:var(--bg3);}
 table.ht tr:hover td{background:rgba(52,61,90,.5)!important;}
 table.ht .sep-r{border-right:1px solid var(--bd);}.sm-td{text-align:center;font-size:10px;padding:4px 6px;}
+table.ht tbody td:nth-child(2){border-left:2px solid rgba(74,158,255,.45);}
+table.ht tbody td:nth-child(5){border-left:2px solid rgba(32,212,131,.45);}
+table.ht tbody td:nth-child(8){border-left:2px solid rgba(240,81,90,.45);}
+table.ht[id^="tff_tbl_"] tbody td:nth-child(5){border-left-color:rgba(240,180,41,.45);}
+table.ht[id^="tff_tbl_"] tbody td:nth-child(8){border-left-color:rgba(32,212,131,.45);}
+table.ht[id^="dg_tbl_"] tbody td:nth-child(2){border-left-color:rgba(167,139,250,.45);}
+table.ht[id^="dg_tbl_"] tbody td:nth-child(5){border-left-color:rgba(32,212,131,.45);}
+table.ht[id^="dg_tbl_"] tbody td:nth-child(8){border-left-color:rgba(240,180,41,.45);}
 table.ht tbody.mm-tbody{border-bottom:3px solid var(--bd);}
 table.ht tbody.mm-tbody td{background:var(--bg3);text-align:right;border-bottom:1px solid rgba(52,61,90,.8);padding:4px 8px;}
 table.ht tbody.mm-tbody .mm-lbl{text-align:left;font-size:8px;color:var(--d);letter-spacing:.5px;font-weight:bold;}
@@ -2089,6 +2098,27 @@ CROP_SHEET_COLS = {
     },
 }
 
+# Переклади стадій — з заголовків ALL_Crops_Dashboard.xlsx (рядок "Planted\nПосіяно" тощо)
+STAGE_UA = {
+    'Planted':         'Посіяно',
+    'Emerged':         'Зійшло',
+    'Silked':          'Шовкування',
+    'Dough':           'Молочна стиглість',
+    'Dent':            'Воскова стиглість',
+    'Mature':          'Повна стиглість',
+    'Harvested':       'Зібрано',
+    'Blooming':        'Цвітіння',
+    'Setting Pods':    'Формування бобів',
+    'Dropping Leaves': 'Опадання листків',
+    'Headed':          'Колосіння',
+    'Squaring':        'Бутонізація',
+    'Bolls Open':      'Розкриття коробочок',
+}
+def stage_ua(name):
+    """UA-переклад стадії; для 'Planted (Fall)' бере базову назву 'Planted'"""
+    base = name.split('(')[0].strip()
+    return STAGE_UA.get(base, '')
+
 def _parse_crop_sheet(xl, sheet_name):
     """Читає аркуш культури, повертає list рядків {week, stage→{cur,avg,y25}}"""
     cfg = CROP_SHEET_COLS.get(sheet_name)
@@ -2186,7 +2216,7 @@ def make_crop_tab(crop_data):
             if not srow:
                 # Stage with no data — still show
                 cards += (f'<div class="cp-sc">'
-                          f'<div class="cp-sc-name">{stage_name.upper()}</div>'
+                          f'<div class="cp-sc-name">{stage_name.upper()}<span class="cp-sc-ua">{stage_ua(stage_name)}</span></div>'
                           f'<div class="cp-sc-cur" style="color:var(--d)">—</div>'
                           f'<div class="cp-sc-row"><span class="cp-sc-sub" style="color:var(--d)">Avg —</span></div>'
                           f'<div class="cp-sc-row"><span class="cp-sc-sub" style="color:var(--d)">2025: —</span></div>'
@@ -2203,7 +2233,7 @@ def make_crop_tab(crop_data):
 
             cards += (
                 f'<div class="cp-sc">'
-                f'<div class="cp-sc-name">{stage_name.upper()}</div>'
+                f'<div class="cp-sc-name">{stage_name.upper()}<span class="cp-sc-ua">{stage_ua(stage_name)}</span></div>'
                 f'<div class="cp-sc-top" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'
                 f'<div style="display:flex;flex-direction:column">'
                 f'<div class="cp-sc-cur" style="color:{color}">{int(cur_f)}%</div>'
@@ -2283,7 +2313,7 @@ def make_crop_tab(crop_data):
         for sn in stages:
             r,g,b = int(color[1:3],16), int(color[3:5],16), int(color[5:7],16)
             bg = f'background:rgba({r},{g},{b},.18);border-left:2px solid {color}88'
-            thead_r1 += f'<th colspan="3" class="cp-wt-th" style="{bg}">{sn}</th>'
+            thead_r1 += f'<th colspan="3" class="cp-wt-th" style="{bg}">{sn}<br><span style="font-size:7px;opacity:.75;font-weight:normal">{stage_ua(sn)}</span></th>'
         thead_r2 = '<th></th>'
         for _ in stages:
             sp = 'background:var(--bg3);color:var(--d)'
@@ -2383,7 +2413,7 @@ def make_crop_tab(crop_data):
         for si, sn in enumerate(stg_list):
             act2 = ' active' if si==0 else ''
             panels_html += (f'<button class="cp-stbtn{act2}" data-stage="{sn}" '
-                            f'onclick="selCropStage(\'{cid}\',this)">{sn}</button>')
+                            f'onclick="selCropStage(\'{cid}\',this)" title="{stage_ua(sn)}">{sn}</button>')
 
         panels_html += (
             f'</div></div>'
@@ -2415,6 +2445,7 @@ def make_crop_tab(crop_data):
 .cp-sg{display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:8px;margin-bottom:12px;}
 .cp-sc{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:11px 13px;}
 .cp-sc-name{font-size:8px;color:var(--d);letter-spacing:.6px;text-transform:uppercase;margin-bottom:4px;}
+.cp-sc-ua{display:block;font-size:8px;color:#aeb9d6;letter-spacing:.2px;text-transform:none;margin-top:1px;}
 .cp-sc-cur{font-size:28px;font-weight:bold;line-height:1.1;margin-bottom:7px;}
 .cp-sc-bar-row{display:flex;align-items:center;gap:5px;margin-bottom:3px;}
 .cp-sc-bl{font-size:8px;color:var(--d);width:24px;flex-shrink:0;}
@@ -2432,9 +2463,9 @@ def make_crop_tab(crop_data):
 .cp-stbtn{padding:2px 8px;border:1px solid var(--bd);border-radius:3px;cursor:pointer;color:#b0bcd4;font-family:var(--f);font-size:9px;background:transparent;}
 .cp-stbtn:hover{border-color:var(--accent);color:#fff;}
 .cp-stbtn.active{background:var(--bg3);color:var(--accent);border-color:var(--accent);}
-.cp-line-wrap{height:130px;position:relative;margin-bottom:12px;}
+.cp-line-wrap{height:280px;position:relative;margin-bottom:12px;}
 .cp-scurve-hdr{font-size:9px;color:#fff;letter-spacing:.5px;margin-bottom:8px;padding-top:8px;border-top:1px solid var(--bd);}
-.cp-scurve-wrap{height:160px;position:relative;}
+.cp-scurve-wrap{height:320px;position:relative;}
 /* Weekly table */
 .cp-wt-hdr{font-size:9px;color:#fff;letter-spacing:.5px;padding:8px 0 6px;margin-top:10px;}
 table.cp-wt{width:100%;border-collapse:collapse;font-size:10px;white-space:nowrap;}
