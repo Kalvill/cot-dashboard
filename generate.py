@@ -144,12 +144,23 @@ def compute_delta(vals):
     r=[0.0]
     for i in range(1,len(vals)): r.append(round(float(vals[i])-float(vals[i-1]),0))
     return r
+OI_COL_FIXED = 24  # колонка Y "Open Interest" — однакова на всіх аркушах
+
 def find_oi_col(df):
+    # v22 FIX: раніше евристика вимагала >40% заповнених рядків, через що
+    # BRENT/COPPER/BTC*/ETH* (коротка історія OI, 10-20% рядків) падали
+    # на порожню колонку 23 і показували OI=0.
+    # OI завжди у фіксованій колонці 24 — перевіряємо її першою.
     n=len(df)
+    if OI_COL_FIXED < df.shape[1]:
+        vals=pd.to_numeric(df.iloc[:,OI_COL_FIXED],errors='coerce').fillna(0)
+        if (vals.abs()>100).sum() > 0 and vals.abs().max() > 1000:
+            return OI_COL_FIXED
+    # фолбек — стара евристика зі зниженим порогом
     for idx in range(23,min(50,df.shape[1])):
         vals=pd.to_numeric(df.iloc[:,idx],errors='coerce').fillna(0)
-        if (vals.abs()>100).sum()>n*0.4 and vals.abs().mean()>1000: return idx
-    return 23
+        if (vals.abs()>100).sum()>n*0.05 and vals.abs().mean()>100: return idx
+    return OI_COL_FIXED if OI_COL_FIXED < df.shape[1] else 23
 def make_sparkline(series,color,h=38):
     data=[float(v) for v in (series or [])[-SPARK_WEEKS:]]
     n=len(data)
@@ -1078,10 +1089,11 @@ def make_instrument_view(d,tff=None,disag=None):
                 +mid+bar_block+chart_block+table_block+'</div>')
     tff_sec  =make_tff_view(tff,s,make_reports_panel(s)) if has_tff else ''
     disag_sec=make_disag_view(disag,s,make_reports_panel(s)) if has_disag else ''
+    # v22: приховуємо недоступні звіти повністю (замість disabled-кнопки)
     tff_btn=(f'<button class="rtab" data-rtype="tff" onclick="switchReport(\'{s}\',\'tff\')">TFF Report</button>'
-             if has_tff else f'<button class="rtab disabled" title="Файл не завантажено">TFF Report</button>')
+             if has_tff else '')
     dg_btn=(f'<button class="rtab" data-rtype="dg" onclick="switchReport(\'{s}\',\'dg\')">Disaggregated</button>'
-            if has_disag else f'<button class="rtab disabled" title="Файл не завантажено">Disaggregated</button>')
+            if has_disag else '')
     CROP_LINK_SIDS = {'CORN','WHEAT','SOYBEAN','SOYBEAN_MEAL','SOYBEAN_OIL','COTTON','RICE'}
     crop_sheet_map = {'CORN':'corn','WHEAT':'springwheat','SOYBEAN':'soybeans','SOYBEAN_MEAL':'soybeans','SOYBEAN_OIL':'soybeans','COTTON':'cotton','RICE':'rice'}
     if s in CROP_LINK_SIDS:
@@ -1162,10 +1174,12 @@ def make_overview_tab():
                 try: return f'{float(x):.0f}'
                 except: return ''
             init=v_all if v_all is not None else 0
+            _cls = 'ov-cot-hi' if init>85 else ('ov-cot-lo' if init<15 else '')
             return (f'<td class="ov-cot-cell-td" data-cotgrp="{grp}" '
                     f'data-all="{_f(da)}" data-3y="{_f(d3y)}" data-1y="{_f(d1y)}" '
                     f'data-6m="{_f(d6)}" data-3m="{_f(d3)}">'
-                    f'<div class="ov-cot-cell">{pct_bar(init)}<span class="ov-cot-val">{init:.0f}%</span></div></td>')
+                    f'<div class="ov-cot-cell">{pct_bar(init)}'
+                    f'<span class="ov-cot-val {_cls}">{init:.0f}%</span></div></td>')
         def sm_fmt(v):
             if v is None: return '<span class="d">—</span>'
             cls='g'if float(v)>0 else('r'if float(v)<0 else'd'); return f'<span class="{cls}">{float(v):+.2f}</span>'
@@ -1176,7 +1190,8 @@ def make_overview_tab():
             if 'crowd' in low: return '<span class="ov-crowd ov-crowd-c">Crowded</span>'
             return f'<span class="d">{cw}</span>'
         rows_html.append(f'<tr class="ov-row">'
-                         f'<td class="ov-asset">{d["asset"]}</td>'
+                         f'<td class="ov-asset"><span class="ov-fav" data-fav="{d["sid"]}" onclick="event.stopPropagation();ovToggleFav(this)">☆</span>'
+                         f'<span class="ov-asset-link" onclick="ovGoInstrument(\'{d["sid"]}\')">{d["asset"]}</span></td>'
                          f'{fnum_td(d["net_ls"])}'
                          f'{cell_bg(d["chg_ls"])}'
                          f'{pctcell_bg(d.get("chg_pct_ls"))}'
@@ -1423,6 +1438,14 @@ table.ht.ht-legacy td{color:#fff;}
 table.ht.ht-legacy td.date-col,table.ht.ht-legacy .mm-lbl{color:var(--d);}
 table.ht.ht-legacy tbody td{border-right:1px solid rgba(128,144,176,.13);}
 table.ht.ht-legacy tbody td.sep-r,table.ht.ht-legacy tbody td.date-col{border-right:1px solid var(--bd);}
+/* v22 tff/dg table — оформлення як у Legacy */
+table.ht[id^="tff_tbl_"] td,table.ht[id^="dg_tbl_"] td{color:#fff;}
+table.ht[id^="tff_tbl_"] td.date-col,table.ht[id^="dg_tbl_"] td.date-col,
+table.ht[id^="tff_tbl_"] .mm-lbl,table.ht[id^="dg_tbl_"] .mm-lbl{color:var(--d);}
+table.ht[id^="tff_tbl_"] tbody td,table.ht[id^="dg_tbl_"] tbody td{border-right:1px solid rgba(128,144,176,.13);}
+table.ht[id^="tff_tbl_"] tbody td.sep-r,table.ht[id^="dg_tbl_"] tbody td.sep-r,
+table.ht[id^="tff_tbl_"] tbody td.date-col,table.ht[id^="dg_tbl_"] tbody td.date-col{border-right:1px solid var(--bd);}
+
 table.ht tbody.mm-tbody{border-bottom:3px solid var(--bd);}
 table.ht tbody.mm-tbody td{background:var(--bg3);text-align:right;border-bottom:1px solid rgba(52,61,90,.8);padding:4px 8px;}
 table.ht tbody.mm-tbody .mm-lbl{text-align:left;font-size:8px;color:var(--d);letter-spacing:.5px;font-weight:bold;}
@@ -1455,6 +1478,17 @@ table.ht tbody.mm-tbody tr.mm-yr td{opacity:.78;}
 .ov-crowd-c{background:rgba(240,180,41,.15);border:1px solid #f0b429;color:#f0b429;}
 .ov-crowd-vc{background:rgba(240,81,90,.18);border:1px solid #f0515a;color:#f0515a;}
 .ov-sm-cv-wrap{height:340px!important;}
+/* v22 overview css */
+.ov-cot-val{font-size:12px!important;font-weight:bold;min-width:38px!important;}
+.ov-cot-hi{color:#20d483!important;}
+.ov-cot-lo{color:#f0515a!important;}
+.ov-fav{cursor:pointer;color:#4a5580;margin-right:7px;font-size:13px;user-select:none;transition:color .15s,transform .15s;display:inline-block;}
+.ov-fav:hover{color:#f0b429;transform:scale(1.2);}
+.ov-fav.on{color:#f0b429;text-shadow:0 0 6px rgba(240,180,41,.6);}
+/* v23 fav — підсвічується тільки зірка, рядок без змін */
+.ov-asset-link{cursor:pointer;transition:color .15s;}
+.ov-asset-link:hover{color:var(--accent);text-decoration:underline;}
+
 
 .mc-gauges{display:flex;flex-direction:column;gap:6px;flex-shrink:0;align-items:flex-end;}
 .mc-gauge-wrap{display:flex;flex-direction:column;align-items:center;}
@@ -2009,6 +2043,43 @@ function openSyncModal(){
 const firstCat=document.querySelector('.ctab');
 if(firstCat)selCat(firstCat.dataset.c);
 
+// ── v23: Overview -> перехід на вкладку інструмента ──
+function ovGoInstrument(sid){
+  // знаходимо кнопку інструмента серед усіх категорій
+  let btn=null, cat=null;
+  document.querySelectorAll('.itab[data-i]').forEach(b=>{
+    if(btn) return;
+    const k=b.dataset.i;
+    const s=k.replaceAll(' ','_').replaceAll('&','n').replaceAll('/','_');
+    if(s===sid){btn=b;cat=b.dataset.cat;}
+  });
+  if(!btn){console.warn('Інструмент не знайдено:',sid);return;}
+  selMain('cot');           // перемикаємось на COT Dashboard
+  selCat(cat);              // відкриваємо потрібну категорію
+  selInst(cat,btn.dataset.i); // відкриваємо інструмент (Legacy за замовчуванням)
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+// ── v22: Overview favorites (зірочки) ──
+function ovToggleFav(el){
+  const sid=el.dataset.fav;
+  const key='ovfav_'+sid;
+  const on=localStorage.getItem(key)==='1';
+  if(on){localStorage.removeItem(key);}else{localStorage.setItem(key,'1');}
+  ovApplyFav(el,!on);
+}
+function ovApplyFav(el,on){
+  el.classList.toggle('on',on);
+  el.textContent=on?'★':'☆';
+}
+function ovLoadFavs(){
+  document.querySelectorAll('.ov-fav').forEach(el=>{
+    const on=localStorage.getItem('ovfav_'+el.dataset.fav)==='1';
+    ovApplyFav(el,on);
+  });
+}
+setTimeout(ovLoadFavs,60);
+
 // ── v21: Overview COT period switcher ──
 let _ovCotPer='all';
 function ovSetPer(btn){
@@ -2025,9 +2096,10 @@ function ovSetPer(btn){
     }
     const v=parseFloat(raw);
     const color=v<15?'#f0515a':v>85?'#20d483':'#4a9eff';
+    const cls=v>85?'ov-cot-hi':v<15?'ov-cot-lo':'';
     const pct=Math.min(Math.max(v,0),100);
     cell.innerHTML='<div class="ov-bar-bg"><div class="ov-bar-fill" style="width:'+pct.toFixed(1)+'%;background:'+color+'"></div></div>'
-      +'<span class="ov-cot-val">'+v.toFixed(0)+'%</span>';
+      +'<span class="ov-cot-val '+cls+'">'+v.toFixed(0)+'%</span>';
   });
 }
 
@@ -2047,9 +2119,33 @@ function initOvSmChart(key){
   const colors=vals.map(v=>v>=0?'rgba(32,212,131,.75)':'rgba(240,81,90,.75)');
   const bdrColors=vals.map(v=>v>=0?'#20d483':'#f0515a');
   const titles={'div':'SM DIV — All Time','div_6m':'SM DIV — 6 Months','div_3m':'SM DIV — 3 Months'};
+  const _SM_THRESHOLD=0.8;
+  // підпис активу: зелений якщо >0.8, червоний якщо <-0.8
+  const tickColors=vals.map(v=>v>_SM_THRESHOLD?'#20d483':(v<-_SM_THRESHOLD?'#f0515a':'#8090b0'));
+  // ледь помітні горизонтальні лінії на ±0.8
+  const thresholdLines={
+    id:'smThresholdLines',
+    beforeDatasetsDraw(chart){
+      const {ctx,chartArea,scales}=chart;
+      if(!chartArea||!scales.y) return;
+      ctx.save();
+      ctx.strokeStyle='rgba(221,226,238,.13)';
+      ctx.lineWidth=1;
+      ctx.setLineDash([4,4]);
+      [_SM_THRESHOLD,-_SM_THRESHOLD].forEach(lv=>{
+        const y=scales.y.getPixelForValue(lv);
+        ctx.beginPath();
+        ctx.moveTo(chartArea.left,y);
+        ctx.lineTo(chartArea.right,y);
+        ctx.stroke();
+      });
+      ctx.restore();
+    }
+  };
   _ovSmChart=new Chart(cv.getContext('2d'),{
     type:'bar',
     data:{labels,datasets:[{data:vals,backgroundColor:colors,borderColor:bdrColors,borderWidth:1,borderRadius:2,label:titles[key]||'SM DIV'}]},
+    plugins:[thresholdLines],
     options:{responsive:true,maintainAspectRatio:false,animation:false,
       plugins:{legend:{display:false},
         title:{display:true,text:titles[key]||'SM DIV',color:'#dde2ee',font:{family:'Courier New',size:11},padding:{bottom:8}},
@@ -2057,7 +2153,7 @@ function initOvSmChart(key){
           titleFont:{family:'Courier New',size:10},bodyFont:{family:'Courier New',size:10},
           callbacks:{label:ctx=>{const v=ctx.parsed.y;return ' '+v.toFixed(2);}}}},
       scales:{
-        x:{ticks:{color:'#8090b0',font:{family:'Courier New',size:9},maxRotation:45,minRotation:30},
+        x:{ticks:{color:tickColors,font:{family:'Courier New',size:9},maxRotation:45,minRotation:30},
            grid:{color:'rgba(52,61,90,.5)',lineWidth:.5},border:{display:false}},
         y:{display:true,grid:{color:'rgba(52,61,90,.6)',lineWidth:.5},
            ticks:{color:'#8090b0',font:{family:'Courier New',size:9},callback:v=>v.toFixed(2)},
