@@ -227,19 +227,32 @@ def make_metric_card(lbl,val,chg,chg_pct,spark_series,spark_color,oi=False,gauge
            +(f'<div class="mc-sub">{sub_text}</div>' if sub_text else '')
            +f'</div>'+gauge_col+f'</div>{spark}</div>')
 
-def analysis_row(group_label,group_color,net,cl,cs,chg,chg_pct):
+def analysis_row(group_label,group_color,net,cl,cs,chg,chg_pct,idx=None):
+    # v26 legacy analysis — вигляд як TFF: метрики зліва, gauges COT INDEX справа
     dc='g'if net>0 else'r'
-    return(f'<div class="arow"><div class="arow-body"><div class="arow-left">'
-           f'<div class="arow-grid2">'
-           f'<div class="ag-item"><span class="ag-lbl">CHG LONG</span><span class="{cc(cl)} ag-val">{fv_full(cl,sign=True)}</span></div>'
-           f'<div class="ag-item"><span class="ag-lbl">CHG SHORT</span><span class="{cc(cs)} ag-val">{fv_full(cs,sign=True)}</span></div>'
-           f'</div>'
-           f'<div class="arow-dnet"><span class="ag-lbl">Δ NET</span>'
-           f'<span class="{cc(chg)} ag-val-net">{fv_full(chg,sign=True)}<span class="ag-pct"> ({chg_pct})</span></span></div>'
-           f'</div><div class="arow-right">'
-           f'<div class="ar-glbl" style="color:{group_color}">{group_label}</div>'
-           f'<div class="ar-net {dc}">{fv_full(net,sign=True)}</div>'
-           f'</div></div></div>')
+    idx=idx or {}
+    g_all=idx.get('all',50.0);g_1y=idx.get('1y',50.0)
+    col_all=gauge_color(g_all);col_1y=gauge_color(g_1y)
+    gauge_all=make_gauge_svg(g_all,col_all,size=62,label='COT ALL')
+    gauge_1y =make_gauge_svg(g_1y, col_1y, size=62,label='COT 1Y')
+    return(f'<div class="tff-a-row">'
+           f'<div class="tff-a-left">'
+           f'<div class="tff-a-name" style="color:{group_color}">{group_label}</div>'
+           f'<div class="tff-a-metrics">'
+           f'<div class="tff-ag-item"><span class="ag-lbl">CHG LONG</span>'
+           f'<span class="{cc(cl)} ag-val">{fv_full(cl,sign=True)}</span></div>'
+           f'<div class="tff-ag-item"><span class="ag-lbl">CHG SHORT</span>'
+           f'<span class="{cc(cs)} ag-val">{fv_full(cs,sign=True)}</span></div>'
+           f'<div class="tff-ag-item"><span class="ag-lbl">Δ NET</span>'
+           f'<span class="{cc(chg)} ag-val">{fv_full(chg,sign=True)}'
+           f'<span class="ag-pct"> ({chg_pct})</span></span></div>'
+           f'<div class="tff-ag-item"><span class="ag-lbl">NET POS</span>'
+           f'<span class="{dc} ag-val ag-bignet">{fv_full(net,sign=True)}</span></div>'
+           f'</div></div>'
+           f'<div class="tff-a-gauges">'
+           f'<div class="tff-a-gwrap">{gauge_all}</div>'
+           f'<div class="tff-a-gwrap">{gauge_1y}</div>'
+           f'</div></div>')
 
 def make_reports_panel(s_id):
     rows=[]
@@ -600,20 +613,36 @@ def make_tff_metric_cards(tff,s):
     return f'<div class="mcards">{mc_am}{mc_lev}{mc_dl}{mc_oi}</div>'
 
 def make_tff_analysis(tff):
-    c=tff['cur']
-    def col_html(label,color,net,cl,cs,chg,chg_pct):
+    # v24 tff analysis — рядки вліво + gauges COT INDEX (ALL / 1Y) справа
+    c=tff['cur'];ci=tff['cot_idx']
+    def row_html(label,color,net,cl,cs,chg,chg_pct,idx):
         dc='g'if net>0 else'r'
-        return(f'<div class="tff-a-col"><div class="tff-a-name" style="color:{color}">{label}</div>'
-               f'<div class="tff-a-chg-grid">'
-               f'<div class="tff-ag-item"><span class="ag-lbl">CHG LONG</span><span class="{cc(cl)} ag-val">{fv_full(cl,sign=True)}</span></div>'
-               f'<div class="tff-ag-item"><span class="ag-lbl">CHG SHORT</span><span class="{cc(cs)} ag-val">{fv_full(cs,sign=True)}</span></div>'
-               f'</div><div class="tff-a-dnet"><span class="ag-lbl" style="font-size:9px;color:var(--d)">Δ NET</span>'
-               f'<span class="{cc(chg)} ag-val-net">{fv_full(chg,sign=True)}<span class="ag-pct"> ({chg_pct})</span></span></div>'
-               f'<div class="tff-a-bignet {dc}">{fv_full(net,sign=True)}</div></div>')
+        g_all=idx.get('all',50.0);g_1y=idx.get('1y',50.0)
+        col_all=gauge_color(g_all);col_1y=gauge_color(g_1y)
+        gauge_all=make_gauge_svg(g_all,col_all,size=62,label='COT ALL')
+        gauge_1y =make_gauge_svg(g_1y, col_1y, size=62,label='COT 1Y')
+        return(f'<div class="tff-a-row">'
+               f'<div class="tff-a-left">'
+               f'<div class="tff-a-name" style="color:{color}">{label}</div>'
+               f'<div class="tff-a-metrics">'
+               f'<div class="tff-ag-item"><span class="ag-lbl">CHG LONG</span>'
+               f'<span class="{cc(cl)} ag-val">{fv_full(cl,sign=True)}</span></div>'
+               f'<div class="tff-ag-item"><span class="ag-lbl">CHG SHORT</span>'
+               f'<span class="{cc(cs)} ag-val">{fv_full(cs,sign=True)}</span></div>'
+               f'<div class="tff-ag-item"><span class="ag-lbl">Δ NET</span>'
+               f'<span class="{cc(chg)} ag-val">{fv_full(chg,sign=True)}'
+               f'<span class="ag-pct"> ({chg_pct})</span></span></div>'
+               f'<div class="tff-ag-item"><span class="ag-lbl">NET POS</span>'
+               f'<span class="{dc} ag-val ag-bignet">{fv_full(net,sign=True)}</span></div>'
+               f'</div></div>'
+               f'<div class="tff-a-gauges">'
+               f'<div class="tff-a-gwrap">{gauge_all}</div>'
+               f'<div class="tff-a-gwrap">{gauge_1y}</div>'
+               f'</div></div>')
     return(f'<div class="panel tff-analysis-panel">'
-           +col_html('ASSET MGR',TFF_COLOR_AM,c['am_net'],c['am_cl'],c['am_cs'],c['am_chg'],c['am_chg_pct'])
-           +col_html('LEV MONEY',TFF_COLOR_LEV,c['lev_net'],c['lev_cl'],c['lev_cs'],c['lev_chg'],c['lev_chg_pct'])
-           +col_html('DEALER',TFF_COLOR_DL,c['dl_net'],c['dl_cl'],c['dl_cs'],c['dl_chg'],c['dl_chg_pct'])
+           +row_html('ASSET MGR',TFF_COLOR_AM,c['am_net'],c['am_cl'],c['am_cs'],c['am_chg'],c['am_chg_pct'],ci['am'])
+           +row_html('LEV MONEY',TFF_COLOR_LEV,c['lev_net'],c['lev_cl'],c['lev_cs'],c['lev_chg'],c['lev_chg_pct'],ci['lev'])
+           +row_html('DEALER',TFF_COLOR_DL,c['dl_net'],c['dl_cl'],c['dl_cs'],c['dl_chg'],c['dl_chg_pct'],ci['dl'])
            +f'</div>')
 
 def make_tff_pct_panel(tff,s):
@@ -734,20 +763,36 @@ def make_disag_metric_cards(dg,s):
     return f'<div class="mcards">{mc_mm}{mc_pm}{mc_sd}{mc_oi}</div>'
 
 def make_disag_analysis(dg):
-    c=dg['cur']
-    def col_html(label,color,net,cl,cs,chg,chg_pct):
+    # v24 disag analysis — рядки вліво + gauges COT INDEX (ALL/1Y) справа
+    c=dg['cur'];ci=dg['cot_idx']
+    def row_html(label,color,net,cl,cs,chg,chg_pct,idx):
         dc='g'if net>0 else'r'
-        return(f'<div class="tff-a-col"><div class="tff-a-name" style="color:{color}">{label}</div>'
-               f'<div class="tff-a-chg-grid">'
-               f'<div class="tff-ag-item"><span class="ag-lbl">CHG LONG</span><span class="{cc(cl)} ag-val">{fv_full(cl,sign=True)}</span></div>'
-               f'<div class="tff-ag-item"><span class="ag-lbl">CHG SHORT</span><span class="{cc(cs)} ag-val">{fv_full(cs,sign=True)}</span></div>'
-               f'</div><div class="tff-a-dnet"><span class="ag-lbl" style="font-size:9px;color:var(--d)">Δ NET</span>'
-               f'<span class="{cc(chg)} ag-val-net">{fv_full(chg,sign=True)}<span class="ag-pct"> ({chg_pct})</span></span></div>'
-               f'<div class="tff-a-bignet {dc}">{fv_full(net,sign=True)}</div></div>')
+        g_all=idx.get('all',50.0);g_1y=idx.get('1y',50.0)
+        col_all=gauge_color(g_all);col_1y=gauge_color(g_1y)
+        gauge_all=make_gauge_svg(g_all,col_all,size=62,label='COT ALL')
+        gauge_1y =make_gauge_svg(g_1y, col_1y, size=62,label='COT 1Y')
+        return(f'<div class="tff-a-row">'
+               f'<div class="tff-a-left">'
+               f'<div class="tff-a-name" style="color:{color}">{label}</div>'
+               f'<div class="tff-a-metrics">'
+               f'<div class="tff-ag-item"><span class="ag-lbl">CHG LONG</span>'
+               f'<span class="{cc(cl)} ag-val">{fv_full(cl,sign=True)}</span></div>'
+               f'<div class="tff-ag-item"><span class="ag-lbl">CHG SHORT</span>'
+               f'<span class="{cc(cs)} ag-val">{fv_full(cs,sign=True)}</span></div>'
+               f'<div class="tff-ag-item"><span class="ag-lbl">Δ NET</span>'
+               f'<span class="{cc(chg)} ag-val">{fv_full(chg,sign=True)}'
+               f'<span class="ag-pct"> ({chg_pct})</span></span></div>'
+               f'<div class="tff-ag-item"><span class="ag-lbl">NET POS</span>'
+               f'<span class="{dc} ag-val ag-bignet">{fv_full(net,sign=True)}</span></div>'
+               f'</div></div>'
+               f'<div class="tff-a-gauges">'
+               f'<div class="tff-a-gwrap">{gauge_all}</div>'
+               f'<div class="tff-a-gwrap">{gauge_1y}</div>'
+               f'</div></div>')
     return(f'<div class="panel tff-analysis-panel">'
-           +col_html('MAN MONEY',DISAG_COLOR_MM,c['mm_net'],c['mm_cl'],c['mm_cs'],c['mm_chg'],c['mm_chg_pct'])
-           +col_html('PROD/MERCH',DISAG_COLOR_PM,c['pm_net'],c['pm_cl'],c['pm_cs'],c['pm_chg'],c['pm_chg_pct'])
-           +col_html('SWAP DEALERS',DISAG_COLOR_SD,c['sd_net'],c['sd_cl'],c['sd_cs'],c['sd_chg'],c['sd_chg_pct'])
+           +row_html('MAN MONEY',DISAG_COLOR_MM,c['mm_net'],c['mm_cl'],c['mm_cs'],c['mm_chg'],c['mm_chg_pct'],ci['mm'])
+           +row_html('PROD/MERCH',DISAG_COLOR_PM,c['pm_net'],c['pm_cl'],c['pm_cs'],c['pm_chg'],c['pm_chg_pct'],ci['pm'])
+           +row_html('SWAP DEALERS',DISAG_COLOR_SD,c['sd_net'],c['sd_cl'],c['sd_cs'],c['sd_chg'],c['sd_chg_pct'],ci['sd'])
            +f'</div>')
 
 def make_disag_pct_panel(dg,s):
@@ -1018,9 +1063,11 @@ def make_instrument_view(d,tff=None,disag=None):
     mc_cm=make_metric_card('COMMERCIALS (NETTO)',c['cm_net'],c['cm_chg'],c['cm_chg_pct'],d['spark']['cm'],COLOR_CM,gauge_val=d['cot_idx']['cm']['all'],sub_text="",ranked_val=d.get('cot_idx_m',{}).get('cm',{}).get('all'))
     mc_st=make_metric_card('SMALL TRADERS (NETTO)',c['st_net'],c['st_chg'],c['st_chg_pct'],d['spark']['st'],COLOR_ST,gauge_val=d['cot_idx']['st']['all'],sub_text="",ranked_val=d.get('cot_idx_m',{}).get('st',{}).get('all'))
     mc_oi=make_metric_card('OPEN INTEREST',c['oi'],c['oi_chg'],c['oi_chg_pct'],d['spark']['oi'],'#a0aac0',oi=True,gauge_val=d.get('oi_capacity',50.0),sub_text=f"зміна: {fv(int(c['oi_chg']),True,sign=True)}")
-    analysis_panel=(f'<div class="panel">'
-                    +analysis_row('LARGE SPEC',COLOR_LS,c['ls_net'],c['ls_cl'],c['ls_cs'],c['ls_chg'],c['ls_chg_pct'])
-                    +analysis_row('COMMERCIALS',COLOR_CM,c['cm_net'],c['cm_cl'],c['cm_cs'],c['cm_chg'],c['cm_chg_pct'])
+    # v26 analysis calls — передаємо cot_idx для gauges, обгортка як у TFF
+    _ci=d['cot_idx']
+    analysis_panel=(f'<div class="panel tff-analysis-panel">'
+                    +analysis_row('LARGE SPEC',COLOR_LS,c['ls_net'],c['ls_cl'],c['ls_cs'],c['ls_chg'],c['ls_chg_pct'],_ci['ls'])
+                    +analysis_row('COMMERCIALS',COLOR_CM,c['cm_net'],c['cm_cl'],c['cm_cs'],c['cm_chg'],c['cm_chg_pct'],_ci['cm'])
                     +f'</div>')
     sm_panel=(f'<div class="panel sm-panel"><div class="plbl">SM DIVERGENCE</div>'
               +sm_bar(sm['div'],'All time')+sm_bar(sm['div_6m'],'6 months')+sm_bar(sm['div_3m'],'3 months')
@@ -1083,7 +1130,8 @@ def make_instrument_view(d,tff=None,disag=None):
                     + pct_panel
                     + ranked_panel
                     + '</div>')
-    mid=f'<div class="mid">{analysis_panel}{sm_panel}{pct_combined}</div>'
+    # v26 mid layout — analysis повним рядком зверху, далі sm+pct
+    mid=f'{analysis_panel}<div class="mid mid-nopanel">{sm_panel}{pct_combined}</div>'
     legacy_sec=(f'<div class="rpt-sec" id="rpt_legacy_{s}">'
                 f'<div class="mcards">{mc_ls}{mc_cm}{mc_st}{mc_oi}</div>'
                 +mid+bar_block+chart_block+table_block+'</div>')
@@ -1353,6 +1401,8 @@ html,body{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13p
 .mc-chg-wrap{margin-top:6px;font-size:12px;}.mc-wtag{font-size:9px;color:var(--d);margin-left:3px;}
 .mc-pct{font-size:10px;margin-top:2px;opacity:.85;}.mc-sub{font-size:10px;color:var(--d);margin-top:3px;}
 .mid{display:grid;grid-template-columns:1fr 180px 1fr;gap:8px;margin-bottom:12px;}
+/* v26 mid layout */
+.mid-nopanel{grid-template-columns:180px 1fr;}
 .panel{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:12px 14px;}
 .plbl{font-size:9px;color:#fff;letter-spacing:.5px;margin-bottom:10px;}
 .arow{margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--bd);}.arow:last-child{margin:0;padding:0;border:none;}
@@ -1369,13 +1419,21 @@ html,body{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13p
 .ag-lbl{font-size:10px;color:#c0ccd8;letter-spacing:.4px;font-weight:bold;}
 .ag-val{font-size:clamp(17px,2vw,26px);font-weight:bold;line-height:1.2;}
 .ag-pct{font-size:10px;opacity:.75;font-weight:normal;}
-.tff-analysis-panel{display:grid;grid-template-columns:repeat(3,1fr);background:var(--bg2);border:1px solid var(--bd);border-radius:5px;margin-bottom:12px;overflow:hidden;}
-.tff-a-col{padding:14px 16px;border-right:1px solid var(--bd);}.tff-a-col:last-child{border-right:none;}
-.tff-a-name{font-size:10px;font-weight:bold;letter-spacing:1px;margin-bottom:10px;}
-.tff-a-chg-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;}
-.tff-ag-item{display:flex;flex-direction:column;gap:4px;}
-.tff-a-dnet{border-top:1px solid var(--bd);padding-top:8px;display:flex;flex-direction:column;align-items:center;}
-.tff-a-bignet{font-size:clamp(18px,2vw,26px);font-weight:bold;text-align:right;margin-top:10px;padding-top:8px;border-top:1px solid var(--bd);}
+.tff-analysis-panel{display:flex;flex-direction:column;background:var(--bg2);border:1px solid var(--bd);border-radius:5px;margin-bottom:12px;overflow:hidden;padding:0;}
+/* v24 tff analysis css */
+/* v26 gauge align */
+.tff-a-row{display:flex;align-items:center;justify-content:flex-start;padding:12px 16px;border-bottom:1px solid var(--bd);gap:16px;}
+.tff-a-row:last-child{border-bottom:none;}
+.tff-a-left{flex:0 0 620px;max-width:620px;min-width:0;}
+.tff-a-name{font-size:11px;font-weight:bold;letter-spacing:1px;margin-bottom:8px;}
+.tff-a-metrics{display:flex;align-items:flex-end;gap:22px;flex-wrap:nowrap;}
+.tff-ag-item{display:flex;flex-direction:column;gap:3px;min-width:110px;}
+.tff-a-metrics .ag-lbl{font-size:9px;color:#c0ccd8;letter-spacing:.4px;font-weight:bold;}
+.tff-a-metrics .ag-val{font-size:clamp(16px,1.8vw,22px);font-weight:bold;line-height:1.15;}
+.tff-a-metrics .ag-bignet{font-size:clamp(18px,2vw,26px);}
+.tff-a-metrics .ag-pct{font-size:10px;opacity:.75;font-weight:normal;}
+.tff-a-gauges{display:flex;gap:10px;flex-shrink:0;align-items:center;border-left:1px solid var(--bd);padding-left:24px;}
+.tff-a-gwrap{display:flex;flex-direction:column;align-items:center;}
 .tff-mid{display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:12px;}
 .sm-panel{display:flex;flex-direction:column;justify-content:space-between;}
 .sm-row{margin-bottom:8px;}.sm-lbl{font-size:9px;color:var(--d);margin-bottom:3px;}
@@ -1543,7 +1601,11 @@ table.ht tbody.mm-tbody tr.mm-yr td{opacity:.78;}
 @media(max-width:640px){
   :root{--hdr-h:56px;}.hdr{padding:8px 12px;height:auto;min-height:var(--hdr-h);flex-wrap:wrap;}
   .mcards{grid-template-columns:1fr 1fr;gap:8px;}.mid{grid-template-columns:1fr 1fr;gap:8px;}
-  .mid>div:first-child{grid-column:1/-1;}.tff-analysis-panel{grid-template-columns:1fr;}.tff-mid{grid-template-columns:1fr;}
+  .mid>div:first-child{grid-column:1/-1;}.tff-mid{grid-template-columns:1fr;}
+  /* v24 mobile */
+  .tff-a-row{flex-direction:column;align-items:stretch;gap:10px;}
+  .tff-a-gauges{border-left:none;border-top:1px solid var(--bd);padding-left:0;padding-top:10px;justify-content:center;}
+  .tff-a-metrics{gap:14px;}
   .bar-charts-grid{grid-template-columns:1fr;}.arow-right{width:110px;padding-left:8px;}
   table.ht{font-size:10px;}.auth-box{width:90vw;padding:24px 20px;}
 }

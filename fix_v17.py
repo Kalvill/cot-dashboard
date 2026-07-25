@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-fix_v23.py — 3 зміни:
-  1) Зірочка: підсвічується тільки сама зірка, рядок не змінює колір
-  2) SM DIV графік: назва активу зелена при >0.8 / червона при <-0.8
-     + ледь помітні горизонтальні лінії на рівнях +0.8 та -0.8
-  3) Overview: клік по назві активу -> перехід на вкладку цього активу (Legacy)
+fix_v26.py — 2 зміни:
+  1) TFF/DISAG: gauge COT INDEX починаються з однієї вертикальної лінії
+     (фіксована ширина лівого блоку метрик, щоб gauges не "плавали")
+  2) Legacy: блок analysis_row -> той самий вигляд, що й TFF
+     (метрики зліва: CHG LONG / CHG SHORT / Δ NET / NET POS,
+      gauges COT INDEX ALL + 1Y справа)
 
 Запускати з папки проекту:
-    python fix_v23.py
+    python fix_v26.py
 
 Ідемпотентний, робить бекап, відкочується при синтаксичній помилці.
 """
@@ -31,144 +32,131 @@ def need(anchor, step):
         sys.exit(1)
 
 # ════════════════════════════════════════════════════════════════
-# КРОК 1 — Зірочка підсвічує тільки себе
+# КРОК 1 — Фіксована ширина метрик, gauges з однієї лінії
+# Причина: .tff-a-left має flex:0 1 auto -> ширина залежить від вмісту,
+# тому gauges стартують по-різному. Робимо left фіксованої ширини.
 # ════════════════════════════════════════════════════════════════
-if "/* v23 fav */" in src:
-    skipped.append("1) Зірочка (вже v23)")
+if "/* v26 gauge align */" in src:
+    skipped.append("1) вирівнювання gauges (вже v26)")
 else:
-    # 1a. прибираємо CSS підсвітки рядка
-    old_css = """.ov-table tr.ov-faved td{background:rgba(240,180,41,.06);}
-.ov-table tr.ov-faved .ov-asset{color:#f0b429;}"""
-    new_css = """/* v23 fav — підсвічується тільки зірка, рядок без змін */"""
+    old_css = """/* v25 gauges center */
+.tff-a-row{display:flex;align-items:center;justify-content:flex-start;padding:12px 16px;border-bottom:1px solid var(--bd);gap:16px;}
+.tff-a-row:last-child{border-bottom:none;}
+.tff-a-left{flex:0 1 auto;min-width:0;}"""
+
+    new_css = """/* v26 gauge align */
+.tff-a-row{display:flex;align-items:center;justify-content:flex-start;padding:12px 16px;border-bottom:1px solid var(--bd);gap:16px;}
+.tff-a-row:last-child{border-bottom:none;}
+.tff-a-left{flex:0 0 620px;max-width:620px;min-width:0;}"""
     need(old_css, 1)
     src = src.replace(old_css, new_css, 1)
 
-    # 1b. прибираємо додавання класу рядку в JS
-    old_js = """function ovApplyFav(el,on){
-  el.classList.toggle('on',on);
-  el.textContent=on?'★':'☆';
-  const tr=el.closest('tr');
-  if(tr) tr.classList.toggle('ov-faved',on);
-}"""
-    new_js = """function ovApplyFav(el,on){
-  el.classList.toggle('on',on);
-  el.textContent=on?'★':'☆';
-}"""
-    need(old_js, 1)
-    src = src.replace(old_js, new_js, 1)
-    applied.append("1) Зірочка — підсвічується тільки вона, рядок без підсвітки")
+    # gauges: тепер відступ не потрібен (left має фіксовану ширину) — прибираємо margin
+    old_g = """.tff-a-gauges{display:flex;gap:10px;flex-shrink:0;align-items:center;border-left:1px solid var(--bd);padding-left:24px;margin-left:40px;}"""
+    new_g = """.tff-a-gauges{display:flex;gap:10px;flex-shrink:0;align-items:center;border-left:1px solid var(--bd);padding-left:24px;}"""
+    need(old_g, 1)
+    src = src.replace(old_g, new_g, 1)
+
+    # метрики: фіксуємо ширину кожного стовпчика, щоб NET POS теж був на місці
+    old_m = """.tff-a-metrics{display:flex;align-items:flex-end;gap:22px;flex-wrap:wrap;}
+.tff-ag-item{display:flex;flex-direction:column;gap:3px;}"""
+    new_m = """.tff-a-metrics{display:flex;align-items:flex-end;gap:22px;flex-wrap:nowrap;}
+.tff-ag-item{display:flex;flex-direction:column;gap:3px;min-width:110px;}"""
+    need(old_m, 1)
+    src = src.replace(old_m, new_m, 1)
+    applied.append("1) gauges COT INDEX стартують з однієї вертикальної лінії")
 
 # ════════════════════════════════════════════════════════════════
-# КРОК 2 — Клік по активу -> вкладка активу (Legacy)
+# КРОК 2 — Legacy analysis_row у стилі TFF
 # ════════════════════════════════════════════════════════════════
-if "ovGoInstrument" in src:
-    skipped.append("2) Клік по активу (вже є)")
+if "# v26 legacy analysis" in src:
+    skipped.append("2) analysis_row (вже v26)")
 else:
-    # 2a. робимо назву активу клікабельною (зірка окремо, щоб не конфліктувала)
-    old_asset = """                         f'<td class="ov-asset"><span class="ov-fav" data-fav="{d["sid"]}" onclick="ovToggleFav(this)">☆</span>{d["asset"]}</td>'"""
-    new_asset = """                         f'<td class="ov-asset"><span class="ov-fav" data-fav="{d["sid"]}" onclick="event.stopPropagation();ovToggleFav(this)">☆</span>'
-                         f'<span class="ov-asset-link" onclick="ovGoInstrument(\\'{d["sid"]}\\')">{d["asset"]}</span></td>'"""
-    need(old_asset, 2)
-    src = src.replace(old_asset, new_asset, 1)
+    old_fn = """def analysis_row(group_label,group_color,net,cl,cs,chg,chg_pct):
+    dc='g'if net>0 else'r'
+    return(f'<div class="arow"><div class="arow-body"><div class="arow-left">'
+           f'<div class="arow-grid2">'
+           f'<div class="ag-item"><span class="ag-lbl">CHG LONG</span><span class="{cc(cl)} ag-val">{fv_full(cl,sign=True)}</span></div>'
+           f'<div class="ag-item"><span class="ag-lbl">CHG SHORT</span><span class="{cc(cs)} ag-val">{fv_full(cs,sign=True)}</span></div>'
+           f'</div>'
+           f'<div class="arow-dnet"><span class="ag-lbl">Δ NET</span>'
+           f'<span class="{cc(chg)} ag-val-net">{fv_full(chg,sign=True)}<span class="ag-pct"> ({chg_pct})</span></span></div>'
+           f'</div><div class="arow-right">'
+           f'<div class="ar-glbl" style="color:{group_color}">{group_label}</div>'
+           f'<div class="ar-net {dc}">{fv_full(net,sign=True)}</div>'
+           f'</div></div></div>')"""
 
-    # 2b. CSS для клікабельної назви
-    css_anchor2 = """/* v23 fav — підсвічується тільки зірка, рядок без змін */"""
-    css_add2 = css_anchor2 + """
-.ov-asset-link{cursor:pointer;transition:color .15s;}
-.ov-asset-link:hover{color:var(--accent);text-decoration:underline;}"""
-    need(css_anchor2, 2)
-    src = src.replace(css_anchor2, css_add2, 1)
-
-    # 2c. JS-функція переходу
-    js_anchor2 = "// ── v22: Overview favorites (зірочки) ──"
-    js_add2 = """// ── v23: Overview -> перехід на вкладку інструмента ──
-function ovGoInstrument(sid){
-  // знаходимо кнопку інструмента серед усіх категорій
-  let btn=null, cat=null;
-  document.querySelectorAll('.itab[data-i]').forEach(b=>{
-    if(btn) return;
-    const k=b.dataset.i;
-    const s=k.replaceAll(' ','_').replaceAll('&','n').replaceAll('/','_');
-    if(s===sid){btn=b;cat=b.dataset.cat;}
-  });
-  if(!btn){console.warn('Інструмент не знайдено:',sid);return;}
-  selMain('cot');           // перемикаємось на COT Dashboard
-  selCat(cat);              // відкриваємо потрібну категорію
-  selInst(cat,btn.dataset.i); // відкриваємо інструмент (Legacy за замовчуванням)
-  window.scrollTo({top:0,behavior:'smooth'});
-}
-
-// ── v22: Overview favorites (зірочки) ──"""
-    need(js_anchor2, 2)
-    src = src.replace(js_anchor2, js_add2, 1)
-    applied.append("2) Клік по назві активу -> вкладка інструмента (Legacy)")
+    new_fn = """def analysis_row(group_label,group_color,net,cl,cs,chg,chg_pct,idx=None):
+    # v26 legacy analysis — вигляд як TFF: метрики зліва, gauges COT INDEX справа
+    dc='g'if net>0 else'r'
+    idx=idx or {}
+    g_all=idx.get('all',50.0);g_1y=idx.get('1y',50.0)
+    col_all=gauge_color(g_all);col_1y=gauge_color(g_1y)
+    gauge_all=make_gauge_svg(g_all,col_all,size=62,label='COT ALL')
+    gauge_1y =make_gauge_svg(g_1y, col_1y, size=62,label='COT 1Y')
+    return(f'<div class="tff-a-row">'
+           f'<div class="tff-a-left">'
+           f'<div class="tff-a-name" style="color:{group_color}">{group_label}</div>'
+           f'<div class="tff-a-metrics">'
+           f'<div class="tff-ag-item"><span class="ag-lbl">CHG LONG</span>'
+           f'<span class="{cc(cl)} ag-val">{fv_full(cl,sign=True)}</span></div>'
+           f'<div class="tff-ag-item"><span class="ag-lbl">CHG SHORT</span>'
+           f'<span class="{cc(cs)} ag-val">{fv_full(cs,sign=True)}</span></div>'
+           f'<div class="tff-ag-item"><span class="ag-lbl">Δ NET</span>'
+           f'<span class="{cc(chg)} ag-val">{fv_full(chg,sign=True)}'
+           f'<span class="ag-pct"> ({chg_pct})</span></span></div>'
+           f'<div class="tff-ag-item"><span class="ag-lbl">NET POS</span>'
+           f'<span class="{dc} ag-val ag-bignet">{fv_full(net,sign=True)}</span></div>'
+           f'</div></div>'
+           f'<div class="tff-a-gauges">'
+           f'<div class="tff-a-gwrap">{gauge_all}</div>'
+           f'<div class="tff-a-gwrap">{gauge_1y}</div>'
+           f'</div></div>')"""
+    need(old_fn, 2)
+    src = src.replace(old_fn, new_fn, 1)
+    applied.append("2) Legacy analysis_row переверстано у стиль TFF")
 
 # ════════════════════════════════════════════════════════════════
-# КРОК 3 — SM DIV графік: кольорові підписи + лінії ±0.8
+# КРОК 3 — передати cot_idx у виклики analysis_row + обгорнути у tff-панель
 # ════════════════════════════════════════════════════════════════
-if "_SM_THRESHOLD" in src:
-    skipped.append("3) SM DIV пороги (вже є)")
+if "# v26 analysis calls" in src:
+    skipped.append("3) виклики analysis_row (вже v26)")
 else:
-    old_chart = """  _ovSmChart=new Chart(cv.getContext('2d'),{
-    type:'bar',
-    data:{labels,datasets:[{data:vals,backgroundColor:colors,borderColor:bdrColors,borderWidth:1,borderRadius:2,label:titles[key]||'SM DIV'}]},
-    options:{responsive:true,maintainAspectRatio:false,animation:false,
-      plugins:{legend:{display:false},
-        title:{display:true,text:titles[key]||'SM DIV',color:'#dde2ee',font:{family:'Courier New',size:11},padding:{bottom:8}},
-        tooltip:{backgroundColor:'#21263a',borderColor:'#343d5a',borderWidth:1,titleColor:'#dde2ee',bodyColor:'#dde2ee',
-          titleFont:{family:'Courier New',size:10},bodyFont:{family:'Courier New',size:10},
-          callbacks:{label:ctx=>{const v=ctx.parsed.y;return ' '+v.toFixed(2);}}}},
-      scales:{
-        x:{ticks:{color:'#8090b0',font:{family:'Courier New',size:9},maxRotation:45,minRotation:30},
-           grid:{color:'rgba(52,61,90,.5)',lineWidth:.5},border:{display:false}},
-        y:{display:true,grid:{color:'rgba(52,61,90,.6)',lineWidth:.5},
-           ticks:{color:'#8090b0',font:{family:'Courier New',size:9},callback:v=>v.toFixed(2)},
-           border:{display:false},
-           min:-1,max:1}}}});"""
+    old_call = """    analysis_panel=(f'<div class="panel">'
+                    +analysis_row('LARGE SPEC',COLOR_LS,c['ls_net'],c['ls_cl'],c['ls_cs'],c['ls_chg'],c['ls_chg_pct'])
+                    +analysis_row('COMMERCIALS',COLOR_CM,c['cm_net'],c['cm_cl'],c['cm_cs'],c['cm_chg'],c['cm_chg_pct'])
+                    +f'</div>')"""
+    new_call = """    # v26 analysis calls — передаємо cot_idx для gauges, обгортка як у TFF
+    _ci=d['cot_idx']
+    analysis_panel=(f'<div class="panel tff-analysis-panel">'
+                    +analysis_row('LARGE SPEC',COLOR_LS,c['ls_net'],c['ls_cl'],c['ls_cs'],c['ls_chg'],c['ls_chg_pct'],_ci['ls'])
+                    +analysis_row('COMMERCIALS',COLOR_CM,c['cm_net'],c['cm_cl'],c['cm_cs'],c['cm_chg'],c['cm_chg_pct'],_ci['cm'])
+                    +f'</div>')"""
+    need(old_call, 3)
+    src = src.replace(old_call, new_call, 1)
+    applied.append("3) LARGE SPEC/COMMERCIALS отримують gauges COT INDEX")
 
-    new_chart = """  const _SM_THRESHOLD=0.8;
-  // підпис активу: зелений якщо >0.8, червоний якщо <-0.8
-  const tickColors=vals.map(v=>v>_SM_THRESHOLD?'#20d483':(v<-_SM_THRESHOLD?'#f0515a':'#8090b0'));
-  // ледь помітні горизонтальні лінії на ±0.8
-  const thresholdLines={
-    id:'smThresholdLines',
-    beforeDatasetsDraw(chart){
-      const {ctx,chartArea,scales}=chart;
-      if(!chartArea||!scales.y) return;
-      ctx.save();
-      ctx.strokeStyle='rgba(221,226,238,.13)';
-      ctx.lineWidth=1;
-      ctx.setLineDash([4,4]);
-      [_SM_THRESHOLD,-_SM_THRESHOLD].forEach(lv=>{
-        const y=scales.y.getPixelForValue(lv);
-        ctx.beginPath();
-        ctx.moveTo(chartArea.left,y);
-        ctx.lineTo(chartArea.right,y);
-        ctx.stroke();
-      });
-      ctx.restore();
-    }
-  };
-  _ovSmChart=new Chart(cv.getContext('2d'),{
-    type:'bar',
-    data:{labels,datasets:[{data:vals,backgroundColor:colors,borderColor:bdrColors,borderWidth:1,borderRadius:2,label:titles[key]||'SM DIV'}]},
-    plugins:[thresholdLines],
-    options:{responsive:true,maintainAspectRatio:false,animation:false,
-      plugins:{legend:{display:false},
-        title:{display:true,text:titles[key]||'SM DIV',color:'#dde2ee',font:{family:'Courier New',size:11},padding:{bottom:8}},
-        tooltip:{backgroundColor:'#21263a',borderColor:'#343d5a',borderWidth:1,titleColor:'#dde2ee',bodyColor:'#dde2ee',
-          titleFont:{family:'Courier New',size:10},bodyFont:{family:'Courier New',size:10},
-          callbacks:{label:ctx=>{const v=ctx.parsed.y;return ' '+v.toFixed(2);}}}},
-      scales:{
-        x:{ticks:{color:tickColors,font:{family:'Courier New',size:9},maxRotation:45,minRotation:30},
-           grid:{color:'rgba(52,61,90,.5)',lineWidth:.5},border:{display:false}},
-        y:{display:true,grid:{color:'rgba(52,61,90,.6)',lineWidth:.5},
-           ticks:{color:'#8090b0',font:{family:'Courier New',size:9},callback:v=>v.toFixed(2)},
-           border:{display:false},
-           min:-1,max:1}}}});"""
-    need(old_chart, 3)
-    src = src.replace(old_chart, new_chart, 1)
-    applied.append("3) SM DIV — кольорові підписи (±0.8) + пунктирні лінії порогів")
+# ════════════════════════════════════════════════════════════════
+# КРОК 4 — Винести analysis_panel окремим повним рядком над mid
+# (широкий TFF-стиль не влазить у grid-колонку 1fr)
+# ════════════════════════════════════════════════════════════════
+if "# v26 mid layout" in src:
+    skipped.append("4) mid layout (вже v26)")
+else:
+    old_mid = "    mid=f'<div class=\"mid\">{analysis_panel}{sm_panel}{pct_combined}</div>'"
+    new_mid = ("    # v26 mid layout — analysis повним рядком зверху, далі sm+pct\n"
+               "    mid=f'{analysis_panel}<div class=\"mid mid-nopanel\">{sm_panel}{pct_combined}</div>'")
+    need(old_mid, 4)
+    src = src.replace(old_mid, new_mid, 1)
+
+    # grid тепер без першої 1fr-колонки: sm(180px) + pct(решта)
+    grid_anchor = ".mid{display:grid;grid-template-columns:1fr 180px 1fr;gap:8px;margin-bottom:12px;}"
+    grid_add = (".mid{display:grid;grid-template-columns:1fr 180px 1fr;gap:8px;margin-bottom:12px;}\n"
+                "/* v26 mid layout */\n"
+                ".mid-nopanel{grid-template-columns:180px 1fr;}")
+    need(grid_anchor, 4)
+    src = src.replace(grid_anchor, grid_add, 1)
+    applied.append("4) analysis_panel винесено повним рядком над sm/pct")
 
 # ════════════════════════════════════════════════════════════════
 if src == orig:
@@ -176,11 +164,11 @@ if src == orig:
     for s in skipped: print("   ⏭ ", s)
     sys.exit(0)
 
-bak = GEN.with_suffix(f".py.bak_v23_{datetime.now():%Y%m%d_%H%M%S}")
+bak = GEN.with_suffix(f".py.bak_v26_{datetime.now():%Y%m%d_%H%M%S}")
 shutil.copy2(GEN, bak)
 GEN.write_text(src, encoding="utf-8")
 
-print("\n✅  Патч v23 застосовано.")
+print("\n✅  Патч v26 застосовано.")
 print(f"   Бекап: {bak.name}\n")
 for s in applied: print("   ✓", s)
 for s in skipped: print("   ⏭", s)
