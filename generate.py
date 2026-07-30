@@ -179,7 +179,9 @@ def make_sparkline(series,color,h=38):
            f'<circle cx="{lx}" cy="{ly}" r="2.5" fill="{color}"/></svg>')
 
 def make_gauge_svg(value,color,size=74,label='COT INDEX'):
-    value=max(0.0,min(100.0,float(value)));cx=cy=size/2;r=size*0.40
+    # v27 gauge: велике число всередині дуги, підпис під дугою
+    value=max(0.0,min(100.0,float(value)))
+    cx=size/2; cy=size*0.44; r=size*0.37
     START_SVG=140.0;SWEEP=240.0
     def pt(d):
         a=math.radians(d); return (round(cx+r*math.cos(a),2),round(cy+r*math.sin(a),2))
@@ -187,14 +189,22 @@ def make_gauge_svg(value,color,size=74,label='COT INDEX'):
     vs=value/100.0*SWEEP;v=pt(START_SVG+vs)
     bg=f"M{s[0]},{s[1]} A{r:.1f},{r:.1f} 0 1,1 {e[0]},{e[1]}"
     fg=f"M{s[0]},{s[1]} A{r:.1f},{r:.1f} 0 {1 if vs>180 else 0},1 {v[0]},{v[1]}" if value>0 else None
-    tx=round(cx,1);ty=round(cy+r*0.22,1)
+    # v28: розмір числа підбирається так, щоб воно завжди вміщалось у дугу.
+    # Ціле число (макс. 3 символи "100") дозволяє більший шрифт, ніж "100.0".
+    val_txt=f"{value:.0f}"
+    inner_w=2*(r-1.5-2.0)                        # діаметр мінус обведення і відступ
+    fs_fit =inner_w/(max(len(val_txt),1)*0.60)   # Courier: ширина символу ~0.6em
+    val_fs =round(min(size*0.34,fs_fit),1)       # більше ніж було, але без виходу за дугу
+    lbl_fs =round(size*0.155,1)                  # більший підпис
+    val_y  =round(cy+val_fs*0.35,1)
+    lbl_y  =round(cy+r+lbl_fs*0.80,1)
     return(f'<svg viewBox="0 0 {size} {size}" width="{size}" height="{size}" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;display:block">'
            f'<path d="{bg}" stroke="#252d48" stroke-width="3" fill="none" stroke-linecap="round"/>'
            +(f'<path d="{fg}" stroke="{color}" stroke-width="3" fill="none" stroke-linecap="round"/>' if fg else '')
-           +f'<circle cx="{v[0]}" cy="{v[1]}" r="4" fill="{color}"/>'
+           +f'<circle cx="{v[0]}" cy="{v[1]}" r="3.5" fill="{color}"/>'
            f'<circle cx="{s[0]}" cy="{s[1]}" r="2.5" fill="#252d48" stroke="{color}" stroke-width="1"/>'
-           f'<text x="{tx}" y="{ty-6}" text-anchor="middle" dominant-baseline="middle" font-family="Courier New,monospace" font-size="7" fill="{color}" opacity="0.7">{label}</text>'
-           f'<text x="{tx}" y="{ty+6}" text-anchor="middle" dominant-baseline="middle" font-family="Courier New,monospace" font-size="13" font-weight="bold" fill="{color}">{value:.1f}</text></svg>')
+           f'<text x="{cx}" y="{val_y}" text-anchor="middle" font-family="Courier New,monospace" font-size="{val_fs}" font-weight="bold" fill="{color}">{val_txt}</text>'
+           f'<text x="{cx}" y="{lbl_y}" text-anchor="middle" font-family="Courier New,monospace" font-size="{lbl_fs}" fill="{color}" opacity="0.75">{label}</text></svg>')
 def gauge_color(value,oi=False):
     if oi: return '#dde2ee'
     v=float(value)
@@ -231,9 +241,10 @@ def analysis_row(group_label,group_color,net,cl,cs,chg,chg_pct,idx=None):
     # v26 legacy analysis — вигляд як TFF: метрики зліва, gauges COT INDEX справа
     dc='g'if net>0 else'r'
     idx=idx or {}
-    g_all=idx.get('all',50.0);g_1y=idx.get('1y',50.0)
-    col_all=gauge_color(g_all);col_1y=gauge_color(g_1y)
+    g_all=idx.get('all',50.0);g_3y=idx.get('3y',50.0);g_1y=idx.get('1y',50.0)
+    col_all=gauge_color(g_all);col_3y=gauge_color(g_3y);col_1y=gauge_color(g_1y)
     gauge_all=make_gauge_svg(g_all,col_all,size=62,label='COT ALL')
+    gauge_3y =make_gauge_svg(g_3y, col_3y, size=62,label='COT 3Y')
     gauge_1y =make_gauge_svg(g_1y, col_1y, size=62,label='COT 1Y')
     return(f'<div class="tff-a-row">'
            f'<div class="tff-a-left">'
@@ -251,6 +262,7 @@ def analysis_row(group_label,group_color,net,cl,cs,chg,chg_pct,idx=None):
            f'</div></div>'
            f'<div class="tff-a-gauges">'
            f'<div class="tff-a-gwrap">{gauge_all}</div>'
+           f'<div class="tff-a-gwrap">{gauge_3y}</div>'
            f'<div class="tff-a-gwrap">{gauge_1y}</div>'
            f'</div></div>')
 
@@ -617,9 +629,10 @@ def make_tff_analysis(tff):
     c=tff['cur'];ci=tff['cot_idx']
     def row_html(label,color,net,cl,cs,chg,chg_pct,idx):
         dc='g'if net>0 else'r'
-        g_all=idx.get('all',50.0);g_1y=idx.get('1y',50.0)
-        col_all=gauge_color(g_all);col_1y=gauge_color(g_1y)
+        g_all=idx.get('all',50.0);g_3y=idx.get('3y',50.0);g_1y=idx.get('1y',50.0)
+        col_all=gauge_color(g_all);col_3y=gauge_color(g_3y);col_1y=gauge_color(g_1y)
         gauge_all=make_gauge_svg(g_all,col_all,size=62,label='COT ALL')
+        gauge_3y =make_gauge_svg(g_3y, col_3y, size=62,label='COT 3Y')
         gauge_1y =make_gauge_svg(g_1y, col_1y, size=62,label='COT 1Y')
         return(f'<div class="tff-a-row">'
                f'<div class="tff-a-left">'
@@ -637,6 +650,7 @@ def make_tff_analysis(tff):
                f'</div></div>'
                f'<div class="tff-a-gauges">'
                f'<div class="tff-a-gwrap">{gauge_all}</div>'
+               f'<div class="tff-a-gwrap">{gauge_3y}</div>'
                f'<div class="tff-a-gwrap">{gauge_1y}</div>'
                f'</div></div>')
     return(f'<div class="panel tff-analysis-panel">'
@@ -767,9 +781,10 @@ def make_disag_analysis(dg):
     c=dg['cur'];ci=dg['cot_idx']
     def row_html(label,color,net,cl,cs,chg,chg_pct,idx):
         dc='g'if net>0 else'r'
-        g_all=idx.get('all',50.0);g_1y=idx.get('1y',50.0)
-        col_all=gauge_color(g_all);col_1y=gauge_color(g_1y)
+        g_all=idx.get('all',50.0);g_3y=idx.get('3y',50.0);g_1y=idx.get('1y',50.0)
+        col_all=gauge_color(g_all);col_3y=gauge_color(g_3y);col_1y=gauge_color(g_1y)
         gauge_all=make_gauge_svg(g_all,col_all,size=62,label='COT ALL')
+        gauge_3y =make_gauge_svg(g_3y, col_3y, size=62,label='COT 3Y')
         gauge_1y =make_gauge_svg(g_1y, col_1y, size=62,label='COT 1Y')
         return(f'<div class="tff-a-row">'
                f'<div class="tff-a-left">'
@@ -787,6 +802,7 @@ def make_disag_analysis(dg):
                f'</div></div>'
                f'<div class="tff-a-gauges">'
                f'<div class="tff-a-gwrap">{gauge_all}</div>'
+               f'<div class="tff-a-gwrap">{gauge_3y}</div>'
                f'<div class="tff-a-gwrap">{gauge_1y}</div>'
                f'</div></div>')
     return(f'<div class="panel tff-analysis-panel">'
@@ -1251,11 +1267,23 @@ def make_overview_tab():
                          f'{cot_td(d["sid"],"st")}'
                          f'<td>{crowded_fmt(d.get("crowded"))}</td>'
                          f'<td>{sm_fmt(d["sm_div"])}</td><td>{sm_fmt(d["sm_div_6m"])}</td><td>{sm_fmt(d["sm_div_3m"])}</td></tr>')
-    thead=(f'<thead><tr><th class="ov-asset">ASSET</th><th>NET LS</th><th>CHG LS</th><th>%OIΔ</th>'
-           f'<th>NET CM</th><th>CHG CM</th><th>%OIΔ</th>'
-           f'<th style="color:{COLOR_LS}">COT LS</th><th style="color:{COLOR_CM}">COT CM</th><th style="color:{COLOR_ST}">COT ST</th>'
-           f'<th>CROWDED</th>'
-           f'<th>SM DIV</th><th>SM 6M</th><th>SM 3M</th></tr></thead>')
+    # v27: клікабельні заголовки для сортування
+    thead=(f'<thead><tr>'
+           f'<th class="ov-asset ov-sortable" data-col="0" data-stype="reset" onclick="ovSort(this)" title="Скинути сортування">ASSET</th>'
+           f'<th class="ov-sortable" data-col="1" onclick="ovSort(this)">NET LS</th>'
+           f'<th class="ov-sortable" data-col="2" onclick="ovSort(this)">CHG LS</th>'
+           f'<th class="ov-sortable" data-col="3" onclick="ovSort(this)">%OIΔ</th>'
+           f'<th class="ov-sortable" data-col="4" onclick="ovSort(this)">NET CM</th>'
+           f'<th class="ov-sortable" data-col="5" onclick="ovSort(this)">CHG CM</th>'
+           f'<th class="ov-sortable" data-col="6" onclick="ovSort(this)">%OIΔ</th>'
+           f'<th class="ov-sortable" data-col="7" data-stype="cot" onclick="ovSort(this)" style="color:{COLOR_LS}">COT LS</th>'
+           f'<th class="ov-sortable" data-col="8" data-stype="cot" onclick="ovSort(this)" style="color:{COLOR_CM}">COT CM</th>'
+           f'<th class="ov-sortable" data-col="9" data-stype="cot" onclick="ovSort(this)" style="color:{COLOR_ST}">COT ST</th>'
+           f'<th class="ov-sortable" data-col="10" data-stype="crowd" onclick="ovSort(this)">CROWDED</th>'
+           f'<th class="ov-sortable" data-col="11" onclick="ovSort(this)">SM DIV</th>'
+           f'<th class="ov-sortable" data-col="12" onclick="ovSort(this)">SM 6M</th>'
+           f'<th class="ov-sortable" data-col="13" onclick="ovSort(this)">SM 3M</th>'
+           f'</tr></thead>')
     # дані для SM DIV графіків
     sm_chart_data = []
     for item in OVERVIEW_TABLE:
@@ -1479,8 +1507,28 @@ table.ht{width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap;t
 table.ht th{padding:4px 8px;border-bottom:1px solid var(--bd);font-weight:normal;font-size:9px;letter-spacing:.5px;text-align:right;overflow:hidden;}
 table.ht .th-corner{text-align:left;background:var(--bg3);}.th-date{text-align:left;background:var(--bg3);}.th-left{text-align:left;}.th-group{text-align:center;}.th-oi{text-align:center;}.sm-th{text-align:center;font-size:8px;color:var(--d);}.sm-th-group{font-size:8px;}
 table.ht td{padding:4px 8px;border-bottom:1px solid var(--bg3);text-align:right;overflow:hidden;}
+/* v27 hover */
+/* виділення рядка БЕЗ зміни кольорів клітинок (фон не чіпаємо) */
+table.ht tbody tr:hover td,
+.ov-table tbody tr:hover td,
+.cp-sum-table tbody tr:hover td,
+table.cp-wt tbody tr:hover td{
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.25),inset 0 -1px 0 rgba(255,255,255,.25);
+}
+table.ht tbody tr:hover td:first-child,
+.ov-table tbody tr:hover td:first-child,
+.cp-sum-table tbody tr:hover td:first-child,
+table.cp-wt tbody tr:hover td:first-child{
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.25),inset 0 -1px 0 rgba(255,255,255,.25),inset 3px 0 0 var(--accent);
+}
+/* v27 th align */
+/* вища специфічність: правило 'table.ht th' перекривало .th-group */
+table.ht th.th-group,table.ht th.th-oi,table.ht th.sm-th{text-align:center;}
+table.ht th.th-corner,table.ht th.th-date,table.ht th.th-left{text-align:left;}
+.tff-a-gauges{gap:8px!important;}
+
 table.ht .date-col{text-align:left;color:var(--d);background:var(--bg3);}
-table.ht tr:hover td{background:rgba(52,61,90,.5)!important;}
+
 table.ht .sep-r{border-right:1px solid var(--bd);}.sm-td{text-align:center;font-size:10px;padding:4px 6px;}
 table.ht.ht-legacy tbody td:nth-child(2){border-left:2px solid rgba(74,158,255,.45);}
 table.ht.ht-legacy tbody td:nth-child(7){border-left:2px solid rgba(32,212,131,.45);}
@@ -1515,7 +1563,7 @@ table.ht tbody.mm-tbody tr.mm-yr td{opacity:.78;}
 .ov-table th:first-child{text-align:left;}.ov-table td{padding:5px 10px;border-bottom:1px solid var(--bg3);text-align:right;}
 .ov-table .ov-asset{text-align:left;color:var(--t);font-weight:bold;}
 .ov-table .ov-group td{background:var(--bg3);color:var(--d);font-size:8px;letter-spacing:1px;padding:4px 10px;text-align:left;}
-.ov-table tr:hover td{background:rgba(52,61,90,.4)!important;}
+
 .ov-cot-cell{display:flex;align-items:center;gap:6px;justify-content:flex-end;}
 /* v21 overview css */
 #ms_ov>div{max-width:1180px;margin:0 auto;}
@@ -1544,6 +1592,11 @@ table.ht tbody.mm-tbody tr.mm-yr td{opacity:.78;}
 .ov-fav:hover{color:#f0b429;transform:scale(1.2);}
 .ov-fav.on{color:#f0b429;text-shadow:0 0 6px rgba(240,180,41,.6);}
 /* v23 fav — підсвічується тільки зірка, рядок без змін */
+/* v27 sort */
+.ov-table th.ov-sortable{cursor:pointer;user-select:none;transition:color .15s;}
+.ov-table th.ov-sortable:hover{color:var(--accent)!important;}
+.ov-table th.ov-sort-desc::after{content:' ▼';font-size:7px;opacity:.85;}
+.ov-table th.ov-sort-asc::after{content:' ▲';font-size:7px;opacity:.85;}
 .ov-asset-link{cursor:pointer;transition:color .15s;}
 .ov-asset-link:hover{color:var(--accent);text-decoration:underline;}
 
@@ -1589,7 +1642,7 @@ table.ht tbody.mm-tbody tr.mm-yr td{opacity:.78;}
 .cp-sum-table th{padding:5px 10px;background:var(--bg3);font-size:9px;color:var(--d);font-weight:normal;text-align:right;letter-spacing:.3px;}
 .cp-sum-table th:first-child{text-align:left;}
 .cp-sum-table td{padding:5px 10px;border-bottom:1px solid var(--bg3);text-align:right;}
-.cp-sum-table tr:hover td{background:rgba(52,61,90,.4)!important;}
+
 .cp-sum-group td{background:var(--bg3);font-weight:bold;font-size:10px;padding:6px 10px;text-align:left;border-left:3px solid transparent;}
 .cp-sum-stage{color:var(--d);font-size:10px;text-align:left;}
 .cp-mini-bar{display:inline-block;width:44px;height:4px;background:var(--bg3);border-radius:2px;overflow:hidden;margin-right:5px;vertical-align:middle;}
@@ -2104,6 +2157,74 @@ function openSyncModal(){
 }
 const firstCat=document.querySelector('.ctab');
 if(firstCat)selCat(firstCat.dataset.c);
+
+// ── v27: Overview сортування по колонках ──
+let _ovSortCol=null,_ovSortDir=-1,_ovOrigRows=null;
+function ovParseNum(txt){
+  if(txt==null) return null;
+  const s=String(txt);
+  let out='';
+  for(let i=0;i<s.length;i++){
+    const c=s.charCodeAt(i);
+    if(c===0x202f||c===0xa0||c===32||c===9||c===37) continue;
+    if(c===0x2212){out+='-';continue;}
+    if(c===44){out+='.';continue;}
+    out+=s[i];
+  }
+  if(out===''||out==='-') return null;
+  const f=out.charCodeAt(0);
+  if(f===0x2014||f===0x2013) return null;
+  const v=parseFloat(out);
+  return isNaN(v)?null:v;
+}
+function ovCellVal(tr,col,type){
+  const tds=tr.children;
+  if(col>=tds.length) return null;
+  const td=tds[col];
+  if(type==='crowd'){
+    const s=(td.textContent||'').toLowerCase();
+    if(s.indexOf('very')>=0) return 2;
+    if(s.indexOf('crowd')>=0) return 1;
+    return 0;
+  }
+  if(type==='cot'){
+    const el=td.querySelector('.ov-cot-val');
+    return ovParseNum(el?el.textContent:td.textContent);
+  }
+  return ovParseNum(td.textContent);
+}
+function ovSort(th){
+  const table=th.closest('table');
+  const tbody=table?table.querySelector('tbody'):null;
+  if(!tbody) return;
+  if(!_ovOrigRows) _ovOrigRows=Array.from(tbody.children);
+  const col=parseInt(th.dataset.col);
+  const type=th.dataset.stype||'num';
+  table.querySelectorAll('th.ov-sortable').forEach(h=>h.classList.remove('ov-sort-asc','ov-sort-desc'));
+  if(type==='reset'){
+    _ovSortCol=null;
+    tbody.innerHTML='';
+    _ovOrigRows.forEach(r=>tbody.appendChild(r));
+    if(window.ovLoadFavs)ovLoadFavs();
+    return;
+  }
+  if(_ovSortCol===col){_ovSortDir=-_ovSortDir;} else {_ovSortCol=col;_ovSortDir=-1;}
+  th.classList.add(_ovSortDir===-1?'ov-sort-desc':'ov-sort-asc');
+  // групові рядки (ВАЛЮТИ/МЕТАЛИ/...) при сортуванні приховуємо
+  const rows=_ovOrigRows.filter(r=>!r.classList.contains('ov-group'));
+  const dir=_ovSortDir;
+  rows.sort((a,b)=>{
+    const va=ovCellVal(a,col,type),vb=ovCellVal(b,col,type);
+    if(va==null&&vb==null) return 0;
+    if(va==null) return 1;
+    if(vb==null) return -1;
+    if(va===vb) return 0;
+    return dir===-1?(vb-va):(va-vb);
+  });
+  tbody.innerHTML='';
+  rows.forEach(r=>tbody.appendChild(r));
+  if(window.ovLoadFavs)ovLoadFavs();
+}
 
 // ── v23: Overview -> перехід на вкладку інструмента ──
 function ovGoInstrument(sid){
@@ -2785,7 +2906,7 @@ table.cp-wt .cp-wt-sub{text-align:right;color:var(--d);}
 table.cp-wt td{padding:4px 8px;border-bottom:1px solid var(--bg3);text-align:right;}
 table.cp-wt .cp-wt-val{text-align:right;}
 table.cp-wt .cp-wt-val.d{color:var(--d);}
-table.cp-wt tr:hover td{background:rgba(52,61,90,.4)!important;}
+
 </style>
 """
 
