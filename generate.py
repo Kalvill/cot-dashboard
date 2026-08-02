@@ -423,7 +423,7 @@ def read_sheet(xl,name,overview):
         oi_chg=round(oi_cur-oi_prev,0)
         _oi_st=stats(oi_all)
         oi_cap=round(oi_cur/_oi_st['max_all']*100,1) if _oi_st.get('max_all',0)>0 else 50.0
-        return{'name':name,'display':disp(name),'sid':sid(name),'chart':chart,'hist':hist,'stats_ls':stats(ls_net,ls_cl,ls_cs),'stats_cm':stats(cm_net,cm_cl,cm_cs),'stats_st':stats(st_net,st_cl,st_cs),'stats_oi':stats(oi_all),'cot_idx':{'ls':cot_idx(ls_net,'cot_ls_all'),'cm':cot_idx(cm_net,'cot_cm_all'),'st':cot_idx(st_net,'cot_st_all')},'cot_idx_m':cot_idx_m,'sm':{'div':ov.get('sm_div',0.0),'div_3m':ov.get('sm_div_3m',0.0),'div_6m':ov.get('sm_div_6m',0.0)},'spark':{'ls':ls_net,'cm':cm_net,'st':st_net,'oi':oi_all},'oi_capacity':oi_cap,'cur':{'date':all_dates[i0],'ls_net':ls_net[i0],'cm_net':cm_net[i0],'st_net':st_net[i0],'ls_pct':ls_pct[i0],'cm_pct':cm_pct[i0],'st_pct':st_pct[i0],'ls_cl':ls_cl[i0],'ls_cs':ls_cs[i0],'cm_cl':cm_cl[i0],'cm_cs':cm_cs[i0],'oi':oi_cur,'oi_pct':oi_pct,'ls_chg':ls_chg,'cm_chg':cm_chg,'st_chg':st_chg,'oi_chg':oi_chg,'ls_chg_pct':pct_change(ls_chg,ls_net[i0]),'cm_chg_pct':pct_change(cm_chg,cm_net[i0]),'st_chg_pct':pct_change(st_chg,st_net[i0]),'oi_chg_pct':fp(oi_pct,signed=True)}}
+        return{'name':name,'display':disp(name),'sid':sid(name),'table':_tbl_payload(df),'chart':chart,'hist':hist,'stats_ls':stats(ls_net,ls_cl,ls_cs),'stats_cm':stats(cm_net,cm_cl,cm_cs),'stats_st':stats(st_net,st_cl,st_cs),'stats_oi':stats(oi_all),'cot_idx':{'ls':cot_idx(ls_net,'cot_ls_all'),'cm':cot_idx(cm_net,'cot_cm_all'),'st':cot_idx(st_net,'cot_st_all')},'cot_idx_m':cot_idx_m,'sm':{'div':ov.get('sm_div',0.0),'div_3m':ov.get('sm_div_3m',0.0),'div_6m':ov.get('sm_div_6m',0.0)},'spark':{'ls':ls_net,'cm':cm_net,'st':st_net,'oi':oi_all},'oi_capacity':oi_cap,'cur':{'date':all_dates[i0],'ls_net':ls_net[i0],'cm_net':cm_net[i0],'st_net':st_net[i0],'ls_pct':ls_pct[i0],'cm_pct':cm_pct[i0],'st_pct':st_pct[i0],'ls_cl':ls_cl[i0],'ls_cs':ls_cs[i0],'cm_cl':cm_cl[i0],'cm_cs':cm_cs[i0],'oi':oi_cur,'oi_pct':oi_pct,'ls_chg':ls_chg,'cm_chg':cm_chg,'st_chg':st_chg,'oi_chg':oi_chg,'ls_chg_pct':pct_change(ls_chg,ls_net[i0]),'cm_chg_pct':pct_change(cm_chg,cm_net[i0]),'st_chg_pct':pct_change(st_chg,st_net[i0]),'oi_chg_pct':fp(oi_pct,signed=True)}}
     except Exception as e: print(f"  ❌  {name}: {e}"); return None
 
 def load_all():
@@ -1330,6 +1330,490 @@ def fnum_td(v):
     except: return '<td class="ov-num d">—</td>'
 
 
+
+# ================================================================
+# v29 — TABLE TAB (повна тижнева таблиця по інструменту)
+# ================================================================
+# 0 = вся історія. Якщо HTML стане завеликим — постав 520 (10 років)
+# або 260 (5 років): це найпростіший спосіб зменшити розмір файлу.
+TABLE_MAX_WEEKS = 0
+
+# Групи колонок таблиці.
+# Формат: (назва групи, колір, [(індекс колонки в Excel 0-based, підпис, тип)])
+# Типи: int   — ціле число без знаку (Long/Short/OI)
+#       chg   — зміна за тиждень (знак + градієнт фону)
+#       net   — чиста позиція (знак, роздільник справа)
+#       pct   — відсоток (у файлі частка 0..1)
+#       cot   — COT INDEX (частка 0..1 -> %, порогові кольори 15/85)
+#       ratio — коефіцієнт -1..1 (SM DIV)
+#       txt   — текст (CM LEAD / CROWDED ATH)
+TBL_GROUPS = [
+    ('LARGE SPECULATORS', COLOR_LS, [
+        (2,'LONG','grad'),(3,'SHORT','grad'),(4,'CHG LONG','chg'),(5,'CHG SHORT','chg'),
+        (6,'%NET/OI','pct'),(7,'%OI CHG','pct'),(8,'NET LS','net')]),
+    ('COMMERCIALS', COLOR_CM, [
+        (9,'LONG','grad'),(10,'SHORT','grad'),(11,'CHG LONG','chg'),(12,'CHG SHORT','chg'),
+        (13,'%NET/OI','pct'),(14,'%OI CHG','pct'),(15,'NET CM','net')]),
+    ('SMALL TRADERS', COLOR_ST, [
+        (16,'LONG','grad'),(17,'SHORT','grad'),(18,'CHG LONG','chg'),(19,'CHG SHORT','chg'),
+        (20,'%NET/OI','pct'),(21,'%OI CHG','pct'),(22,'NET ST','net')]),
+    ('OPEN INTEREST', '#a0aac0', [
+        (23,'%OI CHG','pct'),(24,'OPEN INT','oi')]),
+    ('COT INDEX (ALL)', '#f0b429', [(25,'LS','cot'),(26,'CM','cot'),(27,'ST','cot')]),
+    ('COT 5Y',          '#f0b429', [(28,'LS','cot'),(29,'CM','cot'),(30,'ST','cot')]),
+    ('COT 3Y',          '#f0b429', [(31,'LS','cot'),(32,'CM','cot'),(33,'ST','cot')]),
+    ('COT 1Y',          '#f0b429', [(34,'LS','cot'),(35,'CM','cot'),(36,'ST','cot')]),
+    ('COT 6M',          '#f0b429', [(37,'LS','cot'),(38,'CM','cot'),(39,'ST','cot')]),
+    ('COT 3M',          '#f0b429', [(40,'LS','cot'),(41,'CM','cot'),(42,'ST','cot')]),
+    ('SM / FLOW / CYCLE', '#a78bfa', [
+        (57,'SM DIV','ratio'),(58,'SM DIV 6M','ratio'),(59,'SM DIV 3M','ratio'),
+        (61,'FLOW LS','chg'),(62,'VELOCITY CM','chg'),(64,'RISK CAP','cot'),
+        (65,'CM LEAD','txt'),(66,'ACCEL LS','chg'),(67,'ACCEL CM','chg'),
+        (68,'CROWDED ATH','txt')]),
+]
+TBL_COLS = [c for _g, _c, cols in TBL_GROUPS for c in cols]
+# частки 0..1 та коефіцієнти зберігаємо як ціле ×1000 (компактніше в JSON)
+TBL_SCALE = {'pct':1000, 'cot':1000, 'ratio':1000}
+
+
+def _tbl_payload(df):
+    """Готує компактний колонковий payload для вкладки TABLE.
+
+    df — той самий DataFrame, що вже відфільтрований і відсортований у read_sheet().
+    Зберігаємо у зворотному порядку (найновіші зверху) — так рендер бере просто зріз.
+    """
+    try:
+        work = df
+        # відкидаємо порожні/#N/A рядки (немає ані Long, ані net у Large Spec)
+        if work.shape[1] > 8:
+            _keep = (pd.to_numeric(work.iloc[:, 2], errors='coerce').notna() |
+                     pd.to_numeric(work.iloc[:, 8], errors='coerce').notna())
+            work = work[_keep]
+        if TABLE_MAX_WEEKS and len(work) > TABLE_MAX_WEEKS:
+            work = work.tail(TABLE_MAX_WEEKS)
+        dates = work['_dt'].dt.strftime('%d.%m.%Y').tolist()[::-1]
+        cols = []
+        n = len(work)
+        for ci, _lbl, kind in TBL_COLS:
+            if ci >= work.shape[1]:
+                cols.append([None] * n); continue
+            s = work.iloc[:, ci]
+            if kind == 'txt':
+                out = []
+                for v in s:
+                    t = str(v).strip() if pd.notna(v) else ''
+                    out.append(t if t and t not in ('nan','—','-','#N/A','0') else None)
+            else:
+                mul = TBL_SCALE.get(kind, 1)
+                nums = pd.to_numeric(s, errors='coerce')
+                out = []
+                for x in nums:
+                    if pd.isna(x):
+                        out.append(None); continue
+                    fx = float(x)
+                    if abs(fx) > 1e12:      # захист від timestamp-сміття
+                        out.append(None); continue
+                    out.append(int(round(fx * mul)))
+            cols.append(out[::-1])
+        return {'d': dates, 'c': cols}
+    except Exception as e:
+        print(f"    ⚠  _tbl_payload: {e}")
+        return {'d': [], 'c': [[] for _ in TBL_COLS]}
+
+
+def make_table_tab(data):
+    """Вкладка TABLE — селектор активів + повна тижнева таблиця."""
+    if not data:
+        return '<p style="padding:24px;color:#8090b0">Немає даних</p>'
+
+    # ── селектор активів (групи як у CATEGORIES) ──
+    GRP_COLOR = {'Валюти':'#4a9eff','Метали':'#f0b429','Індекси':'#a78bfa',
+                 'Енергія':'#f59420','Агро':'#20d483','Крипто':'#22d3ee'}
+    sel_parts = []
+    first_sid = None
+    for cat, instruments in CATEGORIES.items():
+        avail = [i for i in instruments if i in data]
+        if not avail: continue
+        col = GRP_COLOR.get(cat, '#8090b0')
+        sel_parts.append(f'<span class="tb-grp" style="color:{col}">{cat.upper()}</span>')
+        for i in avail:
+            s = data[i]['sid']
+            if first_sid is None: first_sid = s
+            sel_parts.append(f'<button class="tb-a" data-sid="{s}" '
+                             f'onclick="tblSel(\'{s}\',this)">{disp(i)}</button>')
+    asset_bar = '<div class="tb-assets">' + ''.join(sel_parts) + '</div>'
+
+    # ── шапка таблиці (2 рядки) ──
+    r1 = '<th class="tb-corner" rowspan="2">ДАТА</th>'
+    r2 = ''
+    for gname, gcol, cols in TBL_GROUPS:
+        r_, g_, b_ = int(gcol[1:3],16), int(gcol[3:5],16), int(gcol[5:7],16)
+        r1 += (f'<th colspan="{len(cols)}" class="tb-g" '
+               f'style="background:rgba({r_},{g_},{b_},.18);color:#fff;'
+               f'border-left:2px solid {gcol}99">{gname}</th>')
+        for k, (_ci, lbl, kind) in enumerate(cols):
+            bl = f'border-left:2px solid {gcol}55;' if k == 0 else ''
+            if kind == 'net':   # NET-колонка обведена рамкою кольору групи
+                bl = f'border-left:2px solid {gcol};border-right:2px solid {gcol};'
+            r2 += f'<th class="tb-s" style="{bl}">{lbl}</th>'
+    thead = f'<thead><tr class="tb-r1">{r1}</tr><tr class="tb-r2">{r2}</tr></thead>'
+
+    # ── дані інструментів ──
+    spec = []
+    for _g, gcol, cols in TBL_GROUPS:
+        for k, (_ci, _lbl, kind) in enumerate(cols):
+            spec.append({'k': kind, 's': 1 if k == len(cols) - 1 else 0, 'c': gcol,
+                         'i': 1 if _lbl == 'SHORT' else 0})
+    payloads = []
+    for key, d in data.items():
+        tb = d.get('table')
+        if not tb: continue
+        payloads.append('_tbl["%s"]=%s;' % (d['sid'], json.dumps(tb, separators=(',', ':'))))
+        payloads.append('_tblName["%s"]=%s;' % (d['sid'], json.dumps(d['display'], ensure_ascii=False)))
+
+    head_js = ('<script>const _tbl={};const _tblName={};'
+               'window._TBL_SPEC=' + json.dumps(spec, separators=(',', ':')) + ';'
+               'window._TBL_FIRST=' + json.dumps(first_sid or '') + ';</script>')
+    data_js = '<script>' + ''.join(payloads) + '</script>'
+
+    per_btns = ''.join(
+        f'<button class="tb-per{" active" if p=="6M" else ""}" data-n="{n}" '
+        f'onclick="tblPer(this)">{p}</button>'
+        for p, n in [('6M',26),('1Y',52),('2Y',104),('3Y',156),('5Y',260),('ВСЕ',999999)])
+
+    body = (
+        '<div class="tb-wrap">'
+        + asset_bar +
+        '<div class="tb-hdr">'
+        '<div class="tb-hl"><span class="tb-name" id="tblName">—</span>'
+        '<span class="tb-meta" id="tblMeta"></span></div>'
+        '<div class="tb-pers">' + per_btns + '</div>'
+        '</div>'
+        '<div class="tb-scroll"><table class="dt" id="dtTable">'
+        + thead +
+        '<tbody class="tb-stats" id="dtStats"></tbody>'
+        '<tbody id="dtBody"></tbody>'
+        '</table></div></div>'
+    )
+    return TBL_CSS + head_js + body + data_js + TBL_JS
+
+
+TBL_CSS = """
+<style>
+/* ── v29 TABLE TAB ── */
+.tb-wrap{padding:12px 16px;}
+.tb-assets{display:flex;flex-wrap:wrap;align-items:center;gap:3px;padding:8px 10px;
+  background:var(--bg2);border:1px solid var(--bd);border-radius:5px;margin-bottom:10px;}
+.tb-grp{font-size:9px;font-weight:bold;letter-spacing:1px;margin:0 6px 0 10px;}
+.tb-grp:first-child{margin-left:0;}
+.tb-a{padding:2px 8px;border:1px solid transparent;border-radius:3px;background:transparent;
+  color:#b0bcd4;font-family:var(--f);font-size:11px;cursor:pointer;transition:all .12s;}
+.tb-a:hover{color:#fff;border-color:var(--bd);}
+.tb-a.active{background:var(--bg3);color:var(--accent);border-color:var(--accent);font-weight:bold;}
+.tb-hdr{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;
+  padding:9px 14px;background:var(--bg2);border:1px solid var(--bd);border-radius:5px 5px 0 0;
+  border-bottom:none;}
+.tb-hl{display:flex;align-items:baseline;gap:10px;}
+.tb-name{font-size:13px;font-weight:bold;color:#fff;letter-spacing:.8px;}
+.tb-meta{font-size:9px;color:var(--d);}
+.tb-pers{display:flex;gap:3px;}
+.tb-per{padding:3px 11px;border:1px solid var(--bd);border-radius:3px;background:transparent;
+  color:#b0bcd4;font-family:var(--f);font-size:10px;cursor:pointer;}
+.tb-per:hover{border-color:var(--accent);color:#fff;}
+.tb-per.active{background:var(--bg3);color:var(--accent);border-color:var(--accent);font-weight:bold;}
+.tb-scroll{overflow:auto;max-height:calc(100vh - 210px);background:var(--bg2);
+  border:1px solid var(--bd);border-radius:0 0 5px 5px;}
+table.dt{border-collapse:separate;border-spacing:0;font-size:18px;white-space:nowrap;}
+table.dt th{padding:7px 15px;font-weight:normal;font-size:14px;letter-spacing:.6px;
+  text-align:right;background:var(--bg3);position:sticky;z-index:4;}
+table.dt tr.tb-r1 th{top:0;height:38px;text-align:center;}
+table.dt tr.tb-r2 th{top:38px;color:var(--d);border-bottom:1px solid var(--bd);}
+table.dt th.tb-corner{left:0;z-index:6;top:0;text-align:left;color:var(--d);
+  border-right:1px solid var(--bd);border-bottom:1px solid var(--bd);}
+table.dt td{padding:6px 15px;text-align:right;border-bottom:1px solid rgba(52,61,90,.45);
+  border-right:1px solid rgba(128,144,176,.10);color:#9fabc7;}
+table.dt td.tb-date{position:sticky;left:0;z-index:3;background:var(--bg3);color:var(--d);
+  text-align:left;border-right:1px solid var(--bd);}
+table.dt td.tb-sep{border-right:1px solid var(--bd);}
+/* v31: без цих правил `table.dt td{color:#fff}` перебиває класи .g/.r/.t */
+table.dt td.d{color:var(--d);}
+table.dt td.g{color:var(--g);}
+table.dt td.r{color:var(--r);}
+table.dt td.t{color:#9fabc7;}
+table.dt tbody.tb-stats td{background:var(--bg3);font-size:16px;
+  border-bottom:1px solid rgba(52,61,90,.9);}
+table.dt tbody.tb-stats tr:last-child td{border-bottom:3px solid var(--bd);}
+table.dt tbody.tb-stats td.tb-date{font-size:14px;letter-spacing:.5px;font-weight:bold;}
+table.dt tbody.tb-stats tr.tb-dim td{opacity:.72;}
+table.dt tbody#dtBody tr:hover td{box-shadow:inset 0 1px 0 rgba(255,255,255,.25),
+  inset 0 -1px 0 rgba(255,255,255,.25);}
+table.dt tbody#dtBody tr:hover td.tb-date{box-shadow:inset 0 1px 0 rgba(255,255,255,.25),
+  inset 0 -1px 0 rgba(255,255,255,.25),inset 3px 0 0 var(--accent);}
+.tb-badge{font-size:13px;padding:2px 10px;border-radius:10px;font-weight:bold;}
+.tb-bd-y{background:rgba(32,212,131,.15);border:1px solid #20d483;color:#20d483;}
+.tb-bd-c{background:rgba(240,180,41,.15);border:1px solid #f0b429;color:#f0b429;}
+.tb-bd-v{background:rgba(240,81,90,.18);border:1px solid #f0515a;color:#f0515a;}
+</style>
+"""
+
+TBL_JS = """
+<script>
+let _tblCur='',_tblN=26;
+
+function tblFmtInt(v){if(v==null)return'—';const s=v<0?'-':'';
+  return s+Math.abs(v).toLocaleString('uk-UA');}
+function tblFmtSign(v){if(v==null)return'—';if(v===0)return'—';
+  const s=v>0?'+':'-';return s+Math.abs(v).toLocaleString('uk-UA');}
+function tblFmtPct(v){if(v==null)return'—';const f=v/10;
+  if(!isFinite(f)||Math.abs(f)>999)return'—';return(f>0?'+':'')+f.toFixed(1)+'%';}
+function tblFmtCot(v){if(v==null)return'—';const f=v/10;
+  if(!isFinite(f)||f<-5||f>105)return'—';return f.toFixed(0)+'%';}
+function tblFmtRatio(v){if(v==null)return'—';const f=v/1000;
+  if(!isFinite(f))return'—';return(f>0?'+':'')+f.toFixed(2);}
+function tblCls(v){return v>0?'g':(v<0?'r':'d');}
+
+// градієнт фону для колонок CHG — як у тижневій таблиці Legacy
+function tblBg(v,mx){
+  if(v==null||v===0||!mx)return'';
+  const o=(0.10+Math.min(Math.abs(v)/mx,1)*0.62).toFixed(2);
+  return v>0?' style="background:rgba(32,212,131,'+o+')"'
+            :' style="background:rgba(240,81,90,'+o+')"';
+}
+
+// ── КОЛІРНА СХЕМА v34 ───────────────────────────────────────────
+// TB_SCALE: 'pct' — позиція = перцентиль (скільки % тижнів були нижчими);
+//           'lin' — позиція = лінійна частка між історичними min і max.
+const TB_SCALE='lin';
+// Смуги відкалібровані по референсу: межі 12 / 24 / 36 % діапазону min..max.
+// Сіра зона навмисно НЕ по центру — LONG/SHORT мають скошений розподіл,
+// більшість історії лежить у нижній третині діапазону.
+// [верхня межа позиції у %, [r,g,b]]
+const TB_BANDS=[[ 12,[240, 81, 90]],  // максимально червоний
+                [ 24,[196,120,132]],  // червоний
+                [ 36,[159,171,199]],  // сірий
+                [ 48,[122,187,166]],  // слабо зелений
+                [ 60,[ 70,200,142]],  // зелений
+                [100,[ 32,212,131]]]; // максимально зелений
+// межі сірої зони — використовуються ще й для фону
+const TB_NEU_LO=24, TB_NEU_HI=36;
+const _TB_NEU='#9fabc7';
+// смуги для CHG: |Δ| у % від історичного максимуму по модулю
+const TB_CHG_BANDS=[4,19,60];
+// фон вмикається лише після TB_BG_START (частка 0..1) і росте до TB_BG_MAX
+const TB_BG_START=0.65, TB_BG_MAX=0.50;
+
+function _tbHex(c){return'#'+c.map(x=>x.toString(16).padStart(2,'0')).join('');}
+// перцентильний ранг: яка частка тижнів мала значення менше за v (0..1)
+function tblRank(v,arr){
+  let lo=0,hi=arr.length;
+  while(lo<hi){const m=(lo+hi)>>1;if(arr[m]<v)lo=m+1;else hi=m;}
+  return arr.length>1?lo/(arr.length-1):0.5;
+}
+// позиція значення в історії колонки, 0..100
+function tblPos(v,rg){
+  if(!rg)return 50;
+  if(TB_SCALE==='lin'){
+    if(rg.mx==null||rg.mn==null||rg.mx===rg.mn)return 50;
+    return Math.max(0,Math.min(100,(v-rg.mn)/(rg.mx-rg.mn)*100));
+  }
+  if(!rg.srt||rg.srt.length<3)return 50;
+  return tblRank(v,rg.srt)*100;
+}
+// колір цифри за смугами; inv=1 для SHORT (дзеркально)
+function tblBandColor(p,inv){
+  const x=inv?100-p:p;
+  for(let i=0;i<TB_BANDS.length;i++)if(x<=TB_BANDS[i][0])return _tbHex(TB_BANDS[i][1]);
+  return _tbHex(TB_BANDS[TB_BANDS.length-1][1]);
+}
+// колір цифри для CHG за величиною зміни
+function tblChgColor(r){
+  const a=Math.abs(r);
+  if(a<TB_CHG_BANDS[0])return _TB_NEU;              // < 4%  — сірий
+  const g=r>0;
+  if(a<TB_CHG_BANDS[1])return _tbHex(g?[122,187,166]:[196,120,132]);  // 4–19%  слабий
+  if(a<TB_CHG_BANDS[2])return _tbHex(g?[ 70,200,142]:[224, 97,110]);  // 19–60% звичайний
+  return _tbHex(g?[32,212,131]:[240,81,90]);                          // > 60%  максимальний
+}
+// фон для LONG/SHORT/NET: усередині сірої зони фону немає,
+// далі росте пропорційно віддаленню до відповідного краю діапазону
+const TB_POS_BG_MAX=0.45, TB_POS_BG_GAMMA=1.3;
+function tblBgPos(x){
+  let str,pos;
+  if(x<TB_NEU_LO){str=(TB_NEU_LO-x)/TB_NEU_LO;pos=false;}
+  else if(x>TB_NEU_HI){str=(x-TB_NEU_HI)/(100-TB_NEU_HI);pos=true;}
+  else return'';
+  const o=TB_POS_BG_MAX*Math.pow(str,TB_POS_BG_GAMMA);
+  if(o<0.012)return'';
+  return'background:rgba('+(pos?'32,212,131':'240,81,90')+','+o.toFixed(3)+');';
+}
+// фон-підсвітка: str 0..1 — наскільки близько до краю; pos=true -> зелений
+function tblBgFill(str,pos){
+  if(!(str>TB_BG_START))return'';
+  const o=((str-TB_BG_START)/(1-TB_BG_START)*TB_BG_MAX).toFixed(2);
+  return'background:rgba('+(pos?'32,212,131':'240,81,90')+','+o+');';
+}
+// фон для CHG: непрозорість лінійно від |Δ| / історичний максимум |Δ|.
+// Тінт є майже всюди, слабкий для звичайних тижнів і сильний для рідкісних.
+const TB_CHG_BG_MAX=0.45, TB_CHG_BG_GAMMA=1.0;
+function tblBgChg(v,rg){
+  const mxa=(rg&&rg.mxa)?rg.mxa:0;
+  if(!mxa)return'';
+  const o=TB_CHG_BG_MAX*Math.pow(Math.min(Math.abs(v)/mxa,1),TB_CHG_BG_GAMMA);
+  if(o<0.012)return'';
+  return'background:rgba('+(v>0?'32,212,131':'240,81,90')+','+o.toFixed(3)+');';
+}
+// %NET/OI та %OI CHG: >+30% зелений, <-30% червоний, решта — дефолт
+function tblPctCls(v){const f=v/10;return f>30?'g':(f<-30?'r':'t');}
+
+function tblCell(kind,v,mx,sep,rg,gc,inv){
+  const sp=sep?' tb-sep':'';
+  const nb=' border-left:2px solid '+(gc||'#343d5a')+';border-right:2px solid '+(gc||'#343d5a')+';';
+  if(kind==='txt'){
+    if(!v)return'<td class="d'+sp+'">—</td>';
+    const low=String(v).toLowerCase();
+    let c='tb-bd-y';
+    if(low.indexOf('very')>=0)c='tb-bd-v';
+    else if(low.indexOf('crowd')>=0)c='tb-bd-c';
+    return'<td class="'+sp.trim()+'"><span class="tb-badge '+c+'">'+v+'</span></td>';
+  }
+  if(v==null)return'<td class="d'+sp+'"'+(kind==='net'?' style="'+nb+'"':'')+'>—</td>';
+  if(kind==='int')  return'<td class="t'+sp+'">'+tblFmtInt(v)+'</td>';
+  if(kind==='grad'||kind==='net'){
+    const p=tblPos(v,rg);
+    const col=tblBandColor(p,inv);
+    const bg=tblBgPos(inv?100-p:p);
+    const bold=(kind==='net')?'font-weight:bold;':'';
+    const brd=(kind==='net')?nb:'';
+    const txt=(kind==='net')?tblFmtSign(v):tblFmtInt(v);
+    return'<td class="'+sp.trim()+'" style="'+bold+brd+bg+'color:'+col+'">'+txt+'</td>';
+  }
+  if(kind==='oi'){
+    const ath=(rg&&rg.mx!=null&&v>=rg.mx);
+    return'<td class="'+(ath?'g':'t')+sp+'"'+(ath?' style="font-weight:bold"':'')
+          +'>'+tblFmtInt(v)+'</td>';
+  }
+  if(kind==='chg'){
+    const mxa=(rg&&rg.mxa)?rg.mxa:1;
+    const r=v/mxa*100;
+    const bg=tblBgChg(v,rg);
+    return'<td class="'+sp.trim()+'" style="'+bg+'color:'+tblChgColor(r)+'">'
+          +tblFmtSign(v)+'</td>';
+  }
+  if(kind==='pct')  return'<td class="'+tblPctCls(v)+sp+'">'+tblFmtPct(v)+'</td>';
+  if(kind==='ratio')return'<td class="'+tblCls(v)+sp+'">'+tblFmtRatio(v)+'</td>';
+  if(kind==='cot'){
+    const cl=v>850?'g':(v<150?'r':'t');
+    return'<td class="'+cl+sp+'">'+tblFmtCot(v)+'</td>';
+  }
+  return'<td'+sp+'>'+v+'</td>';
+}
+
+// підсумкові рядки: MAX/MIN за весь час, MAX/MIN за 5 років, середнє за 13 тижнів
+function tblStatsRows(d){
+  const S=window._TBL_SPEC,N=d.d.length;
+  const defs=[['MAX (ALL)',N,'max',''],['MIN (ALL)',N,'min',''],
+              ['MAX (5Y)',Math.min(260,N),'max',' tb-dim'],
+              ['MIN (5Y)',Math.min(260,N),'min',' tb-dim'],
+              ['AVG 13W',Math.min(13,N),'avg',' tb-dim']];
+  let html='';
+  for(const[lbl,lim,mode,cls]of defs){
+    let tds='<td class="tb-date">'+lbl+'</td>';
+    for(let ci=0;ci<S.length;ci++){
+      const k=S[ci].k,sep=S[ci].s?' tb-sep':'';
+      if(k==='txt'){tds+='<td class="d'+sep+'">—</td>';continue;}
+      const col=d.c[ci];let acc=null,sum=0,cnt=0;
+      for(let i=0;i<lim;i++){
+        const v=col[i];if(v==null)continue;
+        if(mode==='max')acc=(acc==null||v>acc)?v:acc;
+        else if(mode==='min')acc=(acc==null||v<acc)?v:acc;
+        else{sum+=v;cnt++;}
+      }
+      if(mode==='avg')acc=cnt?Math.round(sum/cnt):null;
+      let txt='—',c='d';
+      if(acc!=null){
+        if(k==='int'||k==='oi'||k==='grad'){txt=tblFmtInt(acc);c='t';}
+        else if(k==='pct'){txt=tblFmtPct(acc);c=tblPctCls(acc);}
+        else if(k==='cot'){txt=tblFmtCot(acc);c=acc>850?'g':(acc<150?'r':'t');}
+        else if(k==='ratio'){txt=tblFmtRatio(acc);c=tblCls(acc);}
+        else{txt=tblFmtSign(acc);c=tblCls(acc);}
+      }
+      const st=(k==='net')?' style="border-left:2px solid '+S[ci].c
+                +';border-right:2px solid '+S[ci].c+'"':'';
+      tds+='<td class="'+c+sep+'"'+st+'>'+txt+'</td>';
+    }
+    html+='<tr class="'+cls.trim()+'">'+tds+'</tr>';
+  }
+  return html;
+}
+
+function tblRender(){
+  const d=_tbl[_tblCur];
+  const body=document.getElementById('dtBody');
+  const stats=document.getElementById('dtStats');
+  if(!d||!body)return;
+  const S=window._TBL_SPEC,N=d.d.length,n=Math.min(_tblN,N);
+
+  // максимум по модулю для градієнта (тільки по видимих рядках)
+  const mx=S.map((sp,ci)=>{
+    if(sp.k!=='chg')return 0;
+    let m=0;const col=d.c[ci];
+    for(let i=0;i<n;i++){const v=col[i];if(v!=null&&Math.abs(v)>m)m=Math.abs(v);}
+    return m||1;
+  });
+
+  // діапазон min/max за ВСЮ історію — для градієнта NET та підсвітки ATH по OI
+  const rg=S.map((sp,ci)=>{
+    if(sp.k!=='net'&&sp.k!=='oi'&&sp.k!=='grad'&&sp.k!=='chg')return null;
+    const col=d.c[ci],arr=[];
+    for(let i=0;i<N;i++){const v=col[i];if(v!=null)arr.push(v);}
+    if(!arr.length)return null;
+    let mxa=0;for(let i=0;i<arr.length;i++){const a=Math.abs(arr[i]);if(a>mxa)mxa=a;}
+    arr.sort((a,b)=>a-b);
+    return{mn:arr[0],mx:arr[arr.length-1],srt:arr,mxa:mxa||1};
+  });
+
+  const parts=[];
+  for(let i=0;i<n;i++){
+    parts.push('<tr><td class="tb-date">'+d.d[i]+'</td>');
+    for(let ci=0;ci<S.length;ci++){
+      const k=S[ci].k;
+      parts.push(tblCell(k,d.c[ci][i],mx[ci],S[ci].s,rg[ci],S[ci].c,S[ci].i));
+    }
+    parts.push('</tr>');
+  }
+  stats.innerHTML=tblStatsRows(d);
+  body.innerHTML=parts.join('');
+
+  const nm=document.getElementById('tblName');
+  const mt=document.getElementById('tblMeta');
+  if(nm)nm.textContent=_tblName[_tblCur]||_tblCur;
+  if(mt)mt.textContent=N+' тижнів  ·  '+(d.d[N-1]||'—')+' → '+(d.d[0]||'—')
+        +'  ·  показано '+n;
+}
+
+function tblSel(sid,btn){
+  _tblCur=sid;
+  document.querySelectorAll('.tb-a').forEach(b=>b.classList.remove('active'));
+  if(btn)btn.classList.add('active');
+  else{const b=document.querySelector('.tb-a[data-sid="'+sid+'"]');if(b)b.classList.add('active');}
+  tblRender();
+  const sc=document.querySelector('.tb-scroll');if(sc)sc.scrollTop=0;
+}
+function tblPer(btn){
+  document.querySelectorAll('.tb-per').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  _tblN=parseInt(btn.dataset.n);
+  tblRender();
+}
+window.tblInit=function(){
+  if(_tblCur)return;
+  const sid=window._TBL_FIRST;
+  if(sid&&_tbl[sid])tblSel(sid,null);
+};
+</script>
+"""
+
+
 AUTH_MODAL_HTML = """
 <div class="auth-overlay" id="authOverlay" onclick="if(event.target===this)closeAuth()">
   <div class="auth-box">
@@ -1691,6 +2175,7 @@ def generate_html(data, tff_data=None, disag_data=None, crop_data=None):
         cat_sects.append(f'<div class="catsec{act}" id="cs_{cat}"><div class="itabs" id="itabs_{cat}">{inst_btns}</div><div class="iviews" id="iv_{cat}">{views}</div></div>')
         first_cat=False
     ov_html=make_overview_tab()
+    tbl_html=make_table_tab(data)
     db='<span class="dash-b">DAS</span><span class="dash-g">HBO</span><span class="dash-r">ARD</span>'
     badge=f' <span class="tff-badge">{len(tff_data)} TFF</span>' if tff_data else ''
     dg_badge=f' <span class="dg-badge">{len(disag_data)} DG</span>' if disag_data else ''
@@ -1706,9 +2191,11 @@ def generate_html(data, tff_data=None, disag_data=None, crop_data=None):
            +f'</div></header>'
            +f'<div class="main-tabs">'
            +f'<button class="mtab" data-mt="ov" onclick="selMain(\'ov\')">Overview</button>'
+           +f'<button class="mtab" data-mt="tbl" onclick="selMain(\'tbl\')">📊 Table</button>'
            +f'<button class="mtab active" data-mt="cot" onclick="selMain(\'cot\')">COT Dashboard</button>'
            +f'<button class="mtab" data-mt="crop" onclick="selMain(\'crop\')">🌾 Crop Progress</button></div>'
            +f'<div class="main-sec" id="ms_ov"><div style="padding:16px 24px">{ov_html}</div></div>'
+           +f'<div class="main-sec" id="ms_tbl">{tbl_html}</div>'
            +f'<div class="main-sec active" id="ms_cot"><div class="ctabs">{"".join(cat_tabs)}</div>{"".join(cat_sects)}</div>'
            +f'<div class="main-sec" id="ms_crop">{make_crop_tab(crop_data) if crop_data else ""}</div>'
            +f'<div class="footer">COT DASHBOARD &bull; CFTC LEGACY + TFF + DISAGGREGATED &bull; {updated}</div>'
@@ -1752,6 +2239,7 @@ function selMain(mt){
   document.getElementById('ms_'+mt).classList.add('active');
   if(mt==='cot'){const fc=document.querySelector('.ctab');if(fc)selCat(fc.dataset.c);}
   if(mt==='ov'){if(window._ovSmInit)initOvSmChart(_ovSmKey||'div');}
+  if(mt==='tbl'){if(window.tblInit)tblInit();}
   if(mt==='crop'){const f=document.querySelector('.cp-tab.active');if(f)f.click();}
 }
 

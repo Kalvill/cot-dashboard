@@ -1,98 +1,290 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-fix_v28.py — COT INDEX gauge:
-  • число більше (з 18px до ~21px при size=62), але ГАРАНТОВАНО в межах дуги
-    — розмір шрифту підбирається автоматично під довжину числа
-  • значення показується цілим (100 замість 100.0) — саме це дозволяє
-    збільшити шрифт: "100.0" це 5 символів = 54px при fs=18, а корисна
-    ширина всередині дуги лише ~39px
-  • підпис (COT ALL / COT 3Y / COT 1Y) збільшено з 7.1px до ~9.6px
+fix_v38.py — вкладка TABLE: неоновий шрифт, автомасштаб під екран,
+              фон для %-колонок, перероблені підсумкові рядки
+(потрібні fix_v29 … fix_v37)
 
-Запускати з папки проекту:
-    python fix_v28.py
+Зміни:
+  1. Шрифт жирний + легке неонове світіння (text-shadow власним кольором).
+  2. АВТОМАСШТАБ: після рендеру JS міряє сумарну ширину колонок до
+     OPEN INTEREST включно і підбирає розмір шрифту так, щоб вони точно
+     вміщались у видиму область. Працює на будь-якій ширині екрана
+     (обмеження 9–26px), перераховується при зміні розміру вікна.
+     Усі відступи переведено в em, тож масштабуються разом зі шрифтом.
+  3. %NET/OI та %OI CHG (у т.ч. в групі OPEN INTEREST) отримали фон.
+     Шкала — частка від «робастного максимуму» (90-й перцентиль |v| за
+     всю історію), бо звичайний максимум у %OI CHG буває 18 873% і
+     занулив би всі інші комірки.
+  4. Фон NET POSITION зроблено менш вираженим: стеля 0.45 -> 0.32.
+     Кольори не змінені.
+  5. Підсумкові рядки:
+       AVG 13W прибрано;
+       MAX (ALL) — насичений зелений, MAX (5Y) — приглушений;
+       MIN (ALL) — насичений червоний, MIN (5Y) — приглушений;
+       усі клітинки рядка одного кольору, порожніх більше немає
+       (ліміт форматування % піднято з 999% до 99 999%).
+  6. Заголовки колонок (ДАТА, LONG, SHORT, NET POS …) стали білими.
 
-Ідемпотентний, робить бекап, відкочується при синтаксичній помилці.
+Скрипт ідемпотентний. Запускати з папки проєкту:
+    python fix_v38.py
 """
-import sys, shutil
+import shutil, sys
 from pathlib import Path
 from datetime import datetime
 
-GEN = Path("generate.py")
-if not GEN.exists():
-    print("❌  generate.py не знайдено. Запусти з папки проекту.")
-    sys.exit(1)
+SRC = Path(__file__).parent / "generate.py"
 
-src = GEN.read_text(encoding="utf-8")
-orig = src
-applied, skipped = [], []
+OLD_CSS = """table.dt{border-collapse:separate;border-spacing:0;font-size:18px;white-space:nowrap;}
+table.dt th{padding:7px 15px;font-weight:normal;font-size:14px;letter-spacing:.6px;
+  text-align:right;background:var(--bg3);position:sticky;z-index:4;}
+table.dt tr.tb-r1 th{top:0;height:38px;text-align:center;}
+table.dt tr.tb-r2 th{top:38px;color:var(--d);border-bottom:1px solid var(--bd);}
+table.dt th.tb-corner{left:0;z-index:6;top:0;text-align:left;color:var(--d);
+  border-right:1px solid var(--bd);border-bottom:1px solid var(--bd);}
+table.dt td{padding:6px 15px;text-align:right;border-bottom:1px solid rgba(52,61,90,.45);
+  border-right:1px solid rgba(128,144,176,.10);color:#9fabc7;}
+table.dt td.tb-date{position:sticky;left:0;z-index:3;background:var(--bg3);color:var(--d);
+  text-align:left;border-right:1px solid var(--bd);}"""
 
-def need(anchor, step):
-    if anchor not in src:
-        print(f"❌  Крок {step}: anchor не знайдено:\n    {anchor[:100]}")
-        print("    (спочатку має бути застосований fix_v27.py)")
-        sys.exit(1)
+NEW_CSS = """/* v38: розмір шрифту виставляє JS (tblFit), відступи в em — масштабуються разом */
+table.dt{border-collapse:separate;border-spacing:0;font-size:18px;white-space:nowrap;}
+table.dt th{padding:.42em .85em;font-weight:bold;font-size:.78em;letter-spacing:.6px;
+  text-align:right;background:var(--bg3);position:sticky;z-index:4;
+  text-shadow:0 0 4px currentColor;}
+table.dt tr.tb-r1 th{top:0;text-align:center;}
+table.dt tr.tb-r2 th{top:38px;color:#fff;border-bottom:1px solid var(--bd);}
+table.dt th.tb-corner{left:0;z-index:6;top:0;text-align:left;color:#fff;
+  border-right:1px solid var(--bd);border-bottom:1px solid var(--bd);}
+table.dt td{padding:.34em .84em;text-align:right;border-bottom:1px solid rgba(52,61,90,.45);
+  border-right:1px solid rgba(128,144,176,.10);color:#9fabc7;
+  font-weight:bold;text-shadow:0 0 4px currentColor;}
+table.dt td.tb-date{position:sticky;left:0;z-index:3;background:var(--bg3);color:var(--d);
+  text-align:left;border-right:1px solid var(--bd);}"""
 
-# ════════════════════════════════════════════════════════════════
-# КРОК 1 — Адаптивний розмір числа + більший підпис
-# ════════════════════════════════════════════════════════════════
-if "val_txt=" in src:
-    skipped.append("1) Розміри тексту gauge (вже v28)")
-else:
-    old_sizes = """    val_fs=round(size*0.29,1)    # велике число в центрі
-    lbl_fs=round(size*0.115,1)   # маленький підпис під дугою
-    val_y =round(cy+val_fs*0.35,1)
-    lbl_y =round(cy+r+lbl_fs*0.95,1)"""
+OLD_STATS_CSS = """table.dt tbody.tb-stats td{background:var(--bg3);font-size:16px;
+  border-bottom:1px solid rgba(52,61,90,.9);}
+table.dt tbody.tb-stats tr:last-child td{border-bottom:3px solid var(--bd);}
+table.dt tbody.tb-stats td.tb-date{font-size:14px;letter-spacing:.5px;font-weight:bold;}
+table.dt tbody.tb-stats tr.tb-dim td{opacity:.72;}"""
 
-    new_sizes = """    # v28: розмір числа підбирається так, щоб воно завжди вміщалось у дугу.
-    # Ціле число (макс. 3 символи "100") дозволяє більший шрифт, ніж "100.0".
-    val_txt=f"{value:.0f}"
-    inner_w=2*(r-1.5-2.0)                        # діаметр мінус обведення і відступ
-    fs_fit =inner_w/(max(len(val_txt),1)*0.60)   # Courier: ширина символу ~0.6em
-    val_fs =round(min(size*0.34,fs_fit),1)       # більше ніж було, але без виходу за дугу
-    lbl_fs =round(size*0.155,1)                  # більший підпис
-    val_y  =round(cy+val_fs*0.35,1)
-    lbl_y  =round(cy+r+lbl_fs*0.80,1)"""
-    need(old_sizes, 1)
-    src = src.replace(old_sizes, new_sizes, 1)
-    applied.append("1) Число gauge — адаптивний розмір, завжди в межах дуги")
-    applied.append("2) Підпис (COT ALL / 3Y / 1Y) збільшено")
+NEW_STATS_CSS = """table.dt tbody.tb-stats td{background:var(--bg3);font-size:.9em;
+  border-bottom:1px solid rgba(52,61,90,.9);}
+table.dt tbody.tb-stats tr:last-child td{border-bottom:3px solid var(--bd);}
+table.dt tbody.tb-stats td.tb-date{font-size:.8em;letter-spacing:.5px;font-weight:bold;}"""
 
-# ════════════════════════════════════════════════════════════════
-# КРОК 2 — Виводимо val_txt замість {value:.1f}
-# ════════════════════════════════════════════════════════════════
-if ">{val_txt}</text>" in src:
-    skipped.append("3) Вивід цілого числа (вже v28)")
-else:
-    old_txt = 'font-weight="bold" fill="{color}">{value:.1f}</text>'
-    new_txt = 'font-weight="bold" fill="{color}">{val_txt}</text>'
-    need(old_txt, 2)
-    src = src.replace(old_txt, new_txt, 1)
-    applied.append("3) Значення виводиться цілим (100 замість 100.0)")
+OLD_BADGE = ".tb-badge{font-size:13px;padding:2px 10px;border-radius:10px;font-weight:bold;}"
+NEW_BADGE = ".tb-badge{font-size:.72em;padding:.12em .55em;border-radius:10px;font-weight:bold;}"
 
-# ════════════════════════════════════════════════════════════════
-if src == orig:
-    print("\nℹ️  Нічого не змінено — все вже застосовано.")
-    for s in skipped: print("   ⏭ ", s)
-    sys.exit(0)
+OLD_STATS_JS = """function tblStatsRows(d){
+  const S=window._TBL_SPEC,N=d.d.length;
+  const defs=[['MAX (ALL)',N,'max',''],['MIN (ALL)',N,'min',''],
+              ['MAX (5Y)',Math.min(260,N),'max',' tb-dim'],
+              ['MIN (5Y)',Math.min(260,N),'min',' tb-dim'],
+              ['AVG 13W',Math.min(13,N),'avg',' tb-dim']];
+  let html='';
+  for(const[lbl,lim,mode,cls]of defs){
+    let tds='<td class="tb-date">'+lbl+'</td>';
+    for(let ci=0;ci<S.length;ci++){
+      const k=S[ci].k,sep=S[ci].s?' tb-sep':'';
+      if(k==='txt'){tds+='<td class="d'+sep+'">—</td>';continue;}
+      const col=d.c[ci];let acc=null,sum=0,cnt=0;
+      for(let i=0;i<lim;i++){
+        const v=col[i];if(v==null)continue;
+        if(mode==='max')acc=(acc==null||v>acc)?v:acc;
+        else if(mode==='min')acc=(acc==null||v<acc)?v:acc;
+        else{sum+=v;cnt++;}
+      }
+      if(mode==='avg')acc=cnt?Math.round(sum/cnt):null;
+      let txt='—',c='d';
+      if(acc!=null){
+        if(k==='int'||k==='oi'||k==='grad'){txt=tblFmtInt(acc);c='t';}
+        else if(k==='pct'){txt=tblFmtPct(acc);c=tblPctCls(acc);}
+        else if(k==='cot'){txt=tblFmtCot(acc);c=acc>850?'g':(acc<150?'r':'t');}
+        else if(k==='ratio'){txt=tblFmtRatio(acc);c=tblCls(acc);}
+        else{txt=tblFmtSign(acc);c=tblCls(acc);}
+      }
+      const st=(k==='net')?' style="border-left:2px solid '+S[ci].c
+                +';border-right:2px solid '+S[ci].c+'"':'';
+      tds+='<td class="'+c+sep+'"'+st+'>'+txt+'</td>';
+    }
+    html+='<tr class="'+cls.trim()+'">'+tds+'</tr>';
+  }
+  return html;
+}"""
 
-bak = GEN.with_suffix(f".py.bak_v28_{datetime.now():%Y%m%d_%H%M%S}")
-shutil.copy2(GEN, bak)
-GEN.write_text(src, encoding="utf-8")
+NEW_STATS_JS = """// Підсумкові рядки. Кожен рядок цілком одного кольору:
+// MAX(ALL) насичений зелений, MAX(5Y) приглушений; MIN — дзеркально червоним.
+const TB_STAT_ROWS=[['MAX (ALL)',0,'max','#20d483'],
+                    ['MIN (ALL)',0,'min','#f0515a'],
+                    ['MAX (5Y)',260,'max','#7abba6'],
+                    ['MIN (5Y)',260,'min','#c47884']];
+function tblStatsRows(d){
+  const S=window._TBL_SPEC,N=d.d.length;
+  let html='';
+  for(const[lbl,win,mode,rcol]of TB_STAT_ROWS){
+    const lim=win?Math.min(win,N):N;
+    let tds='<td class="tb-date" style="color:'+rcol+'">'+lbl+'</td>';
+    for(let ci=0;ci<S.length;ci++){
+      const k=S[ci].k,sep=S[ci].s?' tb-sep':'';
+      const brd=(k==='net')?'border-left:2px solid '+S[ci].c
+                +';border-right:2px solid '+S[ci].c+';':'';
+      if(k==='txt'){
+        tds+='<td class="'+sep.trim()+'" style="'+brd+'color:'+rcol+'">—</td>';continue;
+      }
+      const col=d.c[ci];let acc=null;
+      for(let i=0;i<lim;i++){
+        const v=col[i];if(v==null)continue;
+        if(mode==='max')acc=(acc==null||v>acc)?v:acc;
+        else acc=(acc==null||v<acc)?v:acc;
+      }
+      let txt='—';
+      if(acc!=null){
+        if(k==='int'||k==='oi'||k==='grad')txt=tblFmtInt(acc);
+        else if(k==='pct')txt=tblFmtPct(acc);
+        else if(k==='cot')txt=tblFmtCot(acc);
+        else if(k==='ratio')txt=tblFmtRatio(acc);
+        else txt=tblFmtSign(acc);
+      }
+      tds+='<td class="'+sep.trim()+'" style="'+brd+'color:'+rcol+'">'+txt+'</td>';
+    }
+    html+='<tr>'+tds+'</tr>';
+  }
+  return html;
+}
 
-print("\n✅  Патч v28 застосовано.")
-print(f"   Бекап: {bak.name}\n")
-for s in applied: print("   ✓", s)
-for s in skipped: print("   ⏭", s)
+// ── Автомасштаб: підбирає розмір шрифту так, щоб колонки до OPEN INTEREST
+// включно вміщались у видиму ширину на будь-якому екрані ──
+const TB_FIT_COLS=24, TB_FIT_BASE=18, TB_FIT_MIN=9, TB_FIT_MAX=26;
+function tblFit(){
+  const tbl=document.getElementById('dtTable'),sc=document.querySelector('.tb-scroll');
+  if(!tbl||!sc)return;
+  tbl.style.fontSize=TB_FIT_BASE+'px';
+  const row=tbl.querySelector('tbody#dtBody tr')||tbl.querySelector('tbody tr');
+  if(row){
+    let w=0;const n=Math.min(TB_FIT_COLS,row.children.length);
+    for(let i=0;i<n;i++)w+=row.children[i].getBoundingClientRect().width;
+    const avail=sc.clientWidth-2;
+    if(w>0&&avail>0){
+      let fs=TB_FIT_BASE*avail/w;
+      fs=Math.max(TB_FIT_MIN,Math.min(TB_FIT_MAX,fs));
+      tbl.style.fontSize=fs.toFixed(2)+'px';
+    }
+  }
+  // другий рядок шапки має липнути рівно під першим
+  const h1=tbl.querySelector('tr.tb-r1 th');
+  if(h1){
+    const h=h1.getBoundingClientRect().height;
+    tbl.querySelectorAll('tr.tb-r2 th').forEach(function(th){th.style.top=h+'px';});
+  }
+}
+window.addEventListener('resize',function(){
+  clearTimeout(window._tbFitT);
+  window._tbFitT=setTimeout(tblFit,150);
+});"""
 
-import py_compile
-try:
-    py_compile.compile(str(GEN), doraise=True)
-    print("\n✅  generate.py компілюється без помилок.")
-except py_compile.PyCompileError as e:
-    print("\n❌  Синтаксична помилка:\n", e)
-    shutil.copy2(bak, GEN)
-    print("   Відкочено з бекапу. Надішли текст помилки.")
-    sys.exit(1)
+EDITS = [
+    ("CSS: неон + em-відступи + білі заголовки", "text-shadow:0 0 4px currentColor;", [
+        (OLD_CSS, NEW_CSS)]),
+    ("CSS: підсумкові рядки в em", "tbody.tb-stats td{background:var(--bg3);font-size:.9em;", [
+        (OLD_STATS_CSS, NEW_STATS_CSS)]),
+    ("CSS: бейджі в em", ".tb-badge{font-size:.72em;", [
+        (OLD_BADGE, NEW_BADGE)]),
 
-print("\n▶  Далі: python generate.py")
+    ("ліміт форматування %", "Math.abs(f)>99999", [
+        ("""function tblFmtPct(v){if(v==null)return'—';const f=v/10;
+  if(!isFinite(f)||Math.abs(f)>999)return'—';return(f>0?'+':'')+f.toFixed(1)+'%';}""",
+         """function tblFmtPct(v){if(v==null)return'—';const f=v/10;
+  if(!isFinite(f)||Math.abs(f)>99999)return'—';return(f>0?'+':'')+f.toFixed(1)+'%';}""")]),
+
+    ("фон NET менш виражений", "TB_POS_BG_MAX=0.32", [
+        ("const TB_POS_BG_MAX=0.45, TB_POS_BG_GAMMA=1.3;",
+         "const TB_POS_BG_MAX=0.32, TB_POS_BG_GAMMA=1.3;")]),
+
+    ("фон для %-колонок", "function tblBgPct(", [
+        ("""// %NET/OI та %OI CHG: >+30% зелений, <-30% червоний, решта — дефолт""",
+         """// Фон для %NET/OI та %OI CHG. Шкала — частка від «робастного максимуму»
+// (90-й перцентиль |v| за всю історію): звичайний максимум у %OI CHG
+// буває 18873% і занулив би решту комірок.
+const TB_PCT_BG_MAX=0.32;
+function tblBgPct(v,rg){
+  if(!rg||!rg.p90)return'';
+  const o=TB_PCT_BG_MAX*Math.min(Math.abs(v)/rg.p90,1);
+  if(o<0.012)return'';
+  return'background:rgba('+(v>0?'32,212,131':'240,81,90')+','+o.toFixed(3)+');';
+}
+// %NET/OI та %OI CHG: >+30% зелений, <-30% червоний, решта — дефолт""")]),
+
+    ("клітинка % з фоном", """+sp+'" style="'+tblBgPct(""", [
+        ("""  if(kind==='pct')  return'<td class="'+tblPctCls(v)+sp+'">'+tblFmtPct(v)+'</td>';""",
+         """  if(kind==='pct')  return'<td class="'+tblPctCls(v)+sp+'" style="'+tblBgPct(v,rg)
+                          +'">'+tblFmtPct(v)+'</td>';""")]),
+
+    ("діапазони для %-колонок", "p90:p90", [
+        ("""    if(sp.k!=='net'&&sp.k!=='oi'&&sp.k!=='grad'&&sp.k!=='chg')return null;""",
+         """    if(sp.k!=='net'&&sp.k!=='oi'&&sp.k!=='grad'&&sp.k!=='chg'&&sp.k!=='pct')return null;"""),
+    ]),
+    ("розрахунок p90", "asrt=null,p90=0", [
+        ("""    let asrt=null;
+    if(sp.k==='chg'){asrt=arr.map(function(x){return Math.abs(x);}).sort(function(a,b){return a-b;});}
+    arr.sort((a,b)=>a-b);
+    return{mn:arr[0],mx:arr[arr.length-1],srt:arr,mxa:mxa||1,asrt:asrt};""",
+         """    let asrt=null,p90=0;
+    if(sp.k==='chg'||sp.k==='pct'){
+      asrt=arr.map(function(x){return Math.abs(x);}).sort(function(a,b){return a-b;});
+      p90=asrt[Math.floor(0.9*(asrt.length-1))]||mxa;
+    }
+    arr.sort((a,b)=>a-b);
+    return{mn:arr[0],mx:arr[arr.length-1],srt:arr,mxa:mxa||1,asrt:asrt,p90:p90};""")]),
+
+    ("підсумкові рядки + автомасштаб", "function tblFit(){", [
+        (OLD_STATS_JS, NEW_STATS_JS)]),
+
+    ("виклик автомасштабу після рендеру", "requestAnimationFrame(tblFit)", [
+        ("""  if(mt)mt.textContent=N+' тижнів  ·  '+(d.d[N-1]||'—')+' → '+(d.d[0]||'—')
+        +'  ·  показано '+n;""",
+         """  if(mt)mt.textContent=N+' тижнів  ·  '+(d.d[N-1]||'—')+' → '+(d.d[0]||'—')
+        +'  ·  показано '+n;
+  requestAnimationFrame(tblFit);""")]),
+]
+
+
+def main():
+    if not SRC.exists():
+        print(f"❌  Не знайдено {SRC}. Поклади fix_v38.py поруч із generate.py."); sys.exit(1)
+    src = SRC.read_text(encoding='utf-8')
+    print(f"📄  {SRC}  ({len(src)} символів)\n")
+
+    if 'function tblStatsRows(' not in src:
+        print("❌  Спочатку запусти fix_v29 … fix_v37."); sys.exit(1)
+
+    changed = False
+    for name, guard, variants in EDITS:
+        if guard in src:
+            print(f"⏭  {name} — вже застосовано"); continue
+        done = False
+        for old, new in variants:
+            if src.count(old) == 1:
+                src = src.replace(old, new, 1); print(f"✓  {name}")
+                done = True; changed = True; break
+        if not done:
+            print(f"❌  {name} — якір не знайдено"); sys.exit(1)
+
+    if not changed:
+        print("\n✅  Усе вже пропатчено, змін немає."); return
+
+    try:
+        compile(src, 'generate.py', 'exec')
+    except SyntaxError as ex:
+        print(f"\n❌  Синтаксична помилка: рядок {ex.lineno}: {ex.msg}\n    Файл НЕ змінено."); sys.exit(1)
+
+    bak = SRC.with_suffix(f".py.bak_v38_{datetime.now():%Y%m%d_%H%M%S}")
+    shutil.copy2(SRC, bak)
+    SRC.write_text(src, encoding='utf-8')
+    print(f"\n💾  Бекап: {bak.name}")
+    print("✅  generate.py оновлено\n")
+    print("Далі:  python generate.py")
+
+
+if __name__ == '__main__':
+    main()
