@@ -337,8 +337,9 @@ def read_overview(xl):
             s_=OVERVIEW_TO_SID.get(asset,asset)
             sm_div=safe(8);sm_div_3m=safe(18);sm_div_6m=safe(19)
             crowded=str(row.iloc[20]).strip() if pd.notna(row.iloc[20]) else '—'
+            cm_lead=str(row.iloc[13]).strip() if pd.notna(row.iloc[13]) else '—'
             result[s_]={'cot_ls_all':round(cot_ls*100,1),'cot_cm_all':round((safe(5) or 0)*100,1),'cot_st_all':round((safe(6) or 0)*100,1),'sm_div':round(sm_div or 0,3),'sm_div_3m':round(sm_div_3m or 0,3),'sm_div_6m':round(sm_div_6m or 0,3)}
-            OVERVIEW_TABLE.append({'asset':asset,'sid':s_,'group':cur_group,'net_ls':safe(2),'net_cm':safe(3),'chg_pct_ls':safe(9),'chg_pct_cm':safe(11),'cot_ls':round(cot_ls*100,1),'cot_cm':round((safe(5) or 0)*100,1),'cot_st':round((safe(6) or 0)*100,1),'chg_ls':safe(10),'chg_cm':safe(12),'oi_chg_pct':safe(14),'sm_div':sm_div,'sm_div_3m':sm_div_3m,'sm_div_6m':sm_div_6m,'crowded':crowded})
+            OVERVIEW_TABLE.append({'asset':asset,'sid':s_,'group':cur_group,'net_ls':safe(2),'net_cm':safe(3),'chg_pct_ls':safe(9),'chg_pct_cm':safe(11),'cot_ls':round(cot_ls*100,1),'cot_cm':round((safe(5) or 0)*100,1),'cot_st':round((safe(6) or 0)*100,1),'chg_ls':safe(10),'chg_cm':safe(12),'oi_chg_pct':safe(14),'sm_div':sm_div,'sm_div_3m':sm_div_3m,'sm_div_6m':sm_div_6m,'crowded':crowded,'cm_lead':cm_lead})
     except Exception as e: print(f"  ⚠  overview: {e}")
     return result
 
@@ -1132,13 +1133,13 @@ def make_instrument_view(d,tff=None,disag=None):
                f'<div class="bar-wrap"><div class="bar-lbl" style="color:{COLOR_CM}">COMMERCIALS — WEEKLY ΔNet</div><div class="bar-cw"><canvas id="barcv_cm_{s}"></canvas></div></div>'
                f'<div class="bar-wrap"><div class="bar-lbl" style="color:{COLOR_ST}">SMALL TRADERS — WEEKLY ΔNet</div><div class="bar-cw"><canvas id="barcv_st_{s}"></canvas></div></div>'
                f'</div>')
-    tbl_html=make_hist_table(d['hist'],d['stats_ls'],d['stats_cm'],d['stats_st'],d['stats_oi'],sm)
+    # v44: та сама верстка, що й на вкладці TABLE, обрізана по OPEN INTEREST
     table_block=(f'<div class="htable-wrap"><div class="htable-hdr"><span>ТИЖНЕВА СТАТИСТИКА ПОЗИЦІЙ</span>'
                  f'<div class="hsel">'
-                 f'<button class="hbtn active" data-n="10" onclick="setHist(this,\'{s}\')">10</button>'
-                 f'<button class="hbtn" data-n="26" onclick="setHist(this,\'{s}\')">26</button>'
-                 f'<button class="hbtn" data-n="52" onclick="setHist(this,\'{s}\')">52</button>'
-                 f'</div></div><div class="htable-scroll">{tbl_html}</div></div>')
+                 f'<button class="hbtn active" data-n="10" onclick="setMiniHist(this,\'{s}\')">10</button>'
+                 f'<button class="hbtn" data-n="26" onclick="setMiniHist(this,\'{s}\')">26</button>'
+                 f'<button class="hbtn" data-n="52" onclick="setMiniHist(this,\'{s}\')">52</button>'
+                 f'</div></div><div class="tb-scroll tb-mini" id="mini_tbl_{s}"></div></div>')
     # Ranked блок — окрема панель під стандартним перцентилем
     ranked_panel = _make_ranked_section(s, d.get('cot_idx_m',{}))
     # Обгортаємо обидві pct-панелі у flex-колонку для 4-го grid-item
@@ -1162,7 +1163,7 @@ def make_instrument_view(d,tff=None,disag=None):
     crop_sheet_map = {'CORN':'corn','WHEAT':'springwheat','SOYBEAN':'soybeans','SOYBEAN_MEAL':'soybeans','SOYBEAN_OIL':'soybeans','COTTON':'cotton','RICE':'rice'}
     if s in CROP_LINK_SIDS:
         crop_cid = crop_sheet_map.get(s, s.lower())
-        crop_btn = (f'<button class="rtab" data-rtype="crop" onclick="switchReport(\'{s}\',\'crop\')">🌾 Crop Progress</button>')
+        crop_btn = (f'<button class="rtab" data-rtype="crop" onclick="switchReport(\'{s}\',\'crop\')">Crop Progress</button>')
         # Вбудована crop секція всередині iview
         crop_sec = (f'<div class="rpt-sec" id="rpt_crop_{s}" style="display:none">'
                     f'<div id="crop_embed_{s}"></div>'
@@ -1184,9 +1185,20 @@ def make_overview_tab():
     rows_html=[];rep_date='—';today_date='—'
     # збираємо cot-періоди для JS-перемикача: { sid: {ls:{all,3y,1y,6m,3m}, cm:{...}, st:{...}} }
     cot_periods={}
+    # v49: максимуми по стовпцях — для пропорційної сили фону
+    def _colmax(key):
+        vals=[]
+        for _it in OVERVIEW_TABLE:
+            if not isinstance(_it,dict): continue
+            v=_it.get(key)
+            try:
+                if v is not None: vals.append(abs(float(v)))
+            except: pass
+        return max(vals) if vals else 0.0
+    _MX_OI=_colmax('oi_chg_pct'); _MX_AL=_colmax('acc_ls'); _MX_AC=_colmax('acc_cm')
     for item in OVERVIEW_TABLE:
         if isinstance(item,tuple) and item[0]=='_meta': rep_date=item[1];today_date=item[2];continue
-        if isinstance(item,tuple) and item[0]=='_group': rows_html.append(f'<tr class="ov-group"><td colspan="14">{item[1]}</td></tr>');continue
+        if isinstance(item,tuple) and item[0]=='_group': rows_html.append(f'<tr class="ov-group"><td colspan="19">{item[1]}</td></tr>');continue
         if not isinstance(item,dict): continue
         d=item
         s_=d.get('sid','')
@@ -1227,7 +1239,7 @@ def make_overview_tab():
             return f'<td class="ov-num {cls}">{s2}{v2:.1f}%</td>'
         def pct_bar(v,lo=15,hi=85):
             if v is None: return ''
-            pct=min(max(v/100,0),1);color='#f0515a'if v<lo else('#20d483'if v>hi else'#4a9eff')
+            pct=min(max(v/100,0),1);color='#20d483'if v<20 else('#f0515a'if v>80 else'#4a9eff')
             return f'<div class="ov-bar-bg"><div class="ov-bar-fill" style="width:{pct*100:.1f}%;background:{color}"></div></div>'
         def cot_td(sid_,grp):
             # клітинка COT з data-атрибутами всіх періодів для JS-перемикача
@@ -1238,7 +1250,7 @@ def make_overview_tab():
                 try: return f'{float(x):.0f}'
                 except: return ''
             init=v_all if v_all is not None else 0
-            _cls = 'ov-cot-hi' if init>85 else ('ov-cot-lo' if init<15 else '')
+            _cls = 'ov-cot-lo' if init>80 else ('ov-cot-hi' if init<20 else '')
             return (f'<td class="ov-cot-cell-td" data-cotgrp="{grp}" '
                     f'data-all="{_f(da)}" data-3y="{_f(d3y)}" data-1y="{_f(d1y)}" '
                     f'data-6m="{_f(d6)}" data-3m="{_f(d3)}">'
@@ -1253,36 +1265,110 @@ def make_overview_tab():
             if 'very' in low: return '<span class="ov-crowd ov-crowd-vc">Very Crowded</span>'
             if 'crowd' in low: return '<span class="ov-crowd ov-crowd-c">Crowded</span>'
             return f'<span class="d">{cw}</span>'
+        def lead_fmt(v):
+            if not v or str(v).strip() in ('—','-','nan','None',''):
+                return '<span class="d">—</span>'
+            return '<span class="ov-lead">YES</span>'
+        def sm_td(v):
+            # колір за порогом +-0.25, фон слабкий і пропорційний модулю
+            if v is None: return '<td class="ov-num d">—</td>'
+            try: f=float(v)
+            except: return '<td class="ov-num d">—</td>'
+            cls='g' if f>0.25 else ('r' if f<-0.25 else 'd')
+            st=''
+            if abs(f)>0.25:
+                op=min(abs(f),1.0)*0.14
+                rgb='32,212,131' if f>0 else '240,81,90'
+                st=f' style="background:rgba({rgb},{op:.3f})"'
+            return f'<td class="ov-num {cls}"{st}>{f:+.2f}</td>'
+        def num_td_bg(v,mx):
+            # число зі знаком, фон пропорційний модулю відносно максимуму стовпця
+            if v is None: return '<td class="ov-num d">—</td>'
+            try: nv=int(round(float(v)))
+            except: return '<td class="ov-num d">—</td>'
+            body=f"{abs(nv):,}".replace(',','\u202f')
+            s2='+' if nv>0 else ('-' if nv<0 else '')
+            cls='g' if nv>0 else ('r' if nv<0 else 'd')
+            st=''
+            if nv!=0 and mx:
+                op=min(abs(nv)/mx,1.0)*0.42
+                rgb='32,212,131' if nv>0 else '240,81,90'
+                st=f' style="background:rgba({rgb},{op:.3f})"'
+            return f'<td class="ov-num {cls}"{st}>{s2}{body}</td>'
+        def pct_td_bg(v,mx):
+            # відсоток, фон пропорційний модулю відносно максимуму стовпця
+            if v is None: return '<td class="ov-num d">—</td>'
+            try: f=float(v)
+            except: return '<td class="ov-num d">—</td>'
+            if abs(f)*100>9999: return '<td class="ov-num d">—</td>'
+            cls='g' if f>0 else ('r' if f<0 else 'd')
+            s2='+' if f>0 else ''
+            st=''
+            if f!=0 and mx:
+                op=min(abs(f)/mx,1.0)*0.42
+                rgb='32,212,131' if f>0 else '240,81,90'
+                st=f' style="background:rgba({rgb},{op:.3f})"'
+            return f'<td class="ov-num {cls}"{st}>{s2}{f*100:.1f}%</td>'
+        def pct_td_plain(v):
+            # відсоток без фону, колір за знаком
+            if v is None: return '<td class="ov-num d">—</td>'
+            try: f=float(v)*100
+            except: return '<td class="ov-num d">—</td>'
+            if abs(f)>9999: return '<td class="ov-num d">—</td>'
+            cls='g' if f>0 else ('r' if f<0 else 'd')
+            s2='+' if f>0 else ''
+            return f'<td class="ov-num {cls}">{s2}{f:.1f}%</td>'
+        def pct_td30(v):
+            # без фону: >+30% зелений, <-30% червоний, решта сірий
+            if v is None: return '<td class="ov-num d">—</td>'
+            try: f=float(v)*100
+            except: return '<td class="ov-num d">—</td>'
+            if abs(f)>999: return '<td class="ov-num d">—</td>'
+            cls='g' if f>30 else ('r' if f<-30 else 'd')
+            s2='+' if f>0 else ''
+            return f'<td class="ov-num {cls}">{s2}{f:.1f}%</td>'
         rows_html.append(f'<tr class="ov-row">'
+                         f'<td class="ov-idx"></td>'
                          f'<td class="ov-asset"><span class="ov-fav" data-fav="{d["sid"]}" onclick="event.stopPropagation();ovToggleFav(this)">☆</span>'
-                         f'<span class="ov-asset-link" onclick="ovGoInstrument(\'{d["sid"]}\')">{d["asset"]}</span></td>'
+                         f'<span class="ov-asset-link" onclick="ovGoTable(\'{d["sid"]}\')">{d["asset"]}</span></td>'
                          f'{fnum_td(d["net_ls"])}'
-                         f'{cell_bg(d["chg_ls"])}'
-                         f'{pctcell_bg(d.get("chg_pct_ls"))}'
                          f'{fnum_td(d["net_cm"])}'
-                         f'{cell_bg(d["chg_cm"])}'
-                         f'{pctcell_bg(d.get("chg_pct_cm"))}'
                          f'{cot_td(d["sid"],"ls")}'
                          f'{cot_td(d["sid"],"cm")}'
                          f'{cot_td(d["sid"],"st")}'
-                         f'<td>{crowded_fmt(d.get("crowded"))}</td>'
-                         f'<td>{sm_fmt(d["sm_div"])}</td><td>{sm_fmt(d["sm_div_6m"])}</td><td>{sm_fmt(d["sm_div_3m"])}</td></tr>')
+                         f'{sm_td(d["sm_div"])}'
+                         f'{pct_td30(d.get("chg_pct_ls"))}'
+                         f'{fnum_td(d["chg_ls"])}'
+                         f'{pct_td30(d.get("chg_pct_cm"))}'
+                         f'{fnum_td(d["chg_cm"])}'
+                         f'<td>{lead_fmt(d.get("cm_lead"))}</td>'
+                         f'{pct_td_plain(d.get("oi_chg_pct"))}'
+                         f'{fnum_td(d.get("acc_ls"))}'
+                         f'{fnum_td(d.get("acc_cm"))}'
+                         f'{sm_td(d["sm_div_6m"])}'
+                         f'{sm_td(d["sm_div_3m"])}'
+                         f'<td>{crowded_fmt(d.get("crowded"))}</td></tr>')
     # v27: клікабельні заголовки для сортування
     thead=(f'<thead><tr>'
-           f'<th class="ov-asset ov-sortable" data-col="0" data-stype="reset" onclick="ovSort(this)" title="Скинути сортування">ASSET</th>'
-           f'<th class="ov-sortable" data-col="1" onclick="ovSort(this)">NET LS</th>'
-           f'<th class="ov-sortable" data-col="2" onclick="ovSort(this)">CHG LS</th>'
-           f'<th class="ov-sortable" data-col="3" onclick="ovSort(this)">%OIΔ</th>'
-           f'<th class="ov-sortable" data-col="4" onclick="ovSort(this)">NET CM</th>'
-           f'<th class="ov-sortable" data-col="5" onclick="ovSort(this)">CHG CM</th>'
-           f'<th class="ov-sortable" data-col="6" onclick="ovSort(this)">%OIΔ</th>'
-           f'<th class="ov-sortable" data-col="7" data-stype="cot" onclick="ovSort(this)" style="color:{COLOR_LS}">COT LS</th>'
-           f'<th class="ov-sortable" data-col="8" data-stype="cot" onclick="ovSort(this)" style="color:{COLOR_CM}">COT CM</th>'
-           f'<th class="ov-sortable" data-col="9" data-stype="cot" onclick="ovSort(this)" style="color:{COLOR_ST}">COT ST</th>'
-           f'<th class="ov-sortable" data-col="10" data-stype="crowd" onclick="ovSort(this)">CROWDED</th>'
-           f'<th class="ov-sortable" data-col="11" onclick="ovSort(this)">SM DIV</th>'
-           f'<th class="ov-sortable" data-col="12" onclick="ovSort(this)">SM 6M</th>'
-           f'<th class="ov-sortable" data-col="13" onclick="ovSort(this)">SM 3M</th>'
+           f'<th class="ov-idx-th">#</th>'
+           f'<th class="ov-asset ov-sortable" data-col="1" data-stype="reset" onclick="ovSort(this)" title="Скинути сортування">ASSET</th>'
+           f'<th class="ov-sortable" data-col="2" onclick="ovSort(this)">NET LS</th>'
+           f'<th class="ov-sortable" data-col="3" onclick="ovSort(this)">NET CM</th>'
+           f'<th class="ov-sortable" data-col="4" data-stype="cot" onclick="ovSort(this)" style="color:{COLOR_LS}">COT LS</th>'
+           f'<th class="ov-sortable" data-col="5" data-stype="cot" onclick="ovSort(this)" style="color:{COLOR_CM}">COT CM</th>'
+           f'<th class="ov-sortable" data-col="6" data-stype="cot" onclick="ovSort(this)" style="color:{COLOR_ST}">COT ST</th>'
+           f'<th class="ov-sortable" data-col="7" onclick="ovSort(this)">SM DIV</th>'
+           f'<th class="ov-sortable" data-col="8" onclick="ovSort(this)">CHG %LS</th>'
+           f'<th class="ov-sortable" data-col="9" onclick="ovSort(this)">CHG LS</th>'
+           f'<th class="ov-sortable" data-col="10" onclick="ovSort(this)">CHG %CM</th>'
+           f'<th class="ov-sortable" data-col="11" onclick="ovSort(this)">CHG CM</th>'
+           f'<th class="ov-sortable" data-col="12" data-stype="crowd" onclick="ovSort(this)">CM LEAD</th>'
+           f'<th class="ov-sortable" data-col="13" onclick="ovSort(this)">%OI CHG</th>'
+           f'<th class="ov-sortable" data-col="14" onclick="ovSort(this)">ACC LS</th>'
+           f'<th class="ov-sortable" data-col="15" onclick="ovSort(this)">ACC CM</th>'
+           f'<th class="ov-sortable" data-col="16" onclick="ovSort(this)">SM DIV 6M</th>'
+           f'<th class="ov-sortable" data-col="17" onclick="ovSort(this)">SM DIV 3M</th>'
+           f'<th class="ov-sortable" data-col="18" data-stype="crowd" onclick="ovSort(this)">CROWDED ATH</th>'
            f'</tr></thead>')
     # дані для SM DIV графіків
     sm_chart_data = []
@@ -1306,6 +1392,12 @@ def make_overview_tab():
         '<button class="ov-per" data-per="1y" onclick="ovSetPer(this)">1 рік</button>',
         '<button class="ov-per" data-per="6m" onclick="ovSetPer(this)">6 міс</button>',
         '<button class="ov-per" data-per="3m" onclick="ovSetPer(this)">3 міс</button>',
+        '<div class="ov-zoom">',
+        '<button class="ov-zb" onclick="ovZoom(-1)" title="Дрібніше">&minus;</button>',
+        '<span class="ov-zl" id="ovZoomLbl">17px</span>',
+        '<button class="ov-zb" onclick="ovZoom(1)" title="Крупніше">+</button>',
+        '<button class="ov-zb" onclick="ovZoomReset()" title="Скинути масштаб">СКИНУТИ</button>',
+        '</div>',
         '</div>',
         '<div class="ov-scroll"><table class="ov-table">' + thead + '<tbody>' + ''.join(rows_html) + '</tbody></table></div>',
         '<div class="ov-sm-chart-wrap">',
@@ -1355,7 +1447,7 @@ TBL_GROUPS = [
         (9,'LONG','grad'),(10,'SHORT','grad'),(11,'CHG LONG','chg'),(12,'CHG SHORT','chg'),
         (13,'%NET/OI','pct'),(14,'%OI CHG','pct'),(15,'NET CM','net')]),
     ('SMALL TRADERS', COLOR_ST, [
-        (16,'LONG','grad'),(17,'SHORT','grad'),(18,'CHG LONG','chg'),(19,'CHG SHORT','chg'),
+        (16,'LONG','grad'),(17,'SHORT','grad'),
         (20,'%NET/OI','pct'),(21,'%OI CHG','pct'),(22,'NET ST','net')]),
     ('OPEN INTEREST', '#a0aac0', [
         (23,'%OI CHG','pct'),(24,'OPEN INT','oi')]),
@@ -1435,35 +1527,53 @@ def make_table_tab(data):
         avail = [i for i in instruments if i in data]
         if not avail: continue
         col = GRP_COLOR.get(cat, '#8090b0')
-        sel_parts.append(f'<span class="tb-grp" style="color:{col}">{cat.upper()}</span>')
+        btns = []
         for i in avail:
             s = data[i]['sid']
             if first_sid is None: first_sid = s
-            sel_parts.append(f'<button class="tb-a" data-sid="{s}" '
-                             f'onclick="tblSel(\'{s}\',this)">{disp(i)}</button>')
+            btns.append(f'<button class="tb-a" data-sid="{s}" '
+                        f'onclick="tblSel(\'{s}\',this)">{disp(i)}</button>')
+        # назва групи окремим рядком, під нею — кнопки інструментів
+        sel_parts.append(f'<div class="tb-grow">'
+                         f'<div class="tb-grp" style="color:{col}">{cat.upper()}</div>'
+                         f'<div class="tb-gbtns">' + ''.join(btns) + '</div></div>')
     asset_bar = '<div class="tb-assets">' + ''.join(sel_parts) + '</div>'
 
     # ── шапка таблиці (2 рядки) ──
     r1 = '<th class="tb-corner" rowspan="2">ДАТА</th>'
     r2 = ''
+    m1 = r1; m2 = ''          # скорочена шапка для міні-таблиці (до OPEN INTEREST)
+    mini_cols = 0
+    MINI_LAST = 'OPEN INTEREST'
+    in_mini = True
     for gname, gcol, cols in TBL_GROUPS:
         r_, g_, b_ = int(gcol[1:3],16), int(gcol[3:5],16), int(gcol[5:7],16)
-        r1 += (f'<th colspan="{len(cols)}" class="tb-g" '
-               f'style="background:rgba({r_},{g_},{b_},.18);color:#fff;'
-               f'border-left:2px solid {gcol}99">{gname}</th>')
+        gh = (f'<th colspan="{len(cols)}" class="tb-g" '
+              f'style="background:rgba({r_},{g_},{b_},.18);color:#fff;'
+              f'border-left:2px solid {gcol}99">{gname}</th>')
+        r1 += gh
+        if in_mini: m1 += gh
         for k, (_ci, lbl, kind) in enumerate(cols):
             bl = f'border-left:2px solid {gcol}55;' if k == 0 else ''
             if kind == 'net':   # NET-колонка обведена рамкою кольору групи
                 bl = f'border-left:2px solid {gcol};border-right:2px solid {gcol};'
-            r2 += f'<th class="tb-s" style="{bl}">{lbl}</th>'
+            th = f'<th class="tb-s" style="{bl}">{lbl}</th>'
+            r2 += th
+            if in_mini:
+                m2 += th; mini_cols += 1
+        if gname == MINI_LAST: in_mini = False
     thead = f'<thead><tr class="tb-r1">{r1}</tr><tr class="tb-r2">{r2}</tr></thead>'
+    mini_thead = f'<thead><tr class="tb-r1">{m1}</tr><tr class="tb-r2">{m2}</tr></thead>'
 
     # ── дані інструментів ──
     spec = []
     for _g, gcol, cols in TBL_GROUPS:
         for k, (_ci, _lbl, kind) in enumerate(cols):
             spec.append({'k': kind, 's': 1 if k == len(cols) - 1 else 0, 'c': gcol,
-                         'i': 1 if _lbl == 'SHORT' else 0})
+                         'i': 1 if _lbl == 'SHORT' else 0,
+                         'n': 1 if _lbl == '%NET/OI' else 0,
+                         'l': _lbl,
+                         'ct': 1 if _g.startswith('COT') else 0})
     payloads = []
     for key, d in data.items():
         tb = d.get('table')
@@ -1473,6 +1583,8 @@ def make_table_tab(data):
 
     head_js = ('<script>const _tbl={};const _tblName={};'
                'window._TBL_SPEC=' + json.dumps(spec, separators=(',', ':')) + ';'
+               'window._TBL_MINI_THEAD=' + json.dumps(mini_thead, ensure_ascii=False) + ';'
+               'window._TBL_MINI_COLS=' + str(mini_cols) + ';'
                'window._TBL_FIRST=' + json.dumps(first_sid or '') + ';</script>')
     data_js = '<script>' + ''.join(payloads) + '</script>'
 
@@ -1486,7 +1598,16 @@ def make_table_tab(data):
         + asset_bar +
         '<div class="tb-hdr">'
         '<div class="tb-hl"><span class="tb-name" id="tblName">—</span>'
-        '<span class="tb-meta" id="tblMeta"></span></div>'
+        '<button class="tb-dash" id="tblDashBtn" onclick="tblGoDash()">Dashboard</button>'
+        '<span class="tb-meta" id="tblMeta"></span>'
+        '<span class="tb-info"><span id="tblSmDiv">SM DIV —</span>'
+        '<span class="tb-crowd tb-cw-n" id="tblCrowd">—</span></span></div>'
+        '<div class="tb-zoom">'
+        '<button class="tb-zb" onclick="tblZoom(-1)" title="Дрібніше">&minus;</button>'
+        '<span class="tb-zl" id="tblZoomLbl">авто</span>'
+        '<button class="tb-zb" onclick="tblZoom(1)" title="Крупніше">+</button>'
+        '<button class="tb-zb tb-za" onclick="tblZoomAuto()" title="Підігнати під ширину екрана">АВТО</button>'
+        '</div>'
         '<div class="tb-pers">' + per_btns + '</div>'
         '</div>'
         '<div class="tb-scroll"><table class="dt" id="dtTable">'
@@ -1502,10 +1623,12 @@ TBL_CSS = """
 <style>
 /* ── v29 TABLE TAB ── */
 .tb-wrap{padding:12px 16px;}
-.tb-assets{display:flex;flex-wrap:wrap;align-items:center;gap:3px;padding:8px 10px;
+.tb-assets{display:flex;flex-wrap:wrap;align-items:flex-start;gap:10px 22px;
+  padding:9px 12px;
   background:var(--bg2);border:1px solid var(--bd);border-radius:5px;margin-bottom:10px;}
-.tb-grp{font-size:9px;font-weight:bold;letter-spacing:1px;margin:0 6px 0 10px;}
-.tb-grp:first-child{margin-left:0;}
+.tb-grow{flex:0 0 auto;}
+.tb-grp{display:block;font-size:9px;font-weight:bold;letter-spacing:1.2px;margin:0 0 4px 0;}
+.tb-gbtns{display:flex;flex-wrap:wrap;gap:3px;}
 .tb-a{padding:2px 8px;border:1px solid transparent;border-radius:3px;background:transparent;
   color:#b0bcd4;font-family:var(--f);font-size:11px;cursor:pointer;transition:all .12s;}
 .tb-a:hover{color:#fff;border-color:var(--bd);}
@@ -1514,42 +1637,61 @@ TBL_CSS = """
   padding:9px 14px;background:var(--bg2);border:1px solid var(--bd);border-radius:5px 5px 0 0;
   border-bottom:none;}
 .tb-hl{display:flex;align-items:baseline;gap:10px;}
-.tb-name{font-size:13px;font-weight:bold;color:#fff;letter-spacing:.8px;}
+.tb-name{font-size:18px;font-weight:bold;color:#fff;letter-spacing:1px;}
 .tb-meta{font-size:9px;color:var(--d);}
 .tb-pers{display:flex;gap:3px;}
+.tb-zoom{display:flex;align-items:center;gap:3px;margin-right:10px;}
+.tb-zb{min-width:24px;padding:3px 8px;border:1px solid var(--bd);border-radius:3px;
+  background:transparent;color:#b0bcd4;font-family:var(--f);font-size:11px;cursor:pointer;}
+.tb-zb:hover{border-color:var(--accent);color:#fff;}
+.tb-za{font-size:9px;letter-spacing:.5px;}
+.tb-zl{font-size:10px;color:var(--d);min-width:52px;text-align:center;}
 .tb-per{padding:3px 11px;border:1px solid var(--bd);border-radius:3px;background:transparent;
   color:#b0bcd4;font-family:var(--f);font-size:10px;cursor:pointer;}
 .tb-per:hover{border-color:var(--accent);color:#fff;}
 .tb-per.active{background:var(--bg3);color:var(--accent);border-color:var(--accent);font-weight:bold;}
-.tb-scroll{overflow:auto;max-height:calc(100vh - 210px);background:var(--bg2);
+.tb-scroll{overflow:auto;max-height:calc(100vh - 210px);background:#07080c;
   border:1px solid var(--bd);border-radius:0 0 5px 5px;}
-table.dt{border-collapse:separate;border-spacing:0;font-size:18px;white-space:nowrap;}
-table.dt th{padding:7px 15px;font-weight:normal;font-size:14px;letter-spacing:.6px;
-  text-align:right;background:var(--bg3);position:sticky;z-index:4;}
-table.dt tr.tb-r1 th{top:0;height:38px;text-align:center;}
-table.dt tr.tb-r2 th{top:38px;color:var(--d);border-bottom:1px solid var(--bd);}
-table.dt th.tb-corner{left:0;z-index:6;top:0;text-align:left;color:var(--d);
+/* v38: розмір шрифту виставляє JS (tblFit), відступи в em — масштабуються разом */
+table.dt{border-collapse:separate;border-spacing:0;font-size:18px;white-space:nowrap;
+  -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;}
+table.dt th{padding:.42em .85em;font-weight:bold;font-size:.78em;letter-spacing:.6px;
+  text-align:right;background:#12141b;position:sticky;z-index:4;
+  text-shadow:none;}
+table.dt tr.tb-r1 th{top:0;text-align:center;}
+table.dt tr.tb-r2 th{top:38px;color:#fff;border-bottom:1px solid var(--bd);}
+table.dt th.tb-corner{left:0;z-index:6;top:0;text-align:left;color:#fff;
   border-right:1px solid var(--bd);border-bottom:1px solid var(--bd);}
-table.dt td{padding:6px 15px;text-align:right;border-bottom:1px solid rgba(52,61,90,.45);
-  border-right:1px solid rgba(128,144,176,.10);color:#9fabc7;}
-table.dt td.tb-date{position:sticky;left:0;z-index:3;background:var(--bg3);color:var(--d);
+table.dt td{padding:.34em .84em;text-align:right;border-bottom:1px solid rgba(52,61,90,.45);
+  border-right:1px solid rgba(128,144,176,.10);color:#75809a;
+  font-weight:bold;text-shadow:none;}
+table.dt td.tb-date{position:sticky;left:0;z-index:3;background:#12141b;color:var(--d);
   text-align:left;border-right:1px solid var(--bd);}
 table.dt td.tb-sep{border-right:1px solid var(--bd);}
 /* v31: без цих правил `table.dt td{color:#fff}` перебиває класи .g/.r/.t */
 table.dt td.d{color:var(--d);}
 table.dt td.g{color:var(--g);}
 table.dt td.r{color:var(--r);}
-table.dt td.t{color:#9fabc7;}
-table.dt tbody.tb-stats td{background:var(--bg3);font-size:16px;
+table.dt td.t{color:#75809a;}
+table.dt tbody.tb-stats td{background:#12141b;font-size:.9em;
   border-bottom:1px solid rgba(52,61,90,.9);}
 table.dt tbody.tb-stats tr:last-child td{border-bottom:3px solid var(--bd);}
-table.dt tbody.tb-stats td.tb-date{font-size:14px;letter-spacing:.5px;font-weight:bold;}
-table.dt tbody.tb-stats tr.tb-dim td{opacity:.72;}
+table.dt tbody.tb-stats td.tb-date{font-size:.8em;letter-spacing:.5px;font-weight:bold;}
 table.dt tbody#dtBody tr:hover td{box-shadow:inset 0 1px 0 rgba(255,255,255,.25),
   inset 0 -1px 0 rgba(255,255,255,.25);}
 table.dt tbody#dtBody tr:hover td.tb-date{box-shadow:inset 0 1px 0 rgba(255,255,255,.25),
   inset 0 -1px 0 rgba(255,255,255,.25),inset 3px 0 0 var(--accent);}
-.tb-badge{font-size:13px;padding:2px 10px;border-radius:10px;font-weight:bold;}
+.tb-badge{font-size:.72em;padding:.12em .55em;border-radius:10px;font-weight:bold;}
+/* v44 */
+.tb-mini{max-height:none;border:none;border-radius:0;}
+.tb-dash{padding:5px 14px;border:1px solid var(--accent);border-radius:3px;background:transparent;
+  color:var(--accent);font-family:var(--f);font-size:12px;cursor:pointer;letter-spacing:.5px;}
+.tb-dash:hover{background:rgba(245,148,32,.15);}
+.tb-info{display:flex;align-items:center;gap:12px;font-size:14px;font-weight:bold;}
+.tb-crowd{font-size:12px;padding:3px 11px;border-radius:10px;font-weight:bold;}
+.tb-cw-c{background:rgba(240,180,41,.15);border:1px solid #f0b429;color:#f0b429;}
+.tb-cw-v{background:rgba(240,81,90,.18);border:1px solid #f0515a;color:#f0515a;}
+.tb-cw-n{color:var(--d);}
 .tb-bd-y{background:rgba(32,212,131,.15);border:1px solid #20d483;color:#20d483;}
 .tb-bd-c{background:rgba(240,180,41,.15);border:1px solid #f0b429;color:#f0b429;}
 .tb-bd-v{background:rgba(240,81,90,.18);border:1px solid #f0515a;color:#f0515a;}
@@ -1565,9 +1707,9 @@ function tblFmtInt(v){if(v==null)return'—';const s=v<0?'-':'';
 function tblFmtSign(v){if(v==null)return'—';if(v===0)return'—';
   const s=v>0?'+':'-';return s+Math.abs(v).toLocaleString('uk-UA');}
 function tblFmtPct(v){if(v==null)return'—';const f=v/10;
-  if(!isFinite(f)||Math.abs(f)>999)return'—';return(f>0?'+':'')+f.toFixed(1)+'%';}
+  if(!isFinite(f)||Math.abs(f)>99999)return'—';return(f>0?'+':'')+f.toFixed(1)+'%';}
 function tblFmtCot(v){if(v==null)return'—';const f=v/10;
-  if(!isFinite(f)||f<-5||f>105)return'—';return f.toFixed(0)+'%';}
+  if(!isFinite(f)||f<-999||f>999)return'—';return f.toFixed(0)+'%';}
 function tblFmtRatio(v){if(v==null)return'—';const f=v/1000;
   if(!isFinite(f))return'—';return(f>0?'+':'')+f.toFixed(2);}
 function tblCls(v){return v>0?'g':(v<0?'r':'d');}
@@ -1590,13 +1732,13 @@ const TB_SCALE='lin';
 // [верхня межа позиції у %, [r,g,b]]
 const TB_BANDS=[[ 12,[240, 81, 90]],  // максимально червоний
                 [ 24,[196,120,132]],  // червоний
-                [ 36,[159,171,199]],  // сірий
+                [ 36,[117,128,154]],  // сірий
                 [ 48,[122,187,166]],  // слабо зелений
                 [ 60,[ 70,200,142]],  // зелений
                 [100,[ 32,212,131]]]; // максимально зелений
 // межі сірої зони — використовуються ще й для фону
 const TB_NEU_LO=24, TB_NEU_HI=36;
-const _TB_NEU='#9fabc7';
+const _TB_NEU='#75809a';
 // смуги для CHG: |Δ| у % від історичного максимуму по модулю
 const TB_CHG_BANDS=[4,19,60];
 // фон вмикається лише після TB_BG_START (частка 0..1) і росте до TB_BG_MAX
@@ -1636,7 +1778,7 @@ function tblChgColor(r){
 }
 // фон для LONG/SHORT/NET: усередині сірої зони фону немає,
 // далі росте пропорційно віддаленню до відповідного краю діапазону
-const TB_POS_BG_MAX=0.45, TB_POS_BG_GAMMA=1.3;
+const TB_POS_BG_MAX=0.20, TB_POS_BG_GAMMA=1.7;
 function tblBgPos(x){
   let str,pos;
   if(x<TB_NEU_LO){str=(TB_NEU_LO-x)/TB_NEU_LO;pos=false;}
@@ -1652,6 +1794,41 @@ function tblBgFill(str,pos){
   const o=((str-TB_BG_START)/(1-TB_BG_START)*TB_BG_MAX).toFixed(2);
   return'background:rgba('+(pos?'32,212,131':'240,81,90')+','+o+');';
 }
+// ── SM DIV: смуги у % від |1.00| ──
+const TB_SMD_BANDS=[30,60,80];
+const TB_SMD_BG_MAX=0.30, TB_SMD_BG_GAMMA=1.5;
+function tblSmColor(p){
+  const a=Math.abs(p);
+  if(a<TB_SMD_BANDS[0])return _TB_NEU;
+  const g=p>0;
+  // рівні розведені і за відтінком, і за світлістю
+  if(a<TB_SMD_BANDS[1])return _tbHex(g?[ 61,122,102]:[125, 74, 84]);  // темний приглушений
+  if(a<TB_SMD_BANDS[2])return _tbHex(g?[ 49,181,127]:[192, 74, 88]);  // середній
+  return _tbHex(g?[34,238,146]:[255,85,96]);                          // яскравий
+}
+function tblBgSm(p){
+  const a=Math.min(Math.abs(p),100)/100;
+  const o=TB_SMD_BG_MAX*Math.pow(a,TB_SMD_BG_GAMMA);
+  if(o<0.012)return'';
+  return'background:rgba('+(p>0?'32,212,131':'240,81,90')+','+o.toFixed(3)+');';
+}
+// ── COT INDEX: інвертовані смуги (низький = зелено, високий = червоно) ──
+const TB_COT_BG_MAX=0.25, TB_COT_BG_GAMMA=1.6;
+function tblCotColor(p){
+  p=Math.max(0,Math.min(100,p));   // короткі періоди інколи виходять за 0..100
+  if(p<20)return _tbHex([ 34,238,146]);   // яскравий зелений
+  if(p<40)return _tbHex([ 61,143,107]);   // темний приглушений зелений
+  if(p<60)return _TB_NEU;                 // сірий
+  if(p<80)return _tbHex([156, 76, 88]);   // темний приглушений червоний
+  return _tbHex([255,85,96]);             // яскравий червоний
+}
+function tblBgCot(p){
+  p=Math.max(0,Math.min(100,p));
+  const a=Math.min(Math.abs(p-50)/50,1);
+  const o=TB_COT_BG_MAX*Math.pow(a,TB_COT_BG_GAMMA);
+  if(o<0.012)return'';
+  return'background:rgba('+(p<50?'32,212,131':'240,81,90')+','+o.toFixed(3)+');';
+}
 // фон для CHG: непрозорість лінійно від |Δ| / історичний максимум |Δ|.
 // Тінт є майже всюди, слабкий для звичайних тижнів і сильний для рідкісних.
 const TB_CHG_BG_MAX=0.45, TB_CHG_BG_GAMMA=1.0;
@@ -1662,10 +1839,24 @@ function tblBgChg(v,rg){
   if(o<0.012)return'';
   return'background:rgba('+(v>0?'32,212,131':'240,81,90')+','+o.toFixed(3)+');';
 }
+// Фон для %NET/OI та %OI CHG. Шкала — частка від «робастного максимуму»
+// (90-й перцентиль |v| за всю історію): звичайний максимум у %OI CHG
+// буває 18873% і занулив би решту комірок.
+const TB_PCT_BG_MAX=0.32;
+// %NET/OI майже не змінюється тиждень до тижня, тому в нього окрема,
+// набагато слабша шкала — інакше колонка стає суцільною плямою
+const TB_PCTN_BG_MAX=0.15, TB_PCTN_BG_GAMMA=1.8;
+function tblBgPct(v,rg,soft){
+  if(!rg||!rg.p90)return'';
+  const r=Math.min(Math.abs(v)/rg.p90,1);
+  const o=soft?TB_PCTN_BG_MAX*Math.pow(r,TB_PCTN_BG_GAMMA):TB_PCT_BG_MAX*r;
+  if(o<0.012)return'';
+  return'background:rgba('+(v>0?'32,212,131':'240,81,90')+','+o.toFixed(3)+');';
+}
 // %NET/OI та %OI CHG: >+30% зелений, <-30% червоний, решта — дефолт
 function tblPctCls(v){const f=v/10;return f>30?'g':(f<-30?'r':'t');}
 
-function tblCell(kind,v,mx,sep,rg,gc,inv){
+function tblCell(kind,v,mx,sep,rg,gc,inv,soft,ct){
   const sp=sep?' tb-sep':'';
   const nb=' border-left:2px solid '+(gc||'#343d5a')+';border-right:2px solid '+(gc||'#343d5a')+';';
   if(kind==='txt'){
@@ -1699,96 +1890,239 @@ function tblCell(kind,v,mx,sep,rg,gc,inv){
     return'<td class="'+sp.trim()+'" style="'+bg+'color:'+tblChgColor(r)+'">'
           +tblFmtSign(v)+'</td>';
   }
-  if(kind==='pct')  return'<td class="'+tblPctCls(v)+sp+'">'+tblFmtPct(v)+'</td>';
-  if(kind==='ratio')return'<td class="'+tblCls(v)+sp+'">'+tblFmtRatio(v)+'</td>';
+  if(kind==='pct')  return'<td class="'+tblPctCls(v)+sp+'" style="'+tblBgPct(v,rg,soft)
+                          +'">'+tblFmtPct(v)+'</td>';
+  if(kind==='ratio'){
+    const p=v/10;                       // v = коефіцієнт x1000 -> % від |1.00|
+    return'<td class="'+sp.trim()+'" style="'+tblBgSm(p)+'color:'+tblSmColor(p)+'">'
+          +tblFmtRatio(v)+'</td>';
+  }
   if(kind==='cot'){
-    const cl=v>850?'g':(v<150?'r':'t');
+    const p=v/10;
+    if(ct)  // справжній COT INDEX — інвертовані смуги
+      return'<td class="'+sp.trim()+'" style="'+tblBgCot(p)+'color:'+tblCotColor(p)+'">'
+            +tblFmtCot(v)+'</td>';
+    const cl=v>850?'g':(v<150?'r':'t');   // RISK CAP — стара логіка
     return'<td class="'+cl+sp+'">'+tblFmtCot(v)+'</td>';
   }
   return'<td'+sp+'>'+v+'</td>';
 }
 
 // підсумкові рядки: MAX/MIN за весь час, MAX/MIN за 5 років, середнє за 13 тижнів
-function tblStatsRows(d){
+// Підсумкові рядки. Кожен рядок цілком одного кольору:
+// MAX(ALL) насичений зелений, MAX(5Y) приглушений; MIN — дзеркально червоним.
+const TB_STAT_ROWS=[['MAX (ALL)',0,'max','#20d483'],
+                    ['MIN (ALL)',0,'min','#f0515a'],
+                    ['MAX (5Y)',260,'max','#7abba6'],
+                    ['MIN (5Y)',260,'min','#c47884']];
+function tblStatsRows(d,LIM){
   const S=window._TBL_SPEC,N=d.d.length;
-  const defs=[['MAX (ALL)',N,'max',''],['MIN (ALL)',N,'min',''],
-              ['MAX (5Y)',Math.min(260,N),'max',' tb-dim'],
-              ['MIN (5Y)',Math.min(260,N),'min',' tb-dim'],
-              ['AVG 13W',Math.min(13,N),'avg',' tb-dim']];
+  if(LIM==null)LIM=S.length;
   let html='';
-  for(const[lbl,lim,mode,cls]of defs){
-    let tds='<td class="tb-date">'+lbl+'</td>';
-    for(let ci=0;ci<S.length;ci++){
+  for(const[lbl,win,mode,rcol]of TB_STAT_ROWS){
+    const lim=win?Math.min(win,N):N;
+    let tds='<td class="tb-date" style="color:'+rcol+'">'+lbl+'</td>';
+    for(let ci=0;ci<LIM;ci++){
       const k=S[ci].k,sep=S[ci].s?' tb-sep':'';
-      if(k==='txt'){tds+='<td class="d'+sep+'">—</td>';continue;}
-      const col=d.c[ci];let acc=null,sum=0,cnt=0;
+      const brd=(k==='net')?'border-left:2px solid '+S[ci].c
+                +';border-right:2px solid '+S[ci].c+';':'';
+      if(k==='txt'){
+        tds+='<td class="'+sep.trim()+'" style="'+brd+'color:'+rcol+'">—</td>';continue;
+      }
+      const col=d.c[ci];let acc=null;
       for(let i=0;i<lim;i++){
         const v=col[i];if(v==null)continue;
         if(mode==='max')acc=(acc==null||v>acc)?v:acc;
-        else if(mode==='min')acc=(acc==null||v<acc)?v:acc;
-        else{sum+=v;cnt++;}
+        else acc=(acc==null||v<acc)?v:acc;
       }
-      if(mode==='avg')acc=cnt?Math.round(sum/cnt):null;
-      let txt='—',c='d';
+      let txt='—';
       if(acc!=null){
-        if(k==='int'||k==='oi'||k==='grad'){txt=tblFmtInt(acc);c='t';}
-        else if(k==='pct'){txt=tblFmtPct(acc);c=tblPctCls(acc);}
-        else if(k==='cot'){txt=tblFmtCot(acc);c=acc>850?'g':(acc<150?'r':'t');}
-        else if(k==='ratio'){txt=tblFmtRatio(acc);c=tblCls(acc);}
-        else{txt=tblFmtSign(acc);c=tblCls(acc);}
+        if(k==='int'||k==='oi'||k==='grad')txt=tblFmtInt(acc);
+        else if(k==='pct')txt=tblFmtPct(acc);
+        else if(k==='cot')txt=tblFmtCot(acc);
+        else if(k==='ratio')txt=tblFmtRatio(acc);
+        else txt=tblFmtSign(acc);
       }
-      const st=(k==='net')?' style="border-left:2px solid '+S[ci].c
-                +';border-right:2px solid '+S[ci].c+'"':'';
-      tds+='<td class="'+c+sep+'"'+st+'>'+txt+'</td>';
+      tds+='<td class="'+sep.trim()+'" style="'+brd+'color:'+rcol+'">'+txt+'</td>';
     }
-    html+='<tr class="'+cls.trim()+'">'+tds+'</tr>';
+    html+='<tr>'+tds+'</tr>';
   }
   return html;
 }
 
+// ── Автомасштаб: підбирає розмір шрифту так, щоб колонки до OPEN INTEREST
+// включно вміщались у видиму ширину на будь-якому екрані ──
+const TB_FIT_COLS=22, TB_FIT_BASE=18, TB_FIT_MIN=8, TB_FIT_MAX=32;
+// null = автопідбір під ширину екрана, число = ручний розмір шрифту у px
+let _tblZoom=null;
+try{const _z=localStorage.getItem('tbl_zoom');if(_z)_tblZoom=parseFloat(_z);}catch(e){}
+
+// підбирає розмір так, щоб ДАТА … OPEN INTEREST вмістились у видиму ширину
+function tblAutoSize(tbl,sc){
+  tbl.style.fontSize=TB_FIT_BASE+'px';
+  const row=tbl.querySelector('tbody#dtBody tr')||tbl.querySelector('tbody tr');
+  if(!row)return TB_FIT_BASE;
+  let w=0;const n=Math.min(TB_FIT_COLS,row.children.length);
+  for(let i=0;i<n;i++)w+=row.children[i].getBoundingClientRect().width;
+  const avail=sc.clientWidth-2;
+  if(!(w>0&&avail>0))return TB_FIT_BASE;
+  return Math.max(TB_FIT_MIN,Math.min(TB_FIT_MAX,TB_FIT_BASE*avail/w));
+}
+function tblFit(){
+  const tbl=document.getElementById('dtTable'),sc=document.querySelector('.tb-scroll');
+  if(!tbl||!sc)return;
+  let fs=(_tblZoom!=null&&isFinite(_tblZoom))?_tblZoom:tblAutoSize(tbl,sc);
+  // ціле число пікселів — інакше гліфи лягають на субпіксельну сітку і «милять»
+  fs=Math.max(TB_FIT_MIN,Math.min(TB_FIT_MAX,Math.round(fs)));
+  tbl.style.fontSize=Math.round(fs)+'px';
+  const lbl=document.getElementById('tblZoomLbl');
+  if(lbl)lbl.textContent=(_tblZoom!=null?'':'авто ')+Math.round(fs)+'px';
+  // другий рядок шапки має липнути рівно під першим
+  // саме th.tb-g, бо перший th рядка — кутова «ДАТА» з rowspan=2
+  const h1=tbl.querySelector('tr.tb-r1 th.tb-g');
+  if(h1){
+    const h=h1.getBoundingClientRect().height;
+    tbl.querySelectorAll('tr.tb-r2 th').forEach(function(th){th.style.top=h+'px';});
+  }
+}
+function tblZoom(step){
+  const tbl=document.getElementById('dtTable');
+  let cur=_tblZoom;
+  if(cur==null&&tbl)cur=parseFloat(tbl.style.fontSize)||TB_FIT_BASE;
+  _tblZoom=Math.max(TB_FIT_MIN,Math.min(TB_FIT_MAX,(cur||TB_FIT_BASE)+step));
+  try{localStorage.setItem('tbl_zoom',_tblZoom);}catch(e){}
+  tblFit();
+}
+function tblZoomAuto(){
+  _tblZoom=null;
+  try{localStorage.removeItem('tbl_zoom');}catch(e){}
+  tblFit();
+}
+window.addEventListener('resize',function(){
+  clearTimeout(window._tbFitT);
+  window._tbFitT=setTimeout(tblFit,150);
+});
+
+// Розрахунок діапазонів по колонках. Спільний для повної таблиці й міні-версії.
+function tblCalc(d,n,LIM){
+  const S=window._TBL_SPEC,N=d.d.length,mx=[],rg=[];
+  for(let ci=0;ci<LIM;ci++){
+    const sp=S[ci],col=d.c[ci];
+    let m=0;
+    if(sp.k==='chg'){for(let i=0;i<n;i++){const v=col[i];if(v!=null&&Math.abs(v)>m)m=Math.abs(v);}}
+    mx.push(m||1);
+    if(sp.k!=='net'&&sp.k!=='oi'&&sp.k!=='grad'&&sp.k!=='chg'&&sp.k!=='pct'){rg.push(null);continue;}
+    const arr=[];
+    for(let i=0;i<N;i++){const v=col[i];if(v!=null)arr.push(v);}
+    if(!arr.length){rg.push(null);continue;}
+    let mxa=0;for(let i=0;i<arr.length;i++){const a=Math.abs(arr[i]);if(a>mxa)mxa=a;}
+    let asrt=null,p90=0;
+    if(sp.k==='chg'||sp.k==='pct'){
+      asrt=arr.map(function(x){return Math.abs(x);}).sort(function(a,b){return a-b;});
+      p90=asrt[Math.floor(0.9*(asrt.length-1))]||mxa;
+    }
+    arr.sort(function(a,b){return a-b;});
+    rg.push({mn:arr[0],mx:arr[arr.length-1],srt:arr,mxa:mxa||1,asrt:asrt,p90:p90});
+  }
+  return{mx:mx,rg:rg};
+}
+function tblRowsHtml(d,n,LIM,c){
+  const S=window._TBL_SPEC,parts=[];
+  for(let i=0;i<n;i++){
+    parts.push('<tr><td class="tb-date">'+d.d[i]+'</td>');
+    for(let ci=0;ci<LIM;ci++)
+      parts.push(tblCell(S[ci].k,d.c[ci][i],c.mx[ci],S[ci].s,c.rg[ci],S[ci].c,S[ci].i,S[ci].n,S[ci].ct));
+    parts.push('</tr>');
+  }
+  return parts.join('');
+}
 function tblRender(){
   const d=_tbl[_tblCur];
   const body=document.getElementById('dtBody');
   const stats=document.getElementById('dtStats');
   if(!d||!body)return;
   const S=window._TBL_SPEC,N=d.d.length,n=Math.min(_tblN,N);
-
-  // максимум по модулю для градієнта (тільки по видимих рядках)
-  const mx=S.map((sp,ci)=>{
-    if(sp.k!=='chg')return 0;
-    let m=0;const col=d.c[ci];
-    for(let i=0;i<n;i++){const v=col[i];if(v!=null&&Math.abs(v)>m)m=Math.abs(v);}
-    return m||1;
-  });
-
-  // діапазон min/max за ВСЮ історію — для градієнта NET та підсвітки ATH по OI
-  const rg=S.map((sp,ci)=>{
-    if(sp.k!=='net'&&sp.k!=='oi'&&sp.k!=='grad'&&sp.k!=='chg')return null;
-    const col=d.c[ci],arr=[];
-    for(let i=0;i<N;i++){const v=col[i];if(v!=null)arr.push(v);}
-    if(!arr.length)return null;
-    let mxa=0;for(let i=0;i<arr.length;i++){const a=Math.abs(arr[i]);if(a>mxa)mxa=a;}
-    arr.sort((a,b)=>a-b);
-    return{mn:arr[0],mx:arr[arr.length-1],srt:arr,mxa:mxa||1};
-  });
-
-  const parts=[];
-  for(let i=0;i<n;i++){
-    parts.push('<tr><td class="tb-date">'+d.d[i]+'</td>');
-    for(let ci=0;ci<S.length;ci++){
-      const k=S[ci].k;
-      parts.push(tblCell(k,d.c[ci][i],mx[ci],S[ci].s,rg[ci],S[ci].c,S[ci].i));
-    }
-    parts.push('</tr>');
-  }
-  stats.innerHTML=tblStatsRows(d);
-  body.innerHTML=parts.join('');
+  const c=tblCalc(d,n,S.length);
+  stats.innerHTML=tblStatsRows(d,S.length);
+  body.innerHTML=tblRowsHtml(d,n,S.length,c);
 
   const nm=document.getElementById('tblName');
   const mt=document.getElementById('tblMeta');
   if(nm)nm.textContent=_tblName[_tblCur]||_tblCur;
-  if(mt)mt.textContent=N+' тижнів  ·  '+(d.d[N-1]||'—')+' → '+(d.d[0]||'—')
-        +'  ·  показано '+n;
+  if(mt)mt.textContent='';
+  tblHeadInfo(d);
+  requestAnimationFrame(tblFit);
+}
+
+// ── Шапка: кнопка дашборда, SM DIV, CROWDED ATH ──
+function tblColIdx(label){
+  const S=window._TBL_SPEC;
+  for(let i=0;i<S.length;i++)if(S[i].l===label)return i;
+  return -1;
+}
+function tblHeadInfo(d){
+  const btn=document.getElementById('tblDashBtn');
+  if(btn)btn.textContent=(_tblName[_tblCur]||_tblCur)+' Dashboard';
+  const sm=document.getElementById('tblSmDiv'),cw=document.getElementById('tblCrowd');
+  if(sm){
+    const i=tblColIdx('SM DIV');
+    const v=(i>=0&&d.c[i])?d.c[i][0]:null;
+    if(v==null){sm.textContent='SM DIV —';sm.style.color='var(--d)';}
+    else{
+      const f=v/1000;
+      sm.textContent='SM DIV '+(f>0?'+':'')+f.toFixed(2);
+      sm.style.color=f>0?'#20d483':(f<0?'#f0515a':'#75809a');
+    }
+  }
+  if(cw){
+    const i=tblColIdx('CROWDED ATH');
+    const t=(i>=0&&d.c[i])?d.c[i][0]:null;
+    cw.textContent=t?t:'—';
+    cw.className='tb-crowd '+(t?(String(t).toLowerCase().indexOf('very')>=0?'tb-cw-v':'tb-cw-c'):'tb-cw-n');
+  }
+}
+function tblGoDash(){
+  if(typeof ovGoInstrument==='function')ovGoInstrument(_tblCur);
+}
+
+// ── Міні-таблиця на вкладці інструмента (та сама верстка, до OPEN INTEREST) ──
+const _miniN={};
+function tblMiniRender(sid,n){
+  const box=document.getElementById('mini_tbl_'+sid),d=_tbl[sid];
+  if(!box||!d)return;
+  const LIM=window._TBL_MINI_COLS||21,N=d.d.length;
+  n=Math.min(n||10,N);
+  _miniN[sid]=n;
+  const c=tblCalc(d,n,LIM);
+  box.innerHTML='<table class="dt">'+(window._TBL_MINI_THEAD||'')
+    +'<tbody class="tb-stats">'+tblStatsRows(d,LIM)+'</tbody>'
+    +'<tbody>'+tblRowsHtml(d,n,LIM,c)+'</tbody></table>';
+  requestAnimationFrame(function(){tblFitEl(box.querySelector('table'),box,LIM+1);});
+}
+function setMiniHist(btn,sid){
+  btn.parentNode.querySelectorAll('.hbtn').forEach(function(b){b.classList.remove('active');});
+  btn.classList.add('active');
+  tblMiniRender(sid,parseInt(btn.dataset.n));
+}
+function tblFitEl(tbl,sc,cols){
+  if(!tbl||!sc)return;
+  tbl.style.fontSize=TB_FIT_BASE+'px';
+  const row=tbl.querySelector('tbody:last-child tr');
+  if(row){
+    let w=0;const n=Math.min(cols,row.children.length);
+    for(let i=0;i<n;i++)w+=row.children[i].getBoundingClientRect().width;
+    const avail=sc.clientWidth-2;
+    if(w>0&&avail>0){
+      let fs=Math.round(TB_FIT_BASE*avail/w);
+      fs=Math.max(TB_FIT_MIN,Math.min(TB_FIT_MAX,fs));
+      tbl.style.fontSize=fs+'px';
+    }
+  }
+  const h1=tbl.querySelector('tr.tb-r1 th.tb-g');
+  if(h1){
+    const h=h1.getBoundingClientRect().height;
+    tbl.querySelectorAll('tr.tb-r2 th').forEach(function(th){th.style.top=h+'px';});
+  }
 }
 
 function tblSel(sid,btn){
@@ -2050,10 +2384,19 @@ table.ht tbody.mm-tbody tr.mm-yr td{opacity:.78;}
 
 .ov-cot-cell{display:flex;align-items:center;gap:6px;justify-content:flex-end;}
 /* v21 overview css */
-#ms_ov>div{max-width:1180px;margin:0 auto;}
-.ov-table{font-size:11px;}
-.ov-table th{padding:7px 9px;font-size:9px;}
-.ov-table td{padding:6px 9px;}
+/* v49: без обмежувача — таблиця на всю ширину екрана */
+#ms_ov>div{max-width:none;margin:0;}
+/* v48: базовий кегль ставить JS (ovApplyZoom), відступи в em */
+.ov-table{font-size:17px;}
+.ov-table th{padding:.5em .62em;font-size:.68em;}
+.ov-table td{padding:.42em .62em;}
+.ov-idx{color:#5a6482;text-align:right;font-size:.72em;padding-right:.3em!important;}
+.ov-idx-th{color:#5a6482;text-align:right;width:1px;white-space:nowrap;}
+.ov-zoom{display:flex;align-items:center;gap:3px;margin-left:18px;}
+.ov-zb{min-width:24px;padding:3px 9px;border:1px solid var(--bd);border-radius:3px;
+  background:transparent;color:#b0bcd4;font-family:var(--f);font-size:10px;cursor:pointer;}
+.ov-zb:hover{border-color:var(--accent);color:#fff;}
+.ov-zl{font-size:10px;color:var(--d);min-width:40px;text-align:center;}
 .ov-num{text-align:right;font-variant-numeric:tabular-nums;}
 .ov-bg-g{background:rgba(32,212,131,.85);color:#0b0d12!important;font-weight:bold;border-radius:2px;}
 .ov-bg-r{background:rgba(240,81,90,.85);color:#fff!important;font-weight:bold;border-radius:2px;}
@@ -2065,11 +2408,13 @@ table.ht tbody.mm-tbody tr.mm-yr td{opacity:.78;}
 .ov-per:hover{border-color:var(--accent);color:#fff;}
 .ov-per.active{background:var(--bg3);color:var(--accent);border-color:var(--accent);font-weight:bold;}
 .ov-crowd{font-size:9px;padding:2px 8px;border-radius:10px;font-weight:bold;white-space:nowrap;}
+.ov-lead{font-size:9px;padding:2px 8px;border-radius:10px;font-weight:bold;white-space:nowrap;
+  background:rgba(32,212,131,.15);border:1px solid #20d483;color:#20d483;}
 .ov-crowd-c{background:rgba(240,180,41,.15);border:1px solid #f0b429;color:#f0b429;}
 .ov-crowd-vc{background:rgba(240,81,90,.18);border:1px solid #f0515a;color:#f0515a;}
 .ov-sm-cv-wrap{height:340px!important;}
 /* v22 overview css */
-.ov-cot-val{font-size:12px!important;font-weight:bold;min-width:38px!important;}
+.ov-cot-val{font-size:.8em!important;font-weight:bold;min-width:2.6em!important;}
 .ov-cot-hi{color:#20d483!important;}
 .ov-cot-lo{color:#f0515a!important;}
 .ov-fav{cursor:pointer;color:#4a5580;margin-right:7px;font-size:13px;user-select:none;transition:color .15s,transform .15s;display:inline-block;}
@@ -2155,11 +2500,27 @@ table.ht tbody.mm-tbody tr.mm-yr td{opacity:.78;}
 def generate_html(data, tff_data=None, disag_data=None, crop_data=None):
     if tff_data is None: tff_data={}
     # v21: enrich overview з cot_idx періодів (беремо з data по sid)
+    # індекси ACCEL LS / ACCEL CM у payload таблиці (колонки BO / BP)
+    try:
+        _I_ACC_LS = next(i for i,(ci,_l,_k) in enumerate(TBL_COLS) if ci == 66)
+        _I_ACC_CM = next(i for i,(ci,_l,_k) in enumerate(TBL_COLS) if ci == 67)
+    except StopIteration:
+        _I_ACC_LS = _I_ACC_CM = None
     for _it in OVERVIEW_TABLE:
         if isinstance(_it, dict):
             _d = data.get(_it.get('sid'))
             if _d and _d.get('cot_idx'):
                 _it['cot_idx'] = _d['cot_idx']
+            _tb = (_d or {}).get('table')
+            if _tb and _I_ACC_LS is not None:
+                def _last(ix):
+                    try:
+                        col = _tb['c'][ix]
+                        return col[0] if col else None
+                    except Exception:
+                        return None
+                _it['acc_ls'] = _last(_I_ACC_LS)
+                _it['acc_cm'] = _last(_I_ACC_CM)
     if disag_data is None: disag_data={}
     all_dates=[d['cur']['date'] for d in data.values()]
     report_date=max(all_dates) if all_dates else '—'
@@ -2191,9 +2552,9 @@ def generate_html(data, tff_data=None, disag_data=None, crop_data=None):
            +f'</div></header>'
            +f'<div class="main-tabs">'
            +f'<button class="mtab" data-mt="ov" onclick="selMain(\'ov\')">Overview</button>'
-           +f'<button class="mtab" data-mt="tbl" onclick="selMain(\'tbl\')">📊 Table</button>'
+           +f'<button class="mtab" data-mt="tbl" onclick="selMain(\'tbl\')">Table</button>'
            +f'<button class="mtab active" data-mt="cot" onclick="selMain(\'cot\')">COT Dashboard</button>'
-           +f'<button class="mtab" data-mt="crop" onclick="selMain(\'crop\')">🌾 Crop Progress</button></div>'
+           +f'<button class="mtab" data-mt="crop" onclick="selMain(\'crop\')">Crop Progress</button></div>'
            +f'<div class="main-sec" id="ms_ov"><div style="padding:16px 24px">{ov_html}</div></div>'
            +f'<div class="main-sec" id="ms_tbl">{tbl_html}</div>'
            +f'<div class="main-sec active" id="ms_cot"><div class="ctabs">{"".join(cat_tabs)}</div>{"".join(cat_sects)}</div>'
@@ -2238,7 +2599,7 @@ function selMain(mt){
   document.querySelector('[data-mt="'+mt+'"]').classList.add('active');
   document.getElementById('ms_'+mt).classList.add('active');
   if(mt==='cot'){const fc=document.querySelector('.ctab');if(fc)selCat(fc.dataset.c);}
-  if(mt==='ov'){if(window._ovSmInit)initOvSmChart(_ovSmKey||'div');}
+  if(mt==='ov'){if(window._ovSmInit)initOvSmChart(_ovSmKey||'div');if(window.ovApplyZoom)ovApplyZoom();}
   if(mt==='tbl'){if(window.tblInit)tblInit();}
   if(mt==='crop'){const f=document.querySelector('.cp-tab.active');if(f)f.click();}
 }
@@ -2256,6 +2617,8 @@ function switchReport(sid,type){
   const n=CurPer[sid]||52;
   if(type==='legacy'){
     filterRows(sid,10);
+    if(typeof tblMiniRender==='function')
+      tblMiniRender(sid,(typeof _miniN!=='undefined'&&_miniN[sid])||10);
     setTimeout(()=>{drawMainChart(sid,n);drawBarsFor(sid,n);},30);
   } else if(type==='tff'){
     filterTffRows(sid,10);
@@ -2673,6 +3036,7 @@ function ovCellVal(tr,col,type){
     const s=(td.textContent||'').toLowerCase();
     if(s.indexOf('very')>=0) return 2;
     if(s.indexOf('crowd')>=0) return 1;
+    if(s.indexOf('yes')>=0) return 1;   // CM LEAD
     return 0;
   }
   if(type==='cot'){
@@ -2694,6 +3058,7 @@ function ovSort(th){
     tbody.innerHTML='';
     _ovOrigRows.forEach(r=>tbody.appendChild(r));
     if(window.ovLoadFavs)ovLoadFavs();
+    if(window.ovRenumber)ovRenumber();
     return;
   }
   if(_ovSortCol===col){_ovSortDir=-_ovSortDir;} else {_ovSortCol=col;_ovSortDir=-1;}
@@ -2712,6 +3077,18 @@ function ovSort(th){
   tbody.innerHTML='';
   rows.forEach(r=>tbody.appendChild(r));
   if(window.ovLoadFavs)ovLoadFavs();
+  if(window.ovRenumber)ovRenumber();
+}
+
+// ── v44: Overview -> вкладка TABLE цього активу ──
+function ovGoTable(sid){
+  if(typeof _tbl!=='undefined'&&_tbl[sid]&&typeof tblSel==='function'){
+    selMain('tbl');
+    tblSel(sid,null);
+    window.scrollTo({top:0,behavior:'smooth'});
+    return;
+  }
+  ovGoInstrument(sid);   // фолбек, якщо активу немає в таблиці
 }
 
 // ── v23: Overview -> перехід на вкладку інструмента ──
@@ -2751,6 +3128,41 @@ function ovLoadFavs(){
 }
 setTimeout(ovLoadFavs,60);
 
+// ── v50: наскрізна нумерація рядків (не залежить від сортування) ──
+function ovRenumber(){
+  let n=1;
+  document.querySelectorAll('.ov-table tbody tr').forEach(function(tr){
+    if(tr.classList.contains('ov-group'))return;
+    const td=tr.querySelector('.ov-idx');
+    if(td)td.textContent=n++;
+  });
+}
+setTimeout(ovRenumber,70);
+
+// ── v48: масштаб таблиці Overview ──
+let _ovZoom=null;
+try{const _oz=localStorage.getItem('ov_zoom');if(_oz)_ovZoom=parseFloat(_oz);}catch(e){}
+const OV_ZOOM_BASE=17, OV_ZOOM_MIN=9, OV_ZOOM_MAX=32;
+function ovApplyZoom(){
+  const t=document.querySelector('.ov-table');
+  const fs=Math.round((_ovZoom!=null&&isFinite(_ovZoom))?_ovZoom:OV_ZOOM_BASE);
+  if(t)t.style.fontSize=fs+'px';
+  const l=document.getElementById('ovZoomLbl');
+  if(l)l.textContent=fs+'px';
+}
+function ovZoom(step){
+  const cur=(_ovZoom!=null&&isFinite(_ovZoom))?_ovZoom:OV_ZOOM_BASE;
+  _ovZoom=Math.max(OV_ZOOM_MIN,Math.min(OV_ZOOM_MAX,cur+step));
+  try{localStorage.setItem('ov_zoom',_ovZoom);}catch(e){}
+  ovApplyZoom();
+}
+function ovZoomReset(){
+  _ovZoom=null;
+  try{localStorage.removeItem('ov_zoom');}catch(e){}
+  ovApplyZoom();
+}
+setTimeout(ovApplyZoom,80);
+
 // ── v21: Overview COT period switcher ──
 let _ovCotPer='all';
 function ovSetPer(btn){
@@ -2766,8 +3178,8 @@ function ovSetPer(btn){
       return;
     }
     const v=parseFloat(raw);
-    const color=v<15?'#f0515a':v>85?'#20d483':'#4a9eff';
-    const cls=v>85?'ov-cot-hi':v<15?'ov-cot-lo':'';
+    const color=v<20?'#20d483':v>80?'#f0515a':'#4a9eff';
+    const cls=v<20?'ov-cot-hi':v>80?'ov-cot-lo':'';
     const pct=Math.min(Math.max(v,0),100);
     cell.innerHTML='<div class="ov-bar-bg"><div class="ov-bar-fill" style="width:'+pct.toFixed(1)+'%;background:'+color+'"></div></div>'
       +'<span class="ov-cot-val '+cls+'">'+v.toFixed(0)+'%</span>';
