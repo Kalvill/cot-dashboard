@@ -524,7 +524,7 @@ def read_tff_sheet(xl_tff,name):
         hist={'dates':hdf['_dt'].dt.strftime('%d.%m.%Y').tolist(),'lev_cl':gch('lev_cl'),'lev_cs':gch('lev_cs'),'lev_net':gch('lev_net'),'am_cl':gch('am_cl'),'am_cs':gch('am_cs'),'am_net':gch('am_net'),'dl_cl':gch('dl_cl'),'dl_cs':gch('dl_cs'),'dl_net':gch('dl_net'),'oi':to_num(hdf.iloc[:,oi_ci]) if oi_ci<hdf.shape[1] else [0.0]*len(hdf)}
         oi_st=stats(oi_all)
         oi_cap=round(oi_cur/oi_st['max_all']*100,1) if oi_st.get('max_all',0)>0 else 50.0
-        return{'name':name,'sid':sid(name),'chart':chart,'hist':hist,'stats':{'lev':stats(lev_net,lev_cl,lev_cs),'am':stats(am_net,am_cl,am_cs),'dl':stats(dl_net,dl_cl,dl_cs),'oi':oi_st},'cot_idx':{'lev':cot(lev_net),'am':cot(am_net),'dl':cot(dl_net)},'spark':{'lev':lev_net,'am':am_net,'dl':dl_net,'oi':oi_all},'oi_capacity':oi_cap,'cur':{'date':all_dates[i0],'lev_net':lev_net[i0],'lev_chg':lev_chg,'lev_cl':lev_cl[i0],'lev_cs':lev_cs[i0],'lev_chg_pct':pct_change(lev_chg,lev_net[i0]),'am_net':am_net[i0],'am_chg':am_chg,'am_cl':am_cl[i0],'am_cs':am_cs[i0],'am_chg_pct':pct_change(am_chg,am_net[i0]),'dl_net':dl_net[i0],'dl_chg':dl_chg,'dl_cl':dl_cl[i0],'dl_cs':dl_cs[i0],'dl_chg_pct':pct_change(dl_chg,dl_net[i0]),'oi':oi_cur,'oi_chg':oi_chg,'oi_chg_pct':fp(oi_pct,signed=True)}}
+        return{'name':name,'sid':sid(name),'table':_tbl_payload(df,TFF_TBL_COLS),'chart':chart,'hist':hist,'stats':{'lev':stats(lev_net,lev_cl,lev_cs),'am':stats(am_net,am_cl,am_cs),'dl':stats(dl_net,dl_cl,dl_cs),'oi':oi_st},'cot_idx':{'lev':cot(lev_net),'am':cot(am_net),'dl':cot(dl_net)},'spark':{'lev':lev_net,'am':am_net,'dl':dl_net,'oi':oi_all},'oi_capacity':oi_cap,'cur':{'date':all_dates[i0],'lev_net':lev_net[i0],'lev_chg':lev_chg,'lev_cl':lev_cl[i0],'lev_cs':lev_cs[i0],'lev_chg_pct':pct_change(lev_chg,lev_net[i0]),'am_net':am_net[i0],'am_chg':am_chg,'am_cl':am_cl[i0],'am_cs':am_cs[i0],'am_chg_pct':pct_change(am_chg,am_net[i0]),'dl_net':dl_net[i0],'dl_chg':dl_chg,'dl_cl':dl_cl[i0],'dl_cs':dl_cs[i0],'dl_chg_pct':pct_change(dl_chg,dl_net[i0]),'oi':oi_cur,'oi_chg':oi_chg,'oi_chg_pct':fp(oi_pct,signed=True)}}
     except Exception as e: print(f"  ❌ TFF {name}: {e}"); return None
 
 def load_tff_data():
@@ -757,12 +757,13 @@ def make_tff_view(tff,s,reports_panel_html):
     cards=make_tff_metric_cards(tff,s);analysis=make_tff_analysis(tff)
     pct=make_tff_pct_panel(tff,s);chart=make_tff_chart_block(tff,s)
     bars=make_tff_bar_block(tff,s);tbl_id=f'tff_tbl_{s}';tbl=make_tff_hist_table(tff,tbl_id)
+    # v52: верстка вкладки TABLE, обрізана по OPEN INTEREST
     table_block=(f'<div class="htable-wrap"><div class="htable-hdr"><span>ТИЖНЕВА СТАТИСТИКА ПОЗИЦІЙ</span>'
                  f'<div class="hsel">'
-                 f'<button class="hbtn active" data-n="10" onclick="setTffHist(this,\'{s}\')">10</button>'
-                 f'<button class="hbtn" data-n="26" onclick="setTffHist(this,\'{s}\')">26</button>'
-                 f'<button class="hbtn" data-n="52" onclick="setTffHist(this,\'{s}\')">52</button>'
-                 f'</div></div><div class="htable-scroll">{tbl}</div></div>')
+                 f'<button class="hbtn active" data-n="10" onclick="setMiniHistT(this,\'{s}\')">10</button>'
+                 f'<button class="hbtn" data-n="26" onclick="setMiniHistT(this,\'{s}\')">26</button>'
+                 f'<button class="hbtn" data-n="52" onclick="setMiniHistT(this,\'{s}\')">52</button>'
+                 f'</div></div><div class="tb-scroll tb-mini" id="mini_tff_{s}"></div></div>')
     mid=f'<div class="tff-mid">{pct}</div>'
     return(f'<div class="rpt-sec" id="rpt_tff_{s}" style="display:none">'+cards+analysis+mid+bars+chart+table_block+'</div>')
 
@@ -1468,12 +1469,14 @@ TBL_COLS = [c for _g, _c, cols in TBL_GROUPS for c in cols]
 TBL_SCALE = {'pct':1000, 'cot':1000, 'ratio':1000}
 
 
-def _tbl_payload(df):
+def _tbl_payload(df, colspec=None):
     """Готує компактний колонковий payload для вкладки TABLE.
 
     df — той самий DataFrame, що вже відфільтрований і відсортований у read_sheet().
+    colspec — набір колонок (TBL_COLS для Legacy, TFF_TBL_COLS для TFF).
     Зберігаємо у зворотному порядку (найновіші зверху) — так рендер бере просто зріз.
     """
+    if colspec is None: colspec = TBL_COLS
     try:
         work = df
         # відкидаємо порожні/#N/A рядки (немає ані Long, ані net у Large Spec)
@@ -1486,7 +1489,7 @@ def _tbl_payload(df):
         dates = work['_dt'].dt.strftime('%d.%m.%Y').tolist()[::-1]
         cols = []
         n = len(work)
-        for ci, _lbl, kind in TBL_COLS:
+        for ci, _lbl, kind in colspec:
             if ci >= work.shape[1]:
                 cols.append([None] * n); continue
             s = work.iloc[:, ci]
@@ -1510,43 +1513,74 @@ def _tbl_payload(df):
         return {'d': dates, 'c': cols}
     except Exception as e:
         print(f"    ⚠  _tbl_payload: {e}")
-        return {'d': [], 'c': [[] for _ in TBL_COLS]}
+        return {'d': [], 'c': [[] for _ in colspec]}
 
 
-def make_table_tab(data):
-    """Вкладка TABLE — селектор активів + повна тижнева таблиця."""
-    if not data:
-        return '<p style="padding:24px;color:#8090b0">Немає даних</p>'
 
-    # ── селектор активів (групи як у CATEGORIES) ──
+# ================================================================
+# v51 — TFF TABLE (колонки B..W + AH..BH)
+# ================================================================
+# У файлі стовпці BB..BH не мають заголовків — перейменуй тут за потреби.
+TFF_EXTRA_LABELS = {53:'BB', 54:'BC', 55:'BD', 56:'BE', 57:'BF', 58:'BG', 59:'BH'}
+
+def _tff_grp(base, name, color, net_lbl):
+    """7 стандартних колонок групи TFF, base — індекс колонки Long"""
+    return (name, color, [
+        (base + 0, 'LONG', 'grad'), (base + 1, 'SHORT', 'grad'),
+        (base + 2, 'CHG LONG', 'chg'), (base + 3, 'CHG SHORT', 'chg'),
+        (base + 4, '%NET/OI', 'pct'), (base + 5, '%OI CHG', 'pct'),
+        (base + 6, net_lbl, 'net')])
+
+TFF_TBL_GROUPS = [
+    _tff_grp(16, 'LEV MONEY',  TFF_COLOR_LEV, 'NET LEV'),
+    _tff_grp(9,  'ASSET MGR',  TFF_COLOR_AM,  'NET AM'),
+    _tff_grp(2,  'DEALER',     TFF_COLOR_DL,  'NET DL'),
+    ('OPEN INTEREST', '#a0aac0', [(33, '%OI CHG', 'pct'), (34, 'OPEN INT', 'oi')]),
+    ('COT INDEX (ALL)', '#f0b429', [(35,'DL','cot'),(36,'AM','cot'),(37,'LEV','cot')]),
+    ('COT 5Y',          '#f0b429', [(38,'DL','cot'),(39,'AM','cot'),(40,'LEV','cot')]),
+    ('COT 3Y',          '#f0b429', [(41,'DL','cot'),(42,'AM','cot'),(43,'LEV','cot')]),
+    ('COT 1Y',          '#f0b429', [(44,'DL','cot'),(45,'AM','cot'),(46,'LEV','cot')]),
+    ('COT 6M',          '#f0b429', [(47,'DL','cot'),(48,'AM','cot'),(49,'LEV','cot')]),
+    ('COT 3M',          '#f0b429', [(50,'DL','cot'),(51,'AM','cot'),(52,'LEV','cot')]),
+    ('EXTRA', '#a78bfa', [(53, TFF_EXTRA_LABELS[53], 'chg'), (54, TFF_EXTRA_LABELS[54], 'chg'),
+                          (55, TFF_EXTRA_LABELS[55], 'chg'), (56, TFF_EXTRA_LABELS[56], 'cot'),
+                          (57, TFF_EXTRA_LABELS[57], 'chg'), (58, TFF_EXTRA_LABELS[58], 'chg'),
+                          (59, TFF_EXTRA_LABELS[59], 'chg')]),
+]
+TFF_TBL_COLS = [c for _g, _c, cols in TFF_TBL_GROUPS for c in cols]
+
+
+def _tbl_assets_bar(dataset):
+    """Селектор активів для одного джерела. Повертає (html, перший sid)."""
     GRP_COLOR = {'Валюти':'#4a9eff','Метали':'#f0b429','Індекси':'#a78bfa',
                  'Енергія':'#f59420','Агро':'#20d483','Крипто':'#22d3ee'}
     sel_parts = []
     first_sid = None
     for cat, instruments in CATEGORIES.items():
-        avail = [i for i in instruments if i in data]
+        avail = [i for i in instruments if i in dataset]
         if not avail: continue
         col = GRP_COLOR.get(cat, '#8090b0')
         btns = []
         for i in avail:
-            s = data[i]['sid']
+            s = dataset[i]['sid']
             if first_sid is None: first_sid = s
             btns.append(f'<button class="tb-a" data-sid="{s}" '
                         f'onclick="tblSel(\'{s}\',this)">{disp(i)}</button>')
-        # назва групи окремим рядком, під нею — кнопки інструментів
         sel_parts.append(f'<div class="tb-grow">'
                          f'<div class="tb-grp" style="color:{col}">{cat.upper()}</div>'
                          f'<div class="tb-gbtns">' + ''.join(btns) + '</div></div>')
-    asset_bar = '<div class="tb-assets">' + ''.join(sel_parts) + '</div>'
+    return '<div class="tb-assets">' + ''.join(sel_parts) + '</div>', first_sid
 
-    # ── шапка таблиці (2 рядки) ──
+
+def _tbl_heads(groups):
+    """Шапка таблиці + скорочена шапка до OPEN INTEREST + spec колонок."""
     r1 = '<th class="tb-corner" rowspan="2">ДАТА</th>'
     r2 = ''
-    m1 = r1; m2 = ''          # скорочена шапка для міні-таблиці (до OPEN INTEREST)
+    m1 = r1; m2 = ''
     mini_cols = 0
     MINI_LAST = 'OPEN INTEREST'
     in_mini = True
-    for gname, gcol, cols in TBL_GROUPS:
+    for gname, gcol, cols in groups:
         r_, g_, b_ = int(gcol[1:3],16), int(gcol[3:5],16), int(gcol[5:7],16)
         gh = (f'<th colspan="{len(cols)}" class="tb-g" '
               f'style="background:rgba({r_},{g_},{b_},.18);color:#fff;'
@@ -1564,29 +1598,73 @@ def make_table_tab(data):
         if gname == MINI_LAST: in_mini = False
     thead = f'<thead><tr class="tb-r1">{r1}</tr><tr class="tb-r2">{r2}</tr></thead>'
     mini_thead = f'<thead><tr class="tb-r1">{m1}</tr><tr class="tb-r2">{m2}</tr></thead>'
-
-    # ── дані інструментів ──
     spec = []
-    for _g, gcol, cols in TBL_GROUPS:
+    for _g, gcol, cols in groups:
         for k, (_ci, _lbl, kind) in enumerate(cols):
             spec.append({'k': kind, 's': 1 if k == len(cols) - 1 else 0, 'c': gcol,
                          'i': 1 if _lbl == 'SHORT' else 0,
                          'n': 1 if _lbl == '%NET/OI' else 0,
                          'l': _lbl,
                          'ct': 1 if _g.startswith('COT') else 0})
+    return thead, mini_thead, mini_cols, spec
+
+
+def make_table_tab(data, tff_data=None):
+    """Вкладка TABLE — перемикач джерела, селектор активів, повна таблиця."""
+    if not data:
+        return '<p style="padding:24px;color:#8090b0">Немає даних</p>'
+    tff_data = tff_data or {}
+
+    asset_bar,  first_sid  = _tbl_assets_bar(data)
+    asset_barT, first_sidT = _tbl_assets_bar(tff_data)
+
+    thead,  mini_thead, mini_cols, spec  = _tbl_heads(TBL_GROUPS)
+    theadT, mini_theadT, mini_colsT, specT = _tbl_heads(TFF_TBL_GROUPS)
+
+    def _fit_cols(groups):
+        n = 1
+        for gname, _c, cols in groups:
+            n += len(cols)
+            if gname == 'OPEN INTEREST': break
+        return n
+
     payloads = []
     for key, d in data.items():
         tb = d.get('table')
         if not tb: continue
         payloads.append('_tbl["%s"]=%s;' % (d['sid'], json.dumps(tb, separators=(',', ':'))))
         payloads.append('_tblName["%s"]=%s;' % (d['sid'], json.dumps(d['display'], ensure_ascii=False)))
+    for key, d in tff_data.items():
+        tb = d.get('table')
+        if not tb: continue
+        payloads.append('_tblT["%s"]=%s;' % (d['sid'], json.dumps(tb, separators=(',', ':'))))
+        payloads.append('_tblNameT["%s"]=%s;' % (d['sid'], json.dumps(disp(key), ensure_ascii=False)))
 
     head_js = ('<script>const _tbl={};const _tblName={};'
-               'window._TBL_SPEC=' + json.dumps(spec, separators=(',', ':')) + ';'
+               'const _tblT={};const _tblNameT={};let _tblSrc=\'leg\';'
+               'window._TBL_SPEC_L=' + json.dumps(spec, separators=(',', ':')) + ';'
+               'window._TBL_SPEC_T=' + json.dumps(specT, separators=(',', ':')) + ';'
+               'window._TBL_THEAD_L=' + json.dumps(thead, ensure_ascii=False) + ';'
+               'window._TBL_THEAD_T=' + json.dumps(theadT, ensure_ascii=False) + ';'
+               'window._TBL_ASSETS_L=' + json.dumps(asset_bar, ensure_ascii=False) + ';'
+               'window._TBL_ASSETS_T=' + json.dumps(asset_barT, ensure_ascii=False) + ';'
+               'window._TBL_FITCOLS_L=' + str(_fit_cols(TBL_GROUPS)) + ';'
+               'window._TBL_FITCOLS_T=' + str(_fit_cols(TFF_TBL_GROUPS)) + ';'
                'window._TBL_MINI_THEAD=' + json.dumps(mini_thead, ensure_ascii=False) + ';'
                'window._TBL_MINI_COLS=' + str(mini_cols) + ';'
+               'window._TBL_MINI_THEAD_T=' + json.dumps(mini_theadT, ensure_ascii=False) + ';'
+               'window._TBL_MINI_COLS_T=' + str(mini_colsT) + ';'
+               'window._TBL_FIRST_L=' + json.dumps(first_sid or '') + ';'
+               'window._TBL_FIRST_T=' + json.dumps(first_sidT or '') + ';'
                'window._TBL_FIRST=' + json.dumps(first_sid or '') + ';</script>')
     data_js = '<script>' + ''.join(payloads) + '</script>'
+
+    src_sw = ('<div class="tb-src">'
+              '<button class="tb-srcb active" data-src="leg" '
+              'onclick="tblSrcSet(\'leg\',this)">LEGACY</button>'
+              + ('<button class="tb-srcb" data-src="tff" '
+                 'onclick="tblSrcSet(\'tff\',this)">TFF</button>' if tff_data else '')
+              + '</div>')
 
     per_btns = ''.join(
         f'<button class="tb-per{" active" if p=="6M" else ""}" data-n="{n}" '
@@ -1595,7 +1673,7 @@ def make_table_tab(data):
 
     body = (
         '<div class="tb-wrap">'
-        + asset_bar +
+        + src_sw + asset_bar +
         '<div class="tb-hdr">'
         '<div class="tb-hl"><span class="tb-name" id="tblName">—</span>'
         '<button class="tb-dash" id="tblDashBtn" onclick="tblGoDash()">Dashboard</button>'
@@ -1623,6 +1701,11 @@ TBL_CSS = """
 <style>
 /* ── v29 TABLE TAB ── */
 .tb-wrap{padding:12px 16px;}
+.tb-src{display:flex;gap:4px;margin-bottom:8px;}
+.tb-srcb{padding:5px 20px;border:1px solid var(--bd);border-radius:3px;background:transparent;
+  color:#b0bcd4;font-family:var(--f);font-size:12px;cursor:pointer;letter-spacing:1px;}
+.tb-srcb:hover{border-color:var(--accent);color:#fff;}
+.tb-srcb.active{background:var(--bg3);color:var(--accent);border-color:var(--accent);font-weight:bold;}
 .tb-assets{display:flex;flex-wrap:wrap;align-items:flex-start;gap:10px 22px;
   padding:9px 12px;
   background:var(--bg2);border:1px solid var(--bd);border-radius:5px;margin-bottom:10px;}
@@ -1909,14 +1992,35 @@ function tblCell(kind,v,mx,sep,rg,gc,inv,soft,ct){
 }
 
 // підсумкові рядки: MAX/MIN за весь час, MAX/MIN за 5 років, середнє за 13 тижнів
+// ── v51: два джерела даних — Legacy (leg) і TFF ──
+function tblD(){return _tblSrc==='tff'?_tblT:_tbl;}
+function tblNm(){return _tblSrc==='tff'?_tblNameT:_tblName;}
+function tblSpec(){return _tblSrc==='tff'?window._TBL_SPEC_T:window._TBL_SPEC_L;}
+function tblFitCols(){return (_tblSrc==='tff'?window._TBL_FITCOLS_T:window._TBL_FITCOLS_L)||22;}
+function tblSrcSet(src,btn){
+  if(_tblSrc===src)return;
+  _tblSrc=src;
+  document.querySelectorAll('.tb-srcb').forEach(function(b){b.classList.remove('active');});
+  if(btn)btn.classList.add('active');
+  const ab=document.querySelector('.tb-assets');
+  if(ab)ab.outerHTML=(src==='tff'?window._TBL_ASSETS_T:window._TBL_ASSETS_L);
+  const tbl=document.getElementById('dtTable');
+  const th=tbl?tbl.querySelector('thead'):null;
+  if(th)th.outerHTML=(src==='tff'?window._TBL_THEAD_T:window._TBL_THEAD_L);
+  _tblCur='';
+  const first=(src==='tff'?window._TBL_FIRST_T:window._TBL_FIRST_L);
+  if(first&&tblD()[first])tblSel(first,null);
+}
+
 // Підсумкові рядки. Кожен рядок цілком одного кольору:
 // MAX(ALL) насичений зелений, MAX(5Y) приглушений; MIN — дзеркально червоним.
 const TB_STAT_ROWS=[['MAX (ALL)',0,'max','#20d483'],
                     ['MIN (ALL)',0,'min','#f0515a'],
                     ['MAX (5Y)',260,'max','#7abba6'],
                     ['MIN (5Y)',260,'min','#c47884']];
-function tblStatsRows(d,LIM){
-  const S=window._TBL_SPEC,N=d.d.length;
+function tblStatsRows(d,LIM,S){
+  if(!S)S=tblSpec();
+  const N=d.d.length;
   if(LIM==null)LIM=S.length;
   let html='';
   for(const[lbl,win,mode,rcol]of TB_STAT_ROWS){
@@ -1962,7 +2066,7 @@ function tblAutoSize(tbl,sc){
   tbl.style.fontSize=TB_FIT_BASE+'px';
   const row=tbl.querySelector('tbody#dtBody tr')||tbl.querySelector('tbody tr');
   if(!row)return TB_FIT_BASE;
-  let w=0;const n=Math.min(TB_FIT_COLS,row.children.length);
+  let w=0;const n=Math.min(tblFitCols(),row.children.length);
   for(let i=0;i<n;i++)w+=row.children[i].getBoundingClientRect().width;
   const avail=sc.clientWidth-2;
   if(!(w>0&&avail>0))return TB_FIT_BASE;
@@ -2004,8 +2108,9 @@ window.addEventListener('resize',function(){
 });
 
 // Розрахунок діапазонів по колонках. Спільний для повної таблиці й міні-версії.
-function tblCalc(d,n,LIM){
-  const S=window._TBL_SPEC,N=d.d.length,mx=[],rg=[];
+function tblCalc(d,n,LIM,S){
+  if(!S)S=tblSpec();
+  const N=d.d.length,mx=[],rg=[];
   for(let ci=0;ci<LIM;ci++){
     const sp=S[ci],col=d.c[ci];
     let m=0;
@@ -2026,8 +2131,9 @@ function tblCalc(d,n,LIM){
   }
   return{mx:mx,rg:rg};
 }
-function tblRowsHtml(d,n,LIM,c){
-  const S=window._TBL_SPEC,parts=[];
+function tblRowsHtml(d,n,LIM,c,S){
+  if(!S)S=tblSpec();
+  const parts=[];
   for(let i=0;i<n;i++){
     parts.push('<tr><td class="tb-date">'+d.d[i]+'</td>');
     for(let ci=0;ci<LIM;ci++)
@@ -2037,18 +2143,18 @@ function tblRowsHtml(d,n,LIM,c){
   return parts.join('');
 }
 function tblRender(){
-  const d=_tbl[_tblCur];
+  const d=tblD()[_tblCur];
   const body=document.getElementById('dtBody');
   const stats=document.getElementById('dtStats');
   if(!d||!body)return;
-  const S=window._TBL_SPEC,N=d.d.length,n=Math.min(_tblN,N);
+  const S=tblSpec(),N=d.d.length,n=Math.min(_tblN,N);
   const c=tblCalc(d,n,S.length);
   stats.innerHTML=tblStatsRows(d,S.length);
   body.innerHTML=tblRowsHtml(d,n,S.length,c);
 
   const nm=document.getElementById('tblName');
   const mt=document.getElementById('tblMeta');
-  if(nm)nm.textContent=_tblName[_tblCur]||_tblCur;
+  if(nm)nm.textContent=tblNm()[_tblCur]||_tblCur;
   if(mt)mt.textContent='';
   tblHeadInfo(d);
   requestAnimationFrame(tblFit);
@@ -2056,13 +2162,16 @@ function tblRender(){
 
 // ── Шапка: кнопка дашборда, SM DIV, CROWDED ATH ──
 function tblColIdx(label){
-  const S=window._TBL_SPEC;
+  const S=tblSpec();
   for(let i=0;i<S.length;i++)if(S[i].l===label)return i;
   return -1;
 }
 function tblHeadInfo(d){
   const btn=document.getElementById('tblDashBtn');
-  if(btn)btn.textContent=(_tblName[_tblCur]||_tblCur)+' Dashboard';
+  if(btn)btn.textContent=(tblNm()[_tblCur]||_tblCur)+' Dashboard';
+  // у TFF немає колонок SM DIV / CROWDED ATH — ховаємо блок цілком
+  const info=document.querySelector('.tb-info');
+  if(info)info.style.display=(_tblSrc==='tff'?'none':'');
   const sm=document.getElementById('tblSmDiv'),cw=document.getElementById('tblCrowd');
   if(sm){
     const i=tblColIdx('SM DIV');
@@ -2093,11 +2202,33 @@ function tblMiniRender(sid,n){
   const LIM=window._TBL_MINI_COLS||21,N=d.d.length;
   n=Math.min(n||10,N);
   _miniN[sid]=n;
-  const c=tblCalc(d,n,LIM);
+  const SL=window._TBL_SPEC_L;
+  const c=tblCalc(d,n,LIM,SL);
   box.innerHTML='<table class="dt">'+(window._TBL_MINI_THEAD||'')
-    +'<tbody class="tb-stats">'+tblStatsRows(d,LIM)+'</tbody>'
-    +'<tbody>'+tblRowsHtml(d,n,LIM,c)+'</tbody></table>';
+    +'<tbody class="tb-stats">'+tblStatsRows(d,LIM,SL)+'</tbody>'
+    +'<tbody>'+tblRowsHtml(d,n,LIM,c,SL)+'</tbody></table>';
   requestAnimationFrame(function(){tblFitEl(box.querySelector('table'),box,LIM+1);});
+}
+// ── Міні-таблиця TFF (LEV MONEY / ASSET MGR / DEALER / OPEN INTEREST) ──
+const _miniNT={};
+function tblMiniRenderT(sid,n){
+  const box=document.getElementById('mini_tff_'+sid),d=(typeof _tblT!=='undefined')?_tblT[sid]:null;
+  if(!box||!d)return;
+  const ST=window._TBL_SPEC_T;
+  if(!ST)return;
+  const LIM=window._TBL_MINI_COLS_T||23,N=d.d.length;
+  n=Math.min(n||10,N);
+  _miniNT[sid]=n;
+  const c=tblCalc(d,n,LIM,ST);
+  box.innerHTML='<table class="dt">'+(window._TBL_MINI_THEAD_T||'')
+    +'<tbody class="tb-stats">'+tblStatsRows(d,LIM,ST)+'</tbody>'
+    +'<tbody>'+tblRowsHtml(d,n,LIM,c,ST)+'</tbody></table>';
+  requestAnimationFrame(function(){tblFitEl(box.querySelector('table'),box,LIM+1);});
+}
+function setMiniHistT(btn,sid){
+  btn.parentNode.querySelectorAll('.hbtn').forEach(function(b){b.classList.remove('active');});
+  btn.classList.add('active');
+  tblMiniRenderT(sid,parseInt(btn.dataset.n));
 }
 function setMiniHist(btn,sid){
   btn.parentNode.querySelectorAll('.hbtn').forEach(function(b){b.classList.remove('active');});
@@ -2142,7 +2273,7 @@ function tblPer(btn){
 window.tblInit=function(){
   if(_tblCur)return;
   const sid=window._TBL_FIRST;
-  if(sid&&_tbl[sid])tblSel(sid,null);
+  if(sid&&tblD()[sid])tblSel(sid,null);
 };
 </script>
 """
@@ -2536,7 +2667,7 @@ def generate_html(data, tff_data=None, disag_data=None, crop_data=None):
         cat_sects.append(f'<div class="catsec{act}" id="cs_{cat}"><div class="itabs" id="itabs_{cat}">{inst_btns}</div><div class="iviews" id="iv_{cat}">{views}</div></div>')
         first_cat=False
     ov_html=make_overview_tab()
-    tbl_html=make_table_tab(data)
+    tbl_html=make_table_tab(data, tff_data)
     db='<span class="dash-b">DAS</span><span class="dash-g">HBO</span><span class="dash-r">ARD</span>'
     badge=f' <span class="tff-badge">{len(tff_data)} TFF</span>' if tff_data else ''
     dg_badge=f' <span class="dg-badge">{len(disag_data)} DG</span>' if disag_data else ''
@@ -2622,6 +2753,8 @@ function switchReport(sid,type){
     setTimeout(()=>{drawMainChart(sid,n);drawBarsFor(sid,n);},30);
   } else if(type==='tff'){
     filterTffRows(sid,10);
+    if(typeof tblMiniRenderT==='function')
+      tblMiniRenderT(sid,(typeof _miniNT!=='undefined'&&_miniNT[sid])||10);
     setTimeout(()=>{drawTffChart(sid,n);drawTffBars(sid,n);},30);
   } else if(type==='dg'){
     filterDgRows(sid,10);
