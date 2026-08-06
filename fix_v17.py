@@ -1,26 +1,35 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-fix_v52.py — TFF: порядок груп, назва вкладки, шапка, міні-таблиця
-(потрібні fix_v29 … fix_v51)
+fix_v54.py — вкладка Overview: перемикач LEGACY / TFF / DISAGGREGATED
+(потрібні fix_v29 … fix_v53)
 
-Зміни:
-  1. Кнопка OVERVIEW перейменована на LEGACY.
-  2. У режимі TFF з шапки прибрано «SM DIV —» і бейдж CROWDED —
-     цих колонок у TFF-файлі немає, тож прочерки лише заважали.
-  3. Порядок груп TFF: LEV MONEY -> ASSET MGR -> DEALER.
-     NET-колонки підписані NET LEV / NET AM / NET DL.
-  4. Таблиця «ТИЖНЕВА СТАТИСТИКА ПОЗИЦІЙ» на вкладці TFF Report
-     інструмента замінена на верстку вкладки TABLE, обрізану по
-     OPEN INTEREST: LEV MONEY, ASSET MGR, DEALER, OPEN INTEREST.
+У COT_TFF_REPORTS.xlsx з'явився аркуш «Overview», у
+COT_DISAGRAGATE_REPORTS.xlsx — «OVERVIEW». Структура в обох однакова
+(заголовки в рядку 4, дані з рядка 5):
 
-Про EXTRA (BB…BH): це не помилка рендеру. У COT_TFF_REPORTS.xlsx
-ці сім стовпців справді не мають заголовків — рядки 3, 4 і 5 аркуша
-для них порожні, і в аркуші info їх теж немає. Тому підписані літерами
-Excel. Щоб дати назви, відредагуй TFF_EXTRA_LABELS у generate.py.
+    A  #            H  COT (група 3)
+    B  ASSET        I  Chg % (група 1)
+    C  NET (гр. 1)  J  Chg   (група 1)
+    D  NET (гр. 2)  K  Chg % (група 2)
+    E  NET (гр. 3)  L  Chg   (група 2)
+    F  COT (гр. 1)  M  Chg % (група 3)
+    G  COT (гр. 2)  N  Chg   (група 3)
+                    O  % OI Chg
+
+Групи: TFF — LevMon / A.MGR / DLRS, Disaggregated — MM / PROD / DLRS.
+Підписи колонок читаються прямо з рядка 4, тож якщо ти їх переназвеш
+в Excel — вони підтягнуться самі.
+
+Форматування те саме, що в Legacy Overview:
+  NET, Chg     — колір за знаком, без фону
+  COT          — смуга + значення, <20% зелений, >80% червоний
+  Chg %        — >+30% зелений, <-30% червоний, решта сірий
+  % OI Chg     — колір за знаком
+  нумерація, сортування по колонках і масштаб — спільні
 
 Скрипт ідемпотентний. Запускати з папки проєкту:
-    python fix_v52.py
+    python fix_v54.py
 """
 import shutil, sys
 from pathlib import Path
@@ -28,127 +37,247 @@ from datetime import datetime
 
 SRC = Path(__file__).parent / "generate.py"
 
-# ── 1. групи TFF: порядок і підписи NET ────────────────────────
-OLD_GRP = """def _tff_grp(base, name, color):
-    \"\"\"7 стандартних колонок групи TFF, base — індекс колонки Long\"\"\"
-    return (name, color, [
-        (base + 0, 'LONG', 'grad'), (base + 1, 'SHORT', 'grad'),
-        (base + 2, 'CHG LONG', 'chg'), (base + 3, 'CHG SHORT', 'chg'),
-        (base + 4, '%NET/OI', 'pct'), (base + 5, '%OI CHG', 'pct'),
-        (base + 6, 'NET ' + name.split()[0][:3], 'net')])
+OV2_BLOCK = '''
+# ================================================================
+# v54 — Overview для TFF і Disaggregated
+# ================================================================
+# (файл, аркуш, кольори трьох груп)
+OV2_SOURCES = [
+    ('tff', 'TFF',           lambda: TFF_FILE,   'Overview',
+     [TFF_COLOR_LEV, TFF_COLOR_AM, TFF_COLOR_DL]),
+    ('dg',  'DISAGGREGATED', lambda: DISAG_FILE, 'OVERVIEW',
+     [DISAG_COLOR_MM, DISAG_COLOR_PM, DISAG_COLOR_SD]),
+]
+OV2_HDR_ROW  = 3    # рядок із підписами колонок (0-based)
+OV2_DATA_ROW = 4    # перший рядок даних
 
-TFF_TBL_GROUPS = [
-    _tff_grp(2,  'DEALER',     TFF_COLOR_DL),
-    _tff_grp(9,  'ASSET MGR',  TFF_COLOR_AM),
-    _tff_grp(16, 'LEV MONEY',  TFF_COLOR_LEV),"""
 
-NEW_GRP = """def _tff_grp(base, name, color, net_lbl):
-    \"\"\"7 стандартних колонок групи TFF, base — індекс колонки Long\"\"\"
-    return (name, color, [
-        (base + 0, 'LONG', 'grad'), (base + 1, 'SHORT', 'grad'),
-        (base + 2, 'CHG LONG', 'chg'), (base + 3, 'CHG SHORT', 'chg'),
-        (base + 4, '%NET/OI', 'pct'), (base + 5, '%OI CHG', 'pct'),
-        (base + 6, net_lbl, 'net')])
+def read_overview2(path, sheet):
+    """Читає аркуш Overview з TFF/Disaggregated. Повертає (labels, rows)."""
+    try:
+        raw = pd.read_excel(path, sheet_name=sheet, header=None)
+    except Exception as e:
+        print(f"  ⚠  {path.name}/{sheet}: {e}")
+        return [], []
+    labels = []
+    for c in range(2, 15):
+        v = raw.iloc[OV2_HDR_ROW, c] if c < raw.shape[1] else None
+        labels.append(str(v).strip() if pd.notna(v) else '')
+    rows = []
+    for i in range(OV2_DATA_ROW, len(raw)):
+        asset = raw.iloc[i, 1]
+        if pd.isna(asset): continue
+        asset = str(asset).strip()
+        if not asset or asset == 'nan': continue
+        vals = []
+        for c in range(2, 15):
+            v = pd.to_numeric(raw.iloc[i, c], errors='coerce') if c < raw.shape[1] else None
+            vals.append(float(v) if pd.notna(v) else None)
+        if all(v is None for v in vals): continue
+        rows.append({'asset': asset, 'v': vals})
+    return labels, rows
 
-TFF_TBL_GROUPS = [
-    _tff_grp(16, 'LEV MONEY',  TFF_COLOR_LEV, 'NET LEV'),
-    _tff_grp(9,  'ASSET MGR',  TFF_COLOR_AM,  'NET AM'),
-    _tff_grp(2,  'DEALER',     TFF_COLOR_DL,  'NET DL'),"""
 
-# ── 2. назва кнопки ────────────────────────────────────────────
-OLD_BTN = """'onclick=\"tblSrcSet(\\'leg\\',this)\">OVERVIEW</button>'"""
-NEW_BTN = """'onclick=\"tblSrcSet(\\'leg\\',this)\">LEGACY</button>'"""
+def _ov2_num(v):
+    """Ціле зі знаком, колір за знаком, без фону."""
+    if v is None: return '<td class="ov-num d">—</td>'
+    try: nv = int(round(float(v)))
+    except: return '<td class="ov-num d">—</td>'
+    body = f"{abs(nv):,}".replace(',', '\\u202f')
+    s2 = '+' if nv > 0 else ('-' if nv < 0 else '')
+    cls = 'g' if nv > 0 else ('r' if nv < 0 else 'd')
+    return f'<td class="ov-num {cls}">{s2}{body}</td>'
 
-# ── 3. експорт міні-шапки TFF ──────────────────────────────────
-OLD_HEADS = """    theadT, _mt,        _mc,       specT = _tbl_heads(TFF_TBL_GROUPS)"""
-NEW_HEADS = """    theadT, mini_theadT, mini_colsT, specT = _tbl_heads(TFF_TBL_GROUPS)"""
 
-OLD_EXPORT = """               'window._TBL_MINI_COLS=' + str(mini_cols) + ';'"""
-NEW_EXPORT = """               'window._TBL_MINI_COLS=' + str(mini_cols) + ';'
-               'window._TBL_MINI_THEAD_T=' + json.dumps(mini_theadT, ensure_ascii=False) + ';'
-               'window._TBL_MINI_COLS_T=' + str(mini_colsT) + ';'"""
+def _ov2_pct30(v):
+    """Відсоток: >+30% зелений, <-30% червоний, решта сірий."""
+    if v is None: return '<td class="ov-num d">—</td>'
+    try: f = float(v) * 100
+    except: return '<td class="ov-num d">—</td>'
+    if abs(f) > 9999: return '<td class="ov-num d">—</td>'
+    cls = 'g' if f > 30 else ('r' if f < -30 else 'd')
+    s2 = '+' if f > 0 else ''
+    return f'<td class="ov-num {cls}">{s2}{f:.1f}%</td>'
 
-# ── 4. міні-таблиця TFF у вкладці інструмента ──────────────────
-OLD_TFFVIEW = """    table_block=(f'<div class=\"htable-wrap\"><div class=\"htable-hdr\"><span>ТИЖНЕВА СТАТИСТИКА ПОЗИЦІЙ</span>'
-                 f'<div class=\"hsel\">'
-                 f'<button class=\"hbtn active\" data-n=\"10\" onclick=\"setTffHist(this,\\'{s}\\')\">10</button>'
-                 f'<button class=\"hbtn\" data-n=\"26\" onclick=\"setTffHist(this,\\'{s}\\')\">26</button>'
-                 f'<button class=\"hbtn\" data-n=\"52\" onclick=\"setTffHist(this,\\'{s}\\')\">52</button>'
-                 f'</div></div><div class=\"htable-scroll\">{tbl}</div></div>')"""
 
-NEW_TFFVIEW = """    # v52: верстка вкладки TABLE, обрізана по OPEN INTEREST
-    table_block=(f'<div class=\"htable-wrap\"><div class=\"htable-hdr\"><span>ТИЖНЕВА СТАТИСТИКА ПОЗИЦІЙ</span>'
-                 f'<div class=\"hsel\">'
-                 f'<button class=\"hbtn active\" data-n=\"10\" onclick=\"setMiniHistT(this,\\'{s}\\')\">10</button>'
-                 f'<button class=\"hbtn\" data-n=\"26\" onclick=\"setMiniHistT(this,\\'{s}\\')\">26</button>'
-                 f'<button class=\"hbtn\" data-n=\"52\" onclick=\"setMiniHistT(this,\\'{s}\\')\">52</button>'
-                 f'</div></div><div class=\"tb-scroll tb-mini\" id=\"mini_tff_{s}\"></div></div>')"""
+def _ov2_pct(v):
+    """Відсоток, колір за знаком."""
+    if v is None: return '<td class="ov-num d">—</td>'
+    try: f = float(v) * 100
+    except: return '<td class="ov-num d">—</td>'
+    if abs(f) > 9999: return '<td class="ov-num d">—</td>'
+    cls = 'g' if f > 0 else ('r' if f < 0 else 'd')
+    s2 = '+' if f > 0 else ''
+    return f'<td class="ov-num {cls}">{s2}{f:.1f}%</td>'
 
-# ── 5. JS ──────────────────────────────────────────────────────
-OLD_JS_INFO = """function tblHeadInfo(d){
-  const btn=document.getElementById('tblDashBtn');
-  if(btn)btn.textContent=(tblNm()[_tblCur]||_tblCur)+' Dashboard';
-  const sm=document.getElementById('tblSmDiv'),cw=document.getElementById('tblCrowd');"""
 
-NEW_JS_INFO = """function tblHeadInfo(d){
-  const btn=document.getElementById('tblDashBtn');
-  if(btn)btn.textContent=(tblNm()[_tblCur]||_tblCur)+' Dashboard';
-  // у TFF немає колонок SM DIV / CROWDED ATH — ховаємо блок цілком
-  const info=document.querySelector('.tb-info');
-  if(info)info.style.display=(_tblSrc==='tff'?'none':'');
-  const sm=document.getElementById('tblSmDiv'),cw=document.getElementById('tblCrowd');"""
+def _ov2_cot(v):
+    """COT INDEX: смуга + значення. <20% зелений, >80% червоний."""
+    if v is None: return '<td class="ov-num d">—</td>'
+    try: p = max(0.0, min(100.0, float(v) * 100))
+    except: return '<td class="ov-num d">—</td>'
+    color = '#20d483' if p < 20 else ('#f0515a' if p > 80 else '#4a9eff')
+    cls = 'ov-cot-hi' if p < 20 else ('ov-cot-lo' if p > 80 else '')
+    return (f'<td><div class="ov-cot-cell">'
+            f'<div class="ov-bar-bg"><div class="ov-bar-fill" '
+            f'style="width:{p:.1f}%;background:{color}"></div></div>'
+            f'<span class="ov-cot-val {cls}">{p:.0f}%</span></div></td>')
 
-OLD_JS_MINI = """function setMiniHist(btn,sid){"""
-NEW_JS_MINI = """// ── Міні-таблиця TFF (LEV MONEY / ASSET MGR / DEALER / OPEN INTEREST) ──
-const _miniNT={};
-function tblMiniRenderT(sid,n){
-  const box=document.getElementById('mini_tff_'+sid),d=(typeof _tblT!=='undefined')?_tblT[sid]:null;
-  if(!box||!d)return;
-  const ST=window._TBL_SPEC_T;
-  if(!ST)return;
-  const LIM=window._TBL_MINI_COLS_T||23,N=d.d.length;
-  n=Math.min(n||10,N);
-  _miniNT[sid]=n;
-  const c=tblCalc(d,n,LIM,ST);
-  box.innerHTML='<table class="dt">'+(window._TBL_MINI_THEAD_T||'')
-    +'<tbody class="tb-stats">'+tblStatsRows(d,LIM,ST)+'</tbody>'
-    +'<tbody>'+tblRowsHtml(d,n,LIM,c,ST)+'</tbody></table>';
-  requestAnimationFrame(function(){tblFitEl(box.querySelector('table'),box,LIM+1);});
+
+def make_overview2_tab(labels, rows, colors):
+    """Таблиця Overview для TFF / Disaggregated."""
+    if not rows:
+        return '<p style="padding:24px;color:#8090b0">Немає даних</p>'
+    # порядок колонок аркуша: NET x3, COT x3, (Chg%, Chg) x3, %OI Chg
+    order = [(0,'num',None), (1,'num',None), (2,'num',None),
+             (3,'cot',0),    (4,'cot',1),    (5,'cot',2),
+             (6,'p30',None), (7,'num',None),
+             (8,'p30',None), (9,'num',None),
+             (10,'p30',None),(11,'num',None),
+             (12,'pct',None)]
+    th = ['<th class="ov-idx-th">#</th>',
+          '<th class="ov-asset ov-sortable" data-col="1" data-stype="reset" '
+          'onclick="ovSort(this)" title="Скинути сортування">ASSET</th>']
+    for n, (ix, kind, gi) in enumerate(order):
+        lbl = labels[ix] if ix < len(labels) and labels[ix] else f'C{ix}'
+        st = ' data-stype="cot"' if kind == 'cot' else ''
+        style = f' style="color:{colors[gi]}"' if gi is not None else ''
+        th.append(f'<th class="ov-sortable" data-col="{n+2}"{st} '
+                  f'onclick="ovSort(this)"{style}>{lbl}</th>')
+    thead = '<thead><tr>' + ''.join(th) + '</tr></thead>'
+
+    body = []
+    for r in rows:
+        tds = ['<td class="ov-idx"></td>',
+               f'<td class="ov-asset"><span class="ov-asset-link" '
+               f'onclick="ovGoTable(\\'{sid(r["asset"])}\\')">{r["asset"]}</span></td>']
+        for ix, kind, _gi in order:
+            v = r['v'][ix] if ix < len(r['v']) else None
+            tds.append(_ov2_cot(v) if kind == 'cot' else
+                       _ov2_pct30(v) if kind == 'p30' else
+                       _ov2_pct(v) if kind == 'pct' else _ov2_num(v))
+        body.append('<tr class="ov-row">' + ''.join(tds) + '</tr>')
+
+    return ('<div class="ov-scroll"><table class="ov-table">' + thead
+            + '<tbody>' + ''.join(body) + '</tbody></table></div>')
+
+
+def make_overview_all():
+    """Перемикач LEGACY / TFF / DISAGGREGATED + три секції."""
+    secs = [('leg', 'LEGACY', make_overview_tab())]
+    for key, title, getf, sheet, colors in OV2_SOURCES:
+        path = getf()
+        if not path.exists(): continue
+        labels, rows = read_overview2(path, sheet)
+        if not rows: continue
+        print(f"  ✓  Overview {title}: {len(rows)} активів")
+        secs.append((key, title, make_overview2_tab(labels, rows, colors)))
+
+    if len(secs) == 1:
+        return secs[0][2]
+
+    btns = ''.join(
+        f'<button class="ov-srcb{" active" if i == 0 else ""}" '
+        f'onclick="ovSrcSet(\\'{k}\\',this)">{t}</button>'
+        for i, (k, t, _h) in enumerate(secs))
+    panes = ''.join(
+        f'<div class="ov-sec{" active" if i == 0 else ""}" id="ovsec_{k}">{h}</div>'
+        for i, (k, _t, h) in enumerate(secs))
+    return f'<div class="ov-src">{btns}</div>{panes}'
+
+'''
+
+OV2_CSS = """
+<style>
+/* v54 — перемикач джерела Overview */
+.ov-src{display:flex;gap:4px;margin:0 0 10px 0;}
+.ov-srcb{padding:5px 20px;border:1px solid var(--bd);border-radius:3px;background:transparent;
+  color:#b0bcd4;font-family:var(--f);font-size:12px;cursor:pointer;letter-spacing:1px;}
+.ov-srcb:hover{border-color:var(--accent);color:#fff;}
+.ov-srcb.active{background:var(--bg3);color:var(--accent);border-color:var(--accent);font-weight:bold;}
+.ov-sec{display:none;}
+.ov-sec.active{display:block;}
+</style>
+"""
+
+OV2_JS = """
+<script>
+// v54 — перемикання джерела Overview
+function ovSrcSet(src,btn){
+  document.querySelectorAll('.ov-srcb').forEach(function(b){b.classList.remove('active');});
+  if(btn)btn.classList.add('active');
+  document.querySelectorAll('.ov-sec').forEach(function(s){s.classList.remove('active');});
+  const sec=document.getElementById('ovsec_'+src);
+  if(sec)sec.classList.add('active');
+  if(window.ovApplyZoom)ovApplyZoom();
+  if(window.ovRenumber)ovRenumber();
+  if(window.ovLoadFavs)ovLoadFavs();
 }
-function setMiniHistT(btn,sid){
-  btn.parentNode.querySelectorAll('.hbtn').forEach(function(b){b.classList.remove('active');});
-  btn.classList.add('active');
-  tblMiniRenderT(sid,parseInt(btn.dataset.n));
-}
-function setMiniHist(btn,sid){"""
-
-OLD_SWITCH = """  } else if(type==='tff'){
-    filterTffRows(sid,10);"""
-NEW_SWITCH = """  } else if(type==='tff'){
-    filterTffRows(sid,10);
-    if(typeof tblMiniRenderT==='function')
-      tblMiniRenderT(sid,(typeof _miniNT!=='undefined'&&_miniNT[sid])||10);"""
+</script>
+"""
 
 EDITS = [
-    ("порядок груп TFF", "TFF_COLOR_LEV, 'NET LEV'", [(OLD_GRP, NEW_GRP)]),
-    ("кнопка LEGACY", ">LEGACY</button>", [(OLD_BTN, NEW_BTN)]),
-    ("міні-шапка TFF", "mini_theadT, mini_colsT", [(OLD_HEADS, NEW_HEADS)]),
-    ("експорт міні-шапки TFF", "_TBL_MINI_THEAD_T=", [(OLD_EXPORT, NEW_EXPORT)]),
-    ("міні-таблиця у TFF Report", 'id="mini_tff_{s}"', [(OLD_TFFVIEW, NEW_TFFVIEW)]),
-    ("шапка без SM DIV у TFF", "if(info)info.style.display=", [(OLD_JS_INFO, NEW_JS_INFO)]),
-    ("JS міні-таблиці TFF", "function tblMiniRenderT(", [(OLD_JS_MINI, NEW_JS_MINI)]),
-    ("рендер при відкритті TFF", "typeof tblMiniRenderT==='function'", [(OLD_SWITCH, NEW_SWITCH)]),
+    ("блок Overview 2 (TFF / DISAG)", "def make_overview_all(", [
+        ("\ndef fnum_td(v):", OV2_BLOCK + "\ndef fnum_td(v):")]),
+
+    ("виклик make_overview_all", "ov_html=make_overview_all()", [
+        ("    ov_html=make_overview_tab()", "    ov_html=make_overview_all()")]),
+
+    ("CSS + JS перемикача", "function ovSrcSet(src,btn){", [
+        ("+AUTH_MODAL_HTML+HTML_FOOT)",
+         "+AUTH_MODAL_HTML+OV2_CSS+OV2_JS+HTML_FOOT)")]),
+
+    # ── спільні JS-функції мають працювати з кількома таблицями ──
+    ("масштаб для всіх таблиць Overview", "querySelectorAll('.ov-table').forEach(function(t)", [
+        ("""  const t=document.querySelector('.ov-table');
+  const fs=Math.round((_ovZoom!=null&&isFinite(_ovZoom))?_ovZoom:OV_ZOOM_BASE);
+  if(t)t.style.fontSize=fs+'px';""",
+         """  const fs=Math.round((_ovZoom!=null&&isFinite(_ovZoom))?_ovZoom:OV_ZOOM_BASE);
+  document.querySelectorAll('.ov-table').forEach(function(t){t.style.fontSize=fs+'px';});"""),
+    ]),
+    ("нумерація в межах кожної таблиці", "document.querySelectorAll('.ov-table').forEach(function(tb){", [
+        ("""function ovRenumber(){
+  let n=1;
+  document.querySelectorAll('.ov-table tbody tr').forEach(function(tr){
+    if(tr.classList.contains('ov-group'))return;
+    const td=tr.querySelector('.ov-idx');
+    if(td)td.textContent=n++;
+  });
+}""",
+         """function ovRenumber(){
+  document.querySelectorAll('.ov-table').forEach(function(tb){
+    let n=1;
+    tb.querySelectorAll('tbody tr').forEach(function(tr){
+      if(tr.classList.contains('ov-group'))return;
+      const td=tr.querySelector('.ov-idx');
+      if(td)td.textContent=n++;
+    });
+  });
+}"""),
+    ]),
+    ("сортування: свій порядок для кожної таблиці", "table._ovOrig", [
+        ("  if(!_ovOrigRows) _ovOrigRows=Array.from(tbody.children);",
+         "  if(!table._ovOrig) table._ovOrig=Array.from(tbody.children);"),
+    ]),
+    ("скидання сортування", "table._ovOrig.forEach(r=>tbody.appendChild(r));", [
+        ("    _ovOrigRows.forEach(r=>tbody.appendChild(r));",
+         "    table._ovOrig.forEach(r=>tbody.appendChild(r));"),
+    ]),
+    ("вибірка рядків для сортування", "const rows=table._ovOrig.filter(", [
+        ("  const rows=_ovOrigRows.filter(r=>!r.classList.contains('ov-group'));",
+         "  const rows=table._ovOrig.filter(r=>!r.classList.contains('ov-group'));"),
+    ]),
 ]
 
 
 def main():
     if not SRC.exists():
-        print(f"❌  Не знайдено {SRC}. Поклади fix_v52.py поруч із generate.py."); sys.exit(1)
+        print(f"❌  Не знайдено {SRC}. Поклади fix_v54.py поруч із generate.py."); sys.exit(1)
     src = SRC.read_text(encoding='utf-8')
     print(f"📄  {SRC}  ({len(src)} символів)\n")
 
-    if 'TFF_TBL_GROUPS' not in src:
-        print("❌  Спочатку запусти fix_v51.py."); sys.exit(1)
+    if 'def make_overview_tab(' not in src:
+        print("❌  У файлі немає make_overview_tab."); sys.exit(1)
 
     changed = False
     for name, guard, variants in EDITS:
@@ -162,6 +291,14 @@ def main():
         if not done:
             print(f"❌  {name} — якір не знайдено (входжень: {src.count(variants[0][0])})"); sys.exit(1)
 
+    # оголошення OV2_CSS / OV2_JS
+    if 'OV2_CSS = """' not in src:
+        src = src.replace("\ndef make_overview_all(",
+                          '\nOV2_CSS = """' + OV2_CSS + '"""\n\nOV2_JS = """' + OV2_JS +
+                          '"""\n\n\ndef make_overview_all(', 1)
+        print("✓  стилі та скрипт перемикача")
+        changed = True
+
     if not changed:
         print("\n✅  Усе вже пропатчено, змін немає."); return
 
@@ -170,7 +307,7 @@ def main():
     except SyntaxError as ex:
         print(f"\n❌  Синтаксична помилка: рядок {ex.lineno}: {ex.msg}\n    Файл НЕ змінено."); sys.exit(1)
 
-    bak = SRC.with_suffix(f".py.bak_v52_{datetime.now():%Y%m%d_%H%M%S}")
+    bak = SRC.with_suffix(f".py.bak_v54_{datetime.now():%Y%m%d_%H%M%S}")
     shutil.copy2(SRC, bak)
     SRC.write_text(src, encoding='utf-8')
     print(f"\n💾  Бекап: {bak.name}")
