@@ -38,7 +38,7 @@ DISAG_COLOR_MM ='#a78bfa'  # Managed Money    — фіолетовий
 DISAG_COLOR_PM ='#20d483'  # Prod/Merchant    — зелений
 DISAG_COLOR_SD ='#f0b429'  # Swap Dealers     — жовтий
 
-TFF_COL={'date':1,'am_cl':4,'am_cs':5,'am_net':8,'dl_cl':11,'dl_cs':12,'dl_net':15,'lev_cl':18,'lev_cs':19,'lev_net':22,'oi':34}
+TFF_COL={'date':1,'am_cl':11,'am_cs':12,'am_net':15,'dl_cl':4,'dl_cs':5,'dl_net':8,'lev_cl':18,'lev_cs':19,'lev_net':22,'oi':34}
 TFF_DATA_START = 19  # перший рядок даних TFF = pandas індекс 19
 # M_Money: cl=4, cs=5, net=8 | Prod/Merch: cl=11, cs=12, net=15
 # Swap Dealers: cl=18, cs=19, net=22 | OI=34

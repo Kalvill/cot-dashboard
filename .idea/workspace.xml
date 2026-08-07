@@ -6,8 +6,6 @@
   <component name="ChangeListManager">
     <list default="true" id="555262c3-5dd2-4d7e-aea2-edaa9b0911e9" name="Changes" comment="Update34">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/fix_v17.py" beforeDir="false" afterPath="$PROJECT_DIR$/fix_v17.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/generate.py" beforeDir="false" afterPath="$PROJECT_DIR$/generate.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/output/cot_dashboard.html" beforeDir="false" afterPath="$PROJECT_DIR$/output/cot_dashboard.html" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
