@@ -81,6 +81,28 @@ REPORT_RELEVANCE={
 def get_relevance(sid_,rid): m=REPORT_RELEVANCE.get(rid,{}); return m.get(sid_,m.get('_default','none'))
 
 DISPLAY={'SP500':'S&P 500','DOW_30':'DOW 30','RUSSELL2K':'RUSSELL 2K','NAT_GAS':'NAT GAS','WTI_CRUDE':'WTI CRUDE','SOYBEAN_MEAL':'SOYBEAN MEAL','SOYBEAN_OIL':'SOYBEAN OIL','BTC_MICRO':'BTC MICRO','BTC_NANO':'BTC NANO','ETH_CASH':'ETH CASH','ETH_MICRO':'ETH MICRO','ETH_NANO':'ETH NANO'}
+# sid → символ TradingView. Інструменти, яких тут немає, отримують ту саму праву
+# колонку, але із заглушкою .tv-empty замість віджета (сітка завжди двоколонкова).
+# Беремо відкриті спот/CFD-тікери (TVC/CAPITALCOM), крипту — зі спота Bitstamp:
+# біржові ф'ючерсні контракти (COMEX/NYMEX/CBOT/ICEUS) закриті для безкоштовних віджетів.
+# SOYBEAN_MEAL, SOYBEAN_OIL, RICE, OJ, LUMBER, CATTLE свідомо відсутні — адекватного
+# відкритого відповідника немає, а проксі вводив би в оману; вони йдуть без віджета.
+TV_SYMBOL={
+ 'DXY':'CAPITALCOM:DXY','EUR':'FX:EURUSD','GBP':'FX:GBPUSD',
+ 'JPY':'FX:USDJPY','AUD':'FX:AUDUSD','CAD':'FX:USDCAD',
+ 'CHF':'FX:USDCHF','NZD':'FX:NZDUSD',
+ 'GOLD':'TVC:GOLD','SILVER':'TVC:SILVER','COPPER':'TVC:COPPER',
+ 'PLATINUM':'TVC:PLATINUM','PALLADIUM':'TVC:PALLADIUM',
+ 'SP500':'AMEX:SPY','NASDAQ':'NASDAQ:QQQ','DOW_30':'AMEX:DIA',
+ 'RUSSELL2K':'AMEX:IWM','VIX':'CAPITALCOM:VIX',
+ 'WTI_CRUDE':'TVC:USOIL','BRENT':'TVC:UKOIL','NAT_GAS':'TVC:NATURALGAS',
+ 'CORN':'CAPITALCOM:CORN','WHEAT':'CAPITALCOM:WHEAT','SOYBEAN':'CAPITALCOM:SOYBEAN',
+ 'SUGAR':'CAPITALCOM:SUGAR','COFFEE':'CAPITALCOM:COFFEE','COCOA':'CAPITALCOM:COCOA',
+ 'COTTON':'CAPITALCOM:COTTON',
+ 'BTC':'BITSTAMP:BTCUSD','BTC_MICRO':'BITSTAMP:BTCUSD',
+ 'BTC_NANO':'BITSTAMP:BTCUSD','ETH_CASH':'BITSTAMP:ETHUSD',
+ 'ETH_MICRO':'BITSTAMP:ETHUSD','ETH_NANO':'BITSTAMP:ETHUSD',
+}
 CATEGORIES={
     'Валюти':  ['DXY','EUR','GBP','JPY','AUD','CAD','CHF','NZD'],
     'Метали':  ['GOLD','SILVER','COPPER','PLATINUM','PALLADIUM'],
@@ -754,6 +776,24 @@ def make_tff_hist_table(tff,table_id):
     data_tbody=f'<tbody class="data-tbody">{"".join(rows)}</tbody>'
     return f'<table class="ht" id="{table_id}">'+colgroup+thead+mm_tbody+data_tbody+'</table>'
 
+def make_tv_col(s,prefix=''):
+    """v57: права колонка lg-right — віджет TradingView або заглушка.
+    prefix: '' | 'tff_' | 'dg_' — щоб id контейнерів не конфліктували між секціями.
+    Заглушка не має data-tvsym, тому лінива ініціалізація її не чіпає."""
+    box_id=f'tv_{prefix}{s}'
+    tv_sym=TV_SYMBOL.get(s)
+    if tv_sym:
+        inner=f'<div class="tv-box" id="{box_id}" data-tvsym="{tv_sym}"></div>'
+    else:
+        inner=(f'<div class="tv-box tv-empty" id="{box_id}"><div class="tv-empty-msg">'
+               '<div class="tv-empty-ico">📉</div>'
+               '<div>Графік недоступний</div>'
+               '<div class="tv-empty-sub">Немає відкритого символу TradingView '
+               'для цього інструмента</div>'
+               f'<button class="tv-pick-btn" onclick="tvPick(\'{box_id}\')">Вибрати символ</button>'
+               '</div></div>')
+    return f'<div class="lg-right">{inner}</div>'
+
 def make_tff_view(tff,s,reports_panel_html):
     cards=make_tff_metric_cards(tff,s);analysis=make_tff_analysis(tff)
     pct=make_tff_pct_panel(tff,s);chart=make_tff_chart_block(tff,s)
@@ -766,7 +806,11 @@ def make_tff_view(tff,s,reports_panel_html):
                  f'<button class="hbtn" data-n="52" onclick="setMiniHistT(this,\'{s}\')">52</button>'
                  f'</div></div><div class="tb-scroll tb-mini" id="mini_tff_{s}"></div></div>')
     mid=f'<div class="tff-mid">{pct}</div>'
-    return(f'<div class="rpt-sec" id="rpt_tff_{s}" style="display:none">'+cards+analysis+mid+bars+chart+table_block+'</div>')
+    # v57: та сама двоколонкова сітка, що й у Legacy — картки/аналіз/перцентиль зліва,
+    # TradingView справа. Bars, chart і таблиця лишаються під сіткою на всю ширину.
+    lg_top=(f'<div class="lg-top"><div class="lg-left">'+cards+analysis+mid+'</div>'
+            +make_tv_col(s,'tff_')+'</div>')
+    return(f'<div class="rpt-sec" id="rpt_tff_{s}" style="display:none">'+lg_top+bars+chart+table_block+'</div>')
 
 # ================================================================
 # DISAGGREGATED UI — аналогічно TFF, різні назви учасників
@@ -919,7 +963,10 @@ def make_disag_view(dg,s,reports_panel_html):
                  f'<button class="hbtn" data-n="52" onclick="setMiniHistG(this,\'{s}\')">52</button>'
                  f'</div></div><div class="tb-scroll tb-mini" id="mini_dg_{s}"></div></div>')
     mid=f'<div class="tff-mid">{pct}</div>'
-    return(f'<div class="rpt-sec" id="rpt_dg_{s}" style="display:none">'+cards+analysis+mid+bars+chart+table_block+'</div>')
+    # v57: аналогічно TFF — двоколонкова сітка зверху, решта блоків під нею
+    lg_top=(f'<div class="lg-top"><div class="lg-left">'+cards+analysis+mid+'</div>'
+            +make_tv_col(s,'dg_')+'</div>')
+    return(f'<div class="rpt-sec" id="rpt_dg_{s}" style="display:none">'+lg_top+bars+chart+table_block+'</div>')
 
 # ================================================================
 # LEGACY таблиця (незмінно з v14)
@@ -1089,9 +1136,8 @@ def make_instrument_view(d,tff=None,disag=None):
                     +analysis_row('LARGE SPEC',COLOR_LS,c['ls_net'],c['ls_cl'],c['ls_cs'],c['ls_chg'],c['ls_chg_pct'],_ci['ls'])
                     +analysis_row('COMMERCIALS',COLOR_CM,c['cm_net'],c['cm_cl'],c['cm_cs'],c['cm_chg'],c['cm_chg_pct'],_ci['cm'])
                     +f'</div>')
-    sm_panel=(f'<div class="panel sm-panel"><div class="plbl">SM DIVERGENCE</div>'
-              +sm_bar(sm['div'],'All time')+sm_bar(sm['div_6m'],'6 months')+sm_bar(sm['div_3m'],'3 months')
-              +f'<div class="sm-hint">+ бичача &nbsp;|&nbsp; − ведмежа</div></div>')
+    # v55: панель SM DIVERGENCE прибрана з mid — pct_combined займає всю ширину.
+    # sm_bar() лишається: він ще потрібен для колонок SM DIV у Legacy-таблиці.
     # v16: панель ЗВІТИ видалена з усіх видів
     ini=d['cot_idx']['ls']['all'];ini_pos=min(max(ini,0),100)
     ini_color='#f0515a'if ini<15 else('#20d483'if ini>85 else'#dde2ee')
@@ -1150,11 +1196,15 @@ def make_instrument_view(d,tff=None,disag=None):
                     + pct_panel
                     + ranked_panel
                     + '</div>')
-    # v26 mid layout — analysis повним рядком зверху, далі sm+pct
-    mid=f'{analysis_panel}<div class="mid mid-nopanel">{sm_panel}{pct_combined}</div>'
+    # v26 mid layout — analysis повним рядком зверху, далі pct на всю ширину
+    mid=f'{analysis_panel}<div class="mid mid-nopanel">{pct_combined}</div>'
+    # v55: mcards+analysis+mid у лівій колонці, TradingView — у правій.
+    # v57: сітка ЗАВЖДИ двоколонкова; праву колонку будує спільний make_tv_col().
+    lg_top=(f'<div class="lg-top"><div class="lg-left">'
+            f'<div class="mcards">{mc_ls}{mc_cm}{mc_st}{mc_oi}</div>'
+            +mid+'</div>'+make_tv_col(s)+'</div>')
     legacy_sec=(f'<div class="rpt-sec" id="rpt_legacy_{s}">'
-                f'<div class="mcards">{mc_ls}{mc_cm}{mc_st}{mc_oi}</div>'
-                +mid+bar_block+chart_block+table_block+'</div>')
+                +lg_top+bar_block+chart_block+table_block+'</div>')
     tff_sec  =make_tff_view(tff,s,make_reports_panel(s)) if has_tff else ''
     disag_sec=make_disag_view(disag,s,make_reports_panel(s)) if has_disag else ''
     # v22: приховуємо недоступні звіти повністю (замість disabled-кнопки)
@@ -2563,6 +2613,7 @@ HTML_HEAD = """<!DOCTYPE html>
 <meta name="viewport" content="width=1440">
 <title>COT Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://s3.tradingview.com/tv.js"></script>
 <style>
 :root{--bg:#1a1e2d;--bg2:#21263a;--bg3:#282f47;--bd:#343d5a;--g:#20d483;--r:#f0515a;--b:#4a9eff;--accent:#f59420;--t:#dde2ee;--d:#8090b0;--f:'Courier New',Courier,monospace;--hdr-h:50px;}
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
@@ -2625,7 +2676,22 @@ html,body{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13p
 .mc-pct{font-size:10px;margin-top:2px;opacity:.85;}.mc-sub{font-size:10px;color:var(--d);margin-top:3px;}
 .mid{display:grid;grid-template-columns:1fr 180px 1fr;gap:8px;margin-bottom:12px;}
 /* v26 mid layout */
-.mid-nopanel{grid-template-columns:180px 1fr;}
+/* v55: без sm-panel — pct_combined на всю ширину */
+.mid-nopanel{grid-template-columns:1fr;}
+/* v55: Legacy top — ліва колонка (картки+аналіз+перцентиль) + TradingView справа */
+.lg-top{display:grid;grid-template-columns:1fr minmax(700px,58%);gap:10px;margin-bottom:12px;}
+.lg-left{min-width:0;}
+/* ліва колонка звужена віджетом → картки 2×2 (лише тут, у TFF/DISAG лишається 4 в ряд) */
+.lg-left .mcards{grid-template-columns:repeat(2,1fr);}
+.lg-right{min-height:760px;position:relative;}
+.tv-box{position:absolute;inset:0;border:1px solid var(--bd);border-radius:5px;overflow:hidden;}
+/* v57: заглушка для інструментів без відкритого символу TradingView */
+.tv-empty{display:flex;align-items:center;justify-content:center;background:var(--bg2);}
+.tv-empty-msg{text-align:center;color:var(--d);font-size:11px;line-height:1.8;}
+.tv-empty-ico{font-size:28px;opacity:.4;margin-bottom:8px;}
+.tv-empty-sub{font-size:9px;opacity:.7;margin-top:4px;}
+.tv-pick-btn{margin-top:12px;padding:5px 14px;border:1px solid var(--bd);border-radius:3px;background:transparent;color:#b0bcd4;font-family:var(--f);font-size:10px;cursor:pointer;}
+.tv-pick-btn:hover{border-color:var(--accent);color:#fff;}
 .panel{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:12px 14px;}
 .plbl{font-size:9px;color:#fff;letter-spacing:.5px;margin-bottom:10px;}
 .arow{margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--bd);}.arow:last-child{margin:0;padding:0;border:none;}
@@ -2956,7 +3022,63 @@ function selCat(cat){
   const first=document.querySelector('[data-cat="'+cat+'"]');
   if(first) selInst(cat,first.dataset.i);
 }
+/* ==================== TradingView ==================== */
+/* Вихідний HTML заглушок, які користувач замінив віджетом через tvPick —
+   потрібен, щоб tvDestroyAll могла повернути контейнер у початковий стан. */
+const _tvEmptyHTML={};
+function tvMount(box,symbol,allowChange){
+  box.dataset.loaded='1';
+  new TradingView.widget({
+    symbol:symbol,
+    theme:"dark",
+    interval:"D",
+    range:"12M",
+    style:"1",
+    locale:"uk",
+    timezone:"Europe/Warsaw",
+    toolbar_bg:"#1a1e2d",
+    withdateranges:true,
+    hide_side_toolbar:true,
+    allow_symbol_change:allowChange,
+    autosize:true,
+    container_id:box.id
+  });
+}
+/* Лінива ініціалізація: тільки контейнери з data-tvsym і ще не завантажені.
+   Заглушки (.tv-empty) не мають data-tvsym, тому сюди не потрапляють. */
+function tvInit(boxId){
+  const b=document.getElementById(boxId);
+  if(!b||!b.dataset.tvsym||b.dataset.loaded==='1')return;
+  if(typeof TradingView==='undefined')return;
+  tvMount(b,b.dataset.tvsym,false);
+}
+/* Кнопка "Вибрати символ" на заглушці: стартуємо з EURUSD, далі користувач
+   змінює символ сам. Вибір НЕ зберігається між перезавантаженнями. */
+function tvPick(boxId){
+  const b=document.getElementById(boxId);
+  if(!b||typeof TradingView==='undefined')return;
+  if(_tvEmptyHTML[boxId]===undefined)_tvEmptyHTML[boxId]=b.innerHTML;
+  b.classList.remove('tv-empty');
+  b.innerHTML='';
+  tvMount(b,"FX:EURUSD",true);
+}
+/* Знищуємо всі живі віджети, щоб не накопичувались iframe із WebSocket.
+   Контейнер повертається у стан, з якого ініціалізація спрацює знову:
+   звичайний — порожній з data-tvsym, створений через tvPick — назад у заглушку. */
+function tvDestroyAll(){
+  document.querySelectorAll('.tv-box').forEach(b=>{
+    if(b.dataset.loaded!=='1')return;
+    b.innerHTML='';
+    delete b.dataset.loaded;
+    if(!b.dataset.tvsym){
+      if(_tvEmptyHTML[b.id]!==undefined)b.innerHTML=_tvEmptyHTML[b.id];
+      b.classList.add('tv-empty');
+    }
+  });
+}
+
 function selInst(cat,key){
+  tvDestroyAll();
   document.querySelectorAll('[data-cat="'+cat+'"]').forEach(b=>b.classList.remove('active'));
   const btn=document.querySelector('[data-cat="'+cat+'"][data-i="'+key+'"]');
   if(btn) btn.classList.add('active');
@@ -2982,6 +3104,7 @@ function selMain(mt){
 }
 
 function switchReport(sid,type){
+  tvDestroyAll();
   const view=document.getElementById('iv_'+sid);if(!view)return;
   view.querySelectorAll('.rpt-sec').forEach(s=>s.style.display='none');
   const sec=document.getElementById('rpt_'+type+'_'+sid);
@@ -2997,16 +3120,20 @@ function switchReport(sid,type){
     if(typeof tblMiniRender==='function')
       tblMiniRender(sid,(typeof _miniN!=='undefined'&&_miniN[sid])||10);
     setTimeout(()=>{drawMainChart(sid,n);drawBarsFor(sid,n);},30);
+    // v55: TradingView — ліниво, один раз на секцію (патерн crop_embed_)
+    tvInit('tv_'+sid);
   } else if(type==='tff'){
     filterTffRows(sid,10);
     if(typeof tblMiniRenderT==='function')
       tblMiniRenderT(sid,(typeof _miniNT!=='undefined'&&_miniNT[sid])||10);
     setTimeout(()=>{drawTffChart(sid,n);drawTffBars(sid,n);},30);
+    tvInit('tv_tff_'+sid);
   } else if(type==='dg'){
     filterDgRows(sid,10);
     if(typeof tblMiniRenderG==='function')
       tblMiniRenderG(sid,(typeof _miniNG!=='undefined'&&_miniNG[sid])||10);
     setTimeout(()=>{drawDgChart(sid,n);drawDgBars(sid,n);},30);
+    tvInit('tv_dg_'+sid);
   } else if(type==='crop'){
     // Копіюємо Crop Progress контент прямо в iview
     const embed=document.getElementById('crop_embed_'+sid);
