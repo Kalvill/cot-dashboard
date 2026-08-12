@@ -89,8 +89,8 @@ DISPLAY={'SP500':'S&P 500','DOW_30':'DOW 30','RUSSELL2K':'RUSSELL 2K','NAT_GAS':
 # відкритого відповідника немає, а проксі вводив би в оману; вони йдуть без віджета.
 TV_SYMBOL={
  'DXY':'CAPITALCOM:DXY','EUR':'FX:EURUSD','GBP':'FX:GBPUSD',
- 'JPY':'FX:USDJPY','AUD':'FX:AUDUSD','CAD':'FX:USDCAD',
- 'CHF':'FX:USDCHF','NZD':'FX:NZDUSD',
+ 'JPY':'FX_IDC:JPYUSD','AUD':'FX:AUDUSD','CAD':'FX_IDC:CADUSD',
+ 'CHF':'FX_IDC:CHFUSD','NZD':'FX:NZDUSD',
  'GOLD':'TVC:GOLD','SILVER':'TVC:SILVER','COPPER':'TVC:COPPER',
  'PLATINUM':'TVC:PLATINUM','PALLADIUM':'TVC:PALLADIUM',
  'SP500':'AMEX:SPY','NASDAQ':'NASDAQ:QQQ','DOW_30':'AMEX:DIA',
@@ -235,8 +235,9 @@ def gauge_color(value,oi=False):
     if v>85: return '#20d483'
     return '#dde2ee'
 
-def make_metric_card(lbl,val,chg,chg_pct,spark_series,spark_color,oi=False,gauge_val=50.0,sub_text='COT Index: —',ranked_val=None):
-    spark=make_sparkline(spark_series,spark_color)
+def make_metric_card(lbl,val,chg,chg_pct,spark_series,spark_color,oi=False,gauge_val=50.0,sub_text='COT Index: —',ranked_val=None,lbl_color='#fff',bar_id=None):
+    # v59: у картках з баром ΔNet спарклайн зайвий; лишається тільки для OPEN INTEREST (без bar_id)
+    spark='' if bar_id else make_sparkline(spark_series,spark_color)
     try: ci=int(round(float(chg)))
     except: ci=0
     cc_=cc(chg)
@@ -252,13 +253,15 @@ def make_metric_card(lbl,val,chg,chg_pct,spark_series,spark_color,oi=False,gauge
         gauge_col=f'<div class="mc-right mc-gauges"><div class="mc-gauge-wrap">{g}</div><div class="mc-gauge-wrap">{rg}</div></div>'
     else:
         gauge_col=f'<div class="mc-right">{g}</div>'
-    return(f'<div class="mc"><div class="mc-lbl">{lbl}</div>'
+    # v59: WEEKLY ΔNet всередині картки — фіксовані 26 тижнів (не залежить від перемикача періоду)
+    bar_block=(f'<div class="mc-bar"><canvas id="{bar_id}"></canvas></div>' if bar_id else '')
+    return(f'<div class="mc"><div class="mc-lbl" style="color:{lbl_color}">{lbl}</div>'
            f'<div class="mc-inner"><div class="mc-left">'
            f'<div class="mc-val">{val_str}</div>'
            f'<div class="mc-chg-wrap"><span class="{cc_}" style="{bg}">{ar(chg)} {fv_full(abs(ci))}<span class="mc-wtag"> за тиждень</span></span></div>'
            f'<div class="mc-pct {cc_}">{chg_pct}</div>'
            +(f'<div class="mc-sub">{sub_text}</div>' if sub_text else '')
-           +f'</div>'+gauge_col+f'</div>{spark}</div>')
+           +f'</div>'+gauge_col+f'</div>{spark}{bar_block}</div>')
 
 def analysis_row(group_label,group_color,net,cl,cs,chg,chg_pct,idx=None):
     # v26 legacy analysis — вигляд як TFF: метрики зліва, gauges COT INDEX справа
@@ -642,9 +645,9 @@ def load_disag_data():
 # ================================================================
 def make_tff_metric_cards(tff,s):
     c=tff['cur']
-    mc_lev=make_metric_card('LEV MONEY (NETTO)',c['lev_net'],c['lev_chg'],c['lev_chg_pct'],tff['spark']['lev'],TFF_COLOR_LEV,gauge_val=tff['cot_idx']['lev']['all'],sub_text="")
-    mc_am =make_metric_card('ASSET MGR (NETTO)',c['am_net'],c['am_chg'],c['am_chg_pct'],tff['spark']['am'],TFF_COLOR_AM,gauge_val=tff['cot_idx']['am']['all'],sub_text=f"COT Index: {fp(tff['cot_idx']['am']['all'])}")
-    mc_dl =make_metric_card('DEALER (NETTO)',c['dl_net'],c['dl_chg'],c['dl_chg_pct'],tff['spark']['dl'],TFF_COLOR_DL,gauge_val=tff['cot_idx']['dl']['all'],sub_text=f"COT Index: {fp(tff['cot_idx']['dl']['all'])}")
+    mc_lev=make_metric_card('LEV MONEY (NETTO)',c['lev_net'],c['lev_chg'],c['lev_chg_pct'],tff['spark']['lev'],TFF_COLOR_LEV,gauge_val=tff['cot_idx']['lev']['all'],sub_text="",lbl_color=TFF_COLOR_LEV,bar_id=f'mcbar_tff_lev_{s}')
+    mc_am =make_metric_card('ASSET MGR (NETTO)',c['am_net'],c['am_chg'],c['am_chg_pct'],tff['spark']['am'],TFF_COLOR_AM,gauge_val=tff['cot_idx']['am']['all'],sub_text="",lbl_color=TFF_COLOR_AM,bar_id=f'mcbar_tff_am_{s}')
+    mc_dl =make_metric_card('DEALER (NETTO)',c['dl_net'],c['dl_chg'],c['dl_chg_pct'],tff['spark']['dl'],TFF_COLOR_DL,gauge_val=tff['cot_idx']['dl']['all'],sub_text="",lbl_color=TFF_COLOR_DL,bar_id=f'mcbar_tff_dl_{s}')
     mc_oi =make_metric_card('OPEN INTEREST',c['oi'],c['oi_chg'],c['oi_chg_pct'],tff['spark']['oi'],'#a0aac0',oi=True,gauge_val=tff.get('oi_capacity',50.0),sub_text=f"зміна: {fv(int(c['oi_chg']),True,sign=True)}")
     return f'<div class="mcards">{mc_am}{mc_lev}{mc_dl}{mc_oi}</div>'
 
@@ -777,7 +780,7 @@ def make_tff_hist_table(tff,table_id):
     return f'<table class="ht" id="{table_id}">'+colgroup+thead+mm_tbody+data_tbody+'</table>'
 
 def make_tv_col(s,prefix=''):
-    """v57: права колонка lg-right — віджет TradingView або заглушка.
+    """v58: блок TradingView на всю ширину (.tv-full) зверху секції — віджет або заглушка.
     prefix: '' | 'tff_' | 'dg_' — щоб id контейнерів не конфліктували між секціями.
     Заглушка не має data-tvsym, тому лінива ініціалізація її не чіпає."""
     box_id=f'tv_{prefix}{s}'
@@ -792,7 +795,7 @@ def make_tv_col(s,prefix=''):
                'для цього інструмента</div>'
                f'<button class="tv-pick-btn" onclick="tvPick(\'{box_id}\')">Вибрати символ</button>'
                '</div></div>')
-    return f'<div class="lg-right">{inner}</div>'
+    return f'<div class="tv-full">{inner}</div>'
 
 def make_tff_view(tff,s,reports_panel_html):
     cards=make_tff_metric_cards(tff,s);analysis=make_tff_analysis(tff)
@@ -805,11 +808,13 @@ def make_tff_view(tff,s,reports_panel_html):
                  f'<button class="hbtn" data-n="26" onclick="setMiniHistT(this,\'{s}\')">26</button>'
                  f'<button class="hbtn" data-n="52" onclick="setMiniHistT(this,\'{s}\')">52</button>'
                  f'</div></div><div class="tb-scroll tb-mini" id="mini_tff_{s}"></div></div>')
-    mid=f'<div class="tff-mid">{pct}</div>'
-    # v57: та сама двоколонкова сітка, що й у Legacy — картки/аналіз/перцентиль зліва,
-    # TradingView справа. Bars, chart і таблиця лишаються під сіткою на всю ширину.
-    lg_top=(f'<div class="lg-top"><div class="lg-left">'+cards+analysis+mid+'</div>'
-            +make_tv_col(s,'tff_')+'</div>')
+    # v58: та сама структура, що й у Legacy — TradingView на всю ширину зверху,
+    # під ним картки | analysis+перцентиль. Bars, chart і таблиця — під сіткою.
+    lg_top=(make_tv_col(s,'tff_')
+            +f'<div class="lg-grid">'
+             f'<div class="lg-cards">{cards}</div>'
+             f'<div class="lg-side">{analysis}{pct}</div>'
+             f'</div>')
     return(f'<div class="rpt-sec" id="rpt_tff_{s}" style="display:none">'+lg_top+bars+chart+table_block+'</div>')
 
 # ================================================================
@@ -817,9 +822,9 @@ def make_tff_view(tff,s,reports_panel_html):
 # ================================================================
 def make_disag_metric_cards(dg,s):
     c=dg['cur']
-    mc_mm=make_metric_card('MAN MONEY (NETTO)',c['mm_net'],c['mm_chg'],c['mm_chg_pct'],dg['spark']['mm'],DISAG_COLOR_MM,gauge_val=dg['cot_idx']['mm']['all'],sub_text=f"COT Index: {fp(dg['cot_idx']['mm']['all'])}")
-    mc_pm=make_metric_card('PROD/MERCH (NETTO)',c['pm_net'],c['pm_chg'],c['pm_chg_pct'],dg['spark']['pm'],DISAG_COLOR_PM,gauge_val=dg['cot_idx']['pm']['all'],sub_text=f"COT Index: {fp(dg['cot_idx']['pm']['all'])}")
-    mc_sd=make_metric_card('SWAP DEALERS (NETTO)',c['sd_net'],c['sd_chg'],c['sd_chg_pct'],dg['spark']['sd'],DISAG_COLOR_SD,gauge_val=dg['cot_idx']['sd']['all'],sub_text=f"COT Index: {fp(dg['cot_idx']['sd']['all'])}")
+    mc_mm=make_metric_card('MAN MONEY (NETTO)',c['mm_net'],c['mm_chg'],c['mm_chg_pct'],dg['spark']['mm'],DISAG_COLOR_MM,gauge_val=dg['cot_idx']['mm']['all'],sub_text="",lbl_color=DISAG_COLOR_MM,bar_id=f'mcbar_dg_mm_{s}')
+    mc_pm=make_metric_card('PROD/MERCH (NETTO)',c['pm_net'],c['pm_chg'],c['pm_chg_pct'],dg['spark']['pm'],DISAG_COLOR_PM,gauge_val=dg['cot_idx']['pm']['all'],sub_text="",lbl_color=DISAG_COLOR_PM,bar_id=f'mcbar_dg_pm_{s}')
+    mc_sd=make_metric_card('SWAP DEALERS (NETTO)',c['sd_net'],c['sd_chg'],c['sd_chg_pct'],dg['spark']['sd'],DISAG_COLOR_SD,gauge_val=dg['cot_idx']['sd']['all'],sub_text="",lbl_color=DISAG_COLOR_SD,bar_id=f'mcbar_dg_sd_{s}')
     mc_oi=make_metric_card('OPEN INTEREST',c['oi'],c['oi_chg'],c['oi_chg_pct'],dg['spark']['oi'],'#a0aac0',oi=True,gauge_val=dg.get('oi_capacity',50.0),sub_text=f"зміна: {fv(int(c['oi_chg']),True,sign=True)}")
     return f'<div class="mcards">{mc_mm}{mc_pm}{mc_sd}{mc_oi}</div>'
 
@@ -962,10 +967,12 @@ def make_disag_view(dg,s,reports_panel_html):
                  f'<button class="hbtn" data-n="26" onclick="setMiniHistG(this,\'{s}\')">26</button>'
                  f'<button class="hbtn" data-n="52" onclick="setMiniHistG(this,\'{s}\')">52</button>'
                  f'</div></div><div class="tb-scroll tb-mini" id="mini_dg_{s}"></div></div>')
-    mid=f'<div class="tff-mid">{pct}</div>'
-    # v57: аналогічно TFF — двоколонкова сітка зверху, решта блоків під нею
-    lg_top=(f'<div class="lg-top"><div class="lg-left">'+cards+analysis+mid+'</div>'
-            +make_tv_col(s,'dg_')+'</div>')
+    # v58: аналогічно TFF — TradingView на всю ширину зверху, під ним cards | analysis+pct
+    lg_top=(make_tv_col(s,'dg_')
+            +f'<div class="lg-grid">'
+             f'<div class="lg-cards">{cards}</div>'
+             f'<div class="lg-side">{analysis}{pct}</div>'
+             f'</div>')
     return(f'<div class="rpt-sec" id="rpt_dg_{s}" style="display:none">'+lg_top+bars+chart+table_block+'</div>')
 
 # ================================================================
@@ -1126,9 +1133,9 @@ def _make_ranked_block(s, cot_m, default_group='ls'):
 def make_instrument_view(d,tff=None,disag=None):
     c=d['cur'];s=d['sid'];sm=d['sm']
     has_tff=tff is not None;has_disag=disag is not None
-    mc_ls=make_metric_card('LARGE SPEC (NETTO)',c['ls_net'],c['ls_chg'],c['ls_chg_pct'],d['spark']['ls'],COLOR_LS,gauge_val=d['cot_idx']['ls']['all'],sub_text="",ranked_val=d.get('cot_idx_m',{}).get('ls',{}).get('all'))
-    mc_cm=make_metric_card('COMMERCIALS (NETTO)',c['cm_net'],c['cm_chg'],c['cm_chg_pct'],d['spark']['cm'],COLOR_CM,gauge_val=d['cot_idx']['cm']['all'],sub_text="",ranked_val=d.get('cot_idx_m',{}).get('cm',{}).get('all'))
-    mc_st=make_metric_card('SMALL TRADERS (NETTO)',c['st_net'],c['st_chg'],c['st_chg_pct'],d['spark']['st'],COLOR_ST,gauge_val=d['cot_idx']['st']['all'],sub_text="",ranked_val=d.get('cot_idx_m',{}).get('st',{}).get('all'))
+    mc_ls=make_metric_card('LARGE SPEC (NETTO)',c['ls_net'],c['ls_chg'],c['ls_chg_pct'],d['spark']['ls'],COLOR_LS,gauge_val=d['cot_idx']['ls']['all'],sub_text="",ranked_val=d.get('cot_idx_m',{}).get('ls',{}).get('all'),lbl_color=COLOR_LS,bar_id=f'mcbar_ls_{s}')
+    mc_cm=make_metric_card('COMMERCIALS (NETTO)',c['cm_net'],c['cm_chg'],c['cm_chg_pct'],d['spark']['cm'],COLOR_CM,gauge_val=d['cot_idx']['cm']['all'],sub_text="",ranked_val=d.get('cot_idx_m',{}).get('cm',{}).get('all'),lbl_color=COLOR_CM,bar_id=f'mcbar_cm_{s}')
+    mc_st=make_metric_card('SMALL TRADERS (NETTO)',c['st_net'],c['st_chg'],c['st_chg_pct'],d['spark']['st'],COLOR_ST,gauge_val=d['cot_idx']['st']['all'],sub_text="",ranked_val=d.get('cot_idx_m',{}).get('st',{}).get('all'),lbl_color=COLOR_ST,bar_id=f'mcbar_st_{s}')
     mc_oi=make_metric_card('OPEN INTEREST',c['oi'],c['oi_chg'],c['oi_chg_pct'],d['spark']['oi'],'#a0aac0',oi=True,gauge_val=d.get('oi_capacity',50.0),sub_text=f"зміна: {fv(int(c['oi_chg']),True,sign=True)}")
     # v26 analysis calls — передаємо cot_idx для gauges, обгортка як у TFF
     _ci=d['cot_idx']
@@ -1192,17 +1199,17 @@ def make_instrument_view(d,tff=None,disag=None):
     # Ranked блок — окрема панель під стандартним перцентилем
     ranked_panel = _make_ranked_section(s, d.get('cot_idx_m',{}))
     # Обгортаємо обидві pct-панелі у flex-колонку для 4-го grid-item
-    pct_combined = (f'<div style="display:flex;flex-direction:column;gap:8px">'
+    pct_combined = (f'<div class="pct-combined">'
                     + pct_panel
                     + ranked_panel
                     + '</div>')
-    # v26 mid layout — analysis повним рядком зверху, далі pct на всю ширину
-    mid=f'{analysis_panel}<div class="mid mid-nopanel">{pct_combined}</div>'
-    # v55: mcards+analysis+mid у лівій колонці, TradingView — у правій.
-    # v57: сітка ЗАВЖДИ двоколонкова; праву колонку будує спільний make_tv_col().
-    lg_top=(f'<div class="lg-top"><div class="lg-left">'
-            f'<div class="mcards">{mc_ls}{mc_cm}{mc_st}{mc_oi}</div>'
-            +mid+'</div>'+make_tv_col(s)+'</div>')
+    # v58: TradingView — окремим блоком на всю ширину зверху; під ним двоколонкова
+    # сітка: ліворуч картки 2×2, праворуч analysis + перцентиль. Bars/chart/table — нижче.
+    lg_top=(make_tv_col(s)
+            +f'<div class="lg-grid">'
+             f'<div class="lg-cards"><div class="mcards">{mc_ls}{mc_cm}{mc_st}{mc_oi}</div></div>'
+             f'<div class="lg-side">{analysis_panel}{pct_combined}</div>'
+             f'</div>')
     legacy_sec=(f'<div class="rpt-sec" id="rpt_legacy_{s}">'
                 +lg_top+bar_block+chart_block+table_block+'</div>')
     tff_sec  =make_tff_view(tff,s,make_reports_panel(s)) if has_tff else ''
@@ -2668,22 +2675,31 @@ html,body{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13p
 .rtab{padding:4px 12px;border:1px solid var(--bd);border-radius:3px;cursor:pointer;color:#b0bcd4;font-family:var(--f);font-size:11px;background:transparent;transition:all .15s;}
 .rtab:hover:not(.disabled){border-color:var(--accent);color:#fff;}.rtab.active{background:var(--accent);color:#000;border-color:var(--accent);font-weight:bold;}.rtab.disabled{opacity:.3;cursor:not-allowed;}
 .mcards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px;}
-.mc{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:12px 14px;overflow:hidden;min-width:0;display:flex;flex-direction:column;}
-.mc-lbl{font-size:9px;color:#fff;letter-spacing:.6px;margin-bottom:5px;opacity:.85;}
-.mc-inner{display:flex;align-items:center;gap:8px;}.mc-left{flex:1;min-width:0;}.mc-right{flex-shrink:0;}
-.mc-val{font-size:clamp(18px,2.5vw,34px);font-weight:bold;line-height:1.1;}
+.mc{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:10px 14px 12px;overflow:hidden;min-width:0;display:flex;flex-direction:column;}
+.mc-lbl{font-size:9px;color:#fff;letter-spacing:.6px;margin-bottom:0;line-height:1.1;opacity:.85;}
+.mc-inner{display:flex;align-items:flex-start;gap:8px;margin-top:0;}.mc-left{flex:1;min-width:0;}.mc-right{flex-shrink:0;}
+.mc-val{font-size:clamp(18px,2.5vw,34px);font-weight:bold;line-height:1;margin-top:0;}
+/* v59: WEEKLY ΔNet всередині картки — фіксовані 26 тижнів */
+.mc-bar{height:130px;position:relative;margin-top:8px;border-top:1px solid var(--bd);padding-top:6px;}
 .mc-chg-wrap{margin-top:6px;font-size:12px;}.mc-wtag{font-size:9px;color:var(--d);margin-left:3px;}
 .mc-pct{font-size:10px;margin-top:2px;opacity:.85;}.mc-sub{font-size:10px;color:var(--d);margin-top:3px;}
 .mid{display:grid;grid-template-columns:1fr 180px 1fr;gap:8px;margin-bottom:12px;}
 /* v26 mid layout */
 /* v55: без sm-panel — pct_combined на всю ширину */
 .mid-nopanel{grid-template-columns:1fr;}
-/* v55: Legacy top — ліва колонка (картки+аналіз+перцентиль) + TradingView справа */
-.lg-top{display:grid;grid-template-columns:1fr minmax(700px,58%);gap:10px;margin-bottom:12px;}
-.lg-left{min-width:0;}
-/* ліва колонка звужена віджетом → картки 2×2 (лише тут, у TFF/DISAG лишається 4 в ряд) */
-.lg-left .mcards{grid-template-columns:repeat(2,1fr);}
-.lg-right{min-height:760px;position:relative;}
+/* v58: TradingView на всю ширину зверху, під ним двоколонкова сітка
+   (картки 2×2 ліворуч | analysis + перцентиль праворуч) */
+.tv-full{height:470px;position:relative;margin-bottom:10px;}
+.lg-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;align-items:stretch;}
+.lg-cards{min-width:0;}
+.lg-cards .mcards{grid-template-columns:repeat(2,1fr);margin-bottom:0;}
+.lg-side{min-width:0;height:100%;display:flex;flex-direction:column;gap:10px;}
+/* власні нижні відступи панелей всередині колонки не потрібні — інтервал дає gap */
+.lg-side>.tff-analysis-panel{margin-bottom:0;}
+/* v59: нижні межі колонок вирівнюються — остання панель правої колонки добирає різницю */
+.lg-side>*:last-child{flex:1;}
+.pct-combined{display:flex;flex-direction:column;gap:8px;min-height:0;}
+.pct-combined>*:last-child{flex:1;}
 .tv-box{position:absolute;inset:0;border:1px solid var(--bd);border-radius:5px;overflow:hidden;}
 /* v57: заглушка для інструментів без відкритого символу TradingView */
 .tv-empty{display:flex;align-items:center;justify-content:center;background:var(--bg2);}
@@ -2873,7 +2889,7 @@ table.ht tbody.mm-tbody tr.mm-yr td{opacity:.78;}
 .ov-asset-link:hover{color:var(--accent);text-decoration:underline;}
 
 
-.mc-gauges{display:flex;flex-direction:column;gap:6px;flex-shrink:0;align-items:flex-end;}
+.mc-gauges{display:flex;flex-direction:row;gap:8px;flex-shrink:0;align-items:flex-start;}
 .mc-gauge-wrap{display:flex;flex-direction:column;align-items:center;}
 .ov-sm-chart-wrap{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;margin-top:16px;overflow:hidden;}
 .ov-sm-tabs{display:flex;gap:0;padding:8px 16px 0;border-bottom:1px solid var(--bd);}
@@ -2927,6 +2943,8 @@ table.ht tbody.mm-tbody tr.mm-yr td{opacity:.78;}
   :root{--hdr-h:56px;}.hdr{padding:8px 12px;height:auto;min-height:var(--hdr-h);flex-wrap:wrap;}
   .mcards{grid-template-columns:1fr 1fr;gap:8px;}.mid{grid-template-columns:1fr 1fr;gap:8px;}
   .mid>div:first-child{grid-column:1/-1;}.tff-mid{grid-template-columns:1fr;}
+  /* v58: на вузькому екрані сітка розпадається в одну колонку */
+  .lg-grid{grid-template-columns:1fr;}.tv-full{height:320px;}
   /* v24 mobile */
   .tff-a-row{flex-direction:column;align-items:stretch;gap:10px;}
   .tff-a-gauges{border-left:none;border-top:1px solid var(--bd);padding-left:0;padding-top:10px;justify-content:center;}
@@ -3119,20 +3137,20 @@ function switchReport(sid,type){
     filterRows(sid,10);
     if(typeof tblMiniRender==='function')
       tblMiniRender(sid,(typeof _miniN!=='undefined'&&_miniN[sid])||10);
-    setTimeout(()=>{drawMainChart(sid,n);drawBarsFor(sid,n);},30);
+    setTimeout(()=>{drawMainChart(sid,n);drawBarsFor(sid,n);drawCardBars(sid);},30);
     // v55: TradingView — ліниво, один раз на секцію (патерн crop_embed_)
     tvInit('tv_'+sid);
   } else if(type==='tff'){
     filterTffRows(sid,10);
     if(typeof tblMiniRenderT==='function')
       tblMiniRenderT(sid,(typeof _miniNT!=='undefined'&&_miniNT[sid])||10);
-    setTimeout(()=>{drawTffChart(sid,n);drawTffBars(sid,n);},30);
+    setTimeout(()=>{drawTffChart(sid,n);drawTffBars(sid,n);drawTffCardBars(sid);},30);
     tvInit('tv_tff_'+sid);
   } else if(type==='dg'){
     filterDgRows(sid,10);
     if(typeof tblMiniRenderG==='function')
       tblMiniRenderG(sid,(typeof _miniNG!=='undefined'&&_miniNG[sid])||10);
-    setTimeout(()=>{drawDgChart(sid,n);drawDgBars(sid,n);},30);
+    setTimeout(()=>{drawDgChart(sid,n);drawDgBars(sid,n);drawDgCardBars(sid);},30);
     tvInit('tv_dg_'+sid);
   } else if(type==='crop'){
     // Копіюємо Crop Progress контент прямо в iview
@@ -3184,6 +3202,14 @@ function drawBarsFor(sid,nWeeks){
   drawOneBar('barcv_cm_'+sid,dates,d.cd.slice(-n),CL_CM,'rgba(240,81,90,.75)');
   drawOneBar('barcv_st_'+sid,dates,d.sd.slice(-n),CL_ST,'rgba(15,18,28,.9)');
 }
+// v59: бари всередині карток — ЗАВЖДИ 26 тижнів, не залежать від перемикача періоду
+function drawCardBars(sid){
+  const d=_cd[sid];if(!d)return;
+  const dates=d.dates.slice(-26);
+  drawOneBar('mcbar_ls_'+sid,dates,d.ld.slice(-26),CL_LS,'rgba(240,81,90,.75)');
+  drawOneBar('mcbar_cm_'+sid,dates,d.cd.slice(-26),CL_CM,'rgba(240,81,90,.75)');
+  drawOneBar('mcbar_st_'+sid,dates,d.sd.slice(-26),CL_ST,'rgba(15,18,28,.9)');
+}
 function drawOneBar(cvId,dates,data,baseColor,negColor){
   const cv=document.getElementById(cvId);if(!cv)return;
   const key='b_'+cvId;if(BarChts[key]){BarChts[key].destroy();delete BarChts[key];}
@@ -3223,6 +3249,14 @@ function drawTffBars(sid,nWeeks){
   drawOneTffBar('tff_barcv_am_'+sid, dates,d.am_d.slice(-n), TFF_AM);
   drawOneTffBar('tff_barcv_dl_'+sid, dates,d.dl_d.slice(-n), TFF_DL);
 }
+// v59: TFF бари всередині карток — ЗАВЖДИ 26 тижнів
+function drawTffCardBars(sid){
+  const d=_tff[sid];if(!d)return;
+  const dates=d.dates.slice(-26);
+  drawOneTffBar('mcbar_tff_lev_'+sid,dates,d.lev_d.slice(-26),TFF_LEV);
+  drawOneTffBar('mcbar_tff_am_'+sid, dates,d.am_d.slice(-26), TFF_AM);
+  drawOneTffBar('mcbar_tff_dl_'+sid, dates,d.dl_d.slice(-26), TFF_DL);
+}
 function drawOneTffBar(cvId,dates,data,color){
   const cv=document.getElementById(cvId);if(!cv)return;
   const key='tb_'+cvId;if(TffBarChts[key]){TffBarChts[key].destroy();delete TffBarChts[key];}
@@ -3261,6 +3295,14 @@ function drawDgBars(sid,nWeeks){
   drawOneDgBar('dg_barcv_mm_'+sid,dates,d.mm_d.slice(-n),DG_MM);
   drawOneDgBar('dg_barcv_pm_'+sid,dates,d.pm_d.slice(-n),DG_PM);
   drawOneDgBar('dg_barcv_sd_'+sid,dates,d.sd_d.slice(-n),DG_SD);
+}
+// v59: DISAG бари всередині карток — ЗАВЖДИ 26 тижнів
+function drawDgCardBars(sid){
+  const d=_dg[sid];if(!d)return;
+  const dates=d.dates.slice(-26);
+  drawOneDgBar('mcbar_dg_mm_'+sid,dates,d.mm_d.slice(-26),DG_MM);
+  drawOneDgBar('mcbar_dg_pm_'+sid,dates,d.pm_d.slice(-26),DG_PM);
+  drawOneDgBar('mcbar_dg_sd_'+sid,dates,d.sd_d.slice(-26),DG_SD);
 }
 function drawOneDgBar(cvId,dates,data,color){
   const cv=document.getElementById(cvId);if(!cv)return;
