@@ -11,6 +11,9 @@ DATA_FILE   = BASE_DIR / "data" / "COT_OVERVIEW.xlsx"
 TFF_FILE    = BASE_DIR / "data" / "COT_TFF_REPORTS.xlsx"
 DISAG_FILE  = BASE_DIR / "data" / "COT_DISAGRAGATE_REPORTS.xlsx"
 OUTPUT_FILE = BASE_DIR / "output" / "cot_dashboard.html"
+# v60: сезонність — читається локально при генерації, жодних мережевих запитів
+SEASON_FILE = BASE_DIR / "output" / "seasonality_test.json"
+SEASON_SIDS = {'EUR'}   # блок сезонності показуємо ТІЛЬКИ для цих інструментів
 
 SKIP_SHEETS      = {'overview', 'info'}
 TFF_SKIP_SHEETS  = {'tff', 'info', 'lkup'}
@@ -235,8 +238,9 @@ def gauge_color(value,oi=False):
     if v>85: return '#20d483'
     return '#dde2ee'
 
-def make_metric_card(lbl,val,chg,chg_pct,spark_series,spark_color,oi=False,gauge_val=50.0,sub_text='COT Index: —',ranked_val=None,lbl_color='#fff',bar_id=None):
-    # v59: у картках з баром ΔNet спарклайн зайвий; лишається тільки для OPEN INTEREST (без bar_id)
+def make_metric_card(lbl,val,chg,chg_pct,spark_series,spark_color,oi=False,gauge_val=50.0,sub_text='COT Index: —',ranked_val=None,lbl_color='#fff',bar_id=None,border_color='var(--bd)'):
+    # v61: усі картки (включно з OPEN INTEREST) мають бар тижневої зміни — спарклайн не рендериться.
+    # Гілка лишається як фолбек для викликів без bar_id.
     spark='' if bar_id else make_sparkline(spark_series,spark_color)
     try: ci=int(round(float(chg)))
     except: ci=0
@@ -255,7 +259,9 @@ def make_metric_card(lbl,val,chg,chg_pct,spark_series,spark_color,oi=False,gauge
         gauge_col=f'<div class="mc-right">{g}</div>'
     # v59: WEEKLY ΔNet всередині картки — фіксовані 26 тижнів (не залежить від перемикача періоду)
     bar_block=(f'<div class="mc-bar"><canvas id="{bar_id}"></canvas></div>' if bar_id else '')
-    return(f'<div class="mc"><div class="mc-lbl" style="color:{lbl_color}">{lbl}</div>'
+    # v60: кольорова рамка картки за групою (напівпрозорий hex), для OI — стандартний --bd
+    return(f'<div class="mc" style="border:1px solid {border_color}">'
+           f'<div class="mc-lbl" style="color:{lbl_color}">{lbl}</div>'
            f'<div class="mc-inner"><div class="mc-left">'
            f'<div class="mc-val">{val_str}</div>'
            f'<div class="mc-chg-wrap"><span class="{cc_}" style="{bg}">{ar(chg)} {fv_full(abs(ci))}<span class="mc-wtag"> за тиждень</span></span></div>'
@@ -272,7 +278,8 @@ def analysis_row(group_label,group_color,net,cl,cs,chg,chg_pct,idx=None):
     gauge_all=make_gauge_svg(g_all,col_all,size=62,label='COT ALL')
     gauge_3y =make_gauge_svg(g_3y, col_3y, size=62,label='COT 3Y')
     gauge_1y =make_gauge_svg(g_1y, col_1y, size=62,label='COT 1Y')
-    return(f'<div class="tff-a-row">'
+    # v60: лівий кольоровий акцент рядка за групою
+    return(f'<div class="tff-a-row" style="border-left:2px solid {group_color}">'
            f'<div class="tff-a-left">'
            f'<div class="tff-a-name" style="color:{group_color}">{group_label}</div>'
            f'<div class="tff-a-metrics">'
@@ -428,7 +435,8 @@ def read_sheet(xl,name,overview):
         N=min(CHART_WEEKS,len(df));cdf=df.tail(N).reset_index(drop=True)
         def gcc(idx): return to_num(cdf.iloc[:,idx]) if idx<cdf.shape[1] else [0.0]*N
         ls_w=gcc(COL['ls_net']);cm_w=gcc(COL['cm_net']);st_w=gcc(COL['st_net']);oi_w=gcc(oi_col)
-        chart={'dates':cdf['_dt'].dt.strftime('%d.%m.%Y').tolist(),'ls':ls_w,'cm':cm_w,'st':st_w,'oi':oi_w,'ld':compute_delta(ls_w),'cd':compute_delta(cm_w),'sd':compute_delta(st_w)}
+        # v61: 'oid' — тижнева зміна OI (як ld/cd/sd), для бару в картці OPEN INTEREST
+        chart={'dates':cdf['_dt'].dt.strftime('%d.%m.%Y').tolist(),'ls':ls_w,'cm':cm_w,'st':st_w,'oi':oi_w,'ld':compute_delta(ls_w),'cd':compute_delta(cm_w),'sd':compute_delta(st_w),'oid':compute_delta(oi_w)}
         hdf=df.tail(HISTORY).reset_index(drop=True)
         def gch(idx): return to_num(hdf.iloc[:,idx]) if idx<hdf.shape[1] else [0.0]*len(hdf)
         def gch_pct(idx):
@@ -541,7 +549,8 @@ def read_tff_sheet(xl_tff,name):
             return to_num(cdf.iloc[:,idx])
         lev_w=gcc('lev_net');am_w=gcc('am_net');dl_w=gcc('dl_net')
         oi_w=to_num(cdf.iloc[:,oi_ci]) if oi_ci<cdf.shape[1] else [0.0]*N
-        chart={'dates':cdf['_dt'].dt.strftime('%d.%m.%Y').tolist(),'lev':lev_w,'am':am_w,'dl':dl_w,'oi':oi_w,'lev_d':compute_delta(lev_w),'am_d':compute_delta(am_w),'dl_d':compute_delta(dl_w)}
+        # v61: 'oi_d' — тижнева зміна OI, для бару в картці OPEN INTEREST
+        chart={'dates':cdf['_dt'].dt.strftime('%d.%m.%Y').tolist(),'lev':lev_w,'am':am_w,'dl':dl_w,'oi':oi_w,'lev_d':compute_delta(lev_w),'am_d':compute_delta(am_w),'dl_d':compute_delta(dl_w),'oi_d':compute_delta(oi_w)}
         hdf=df.tail(HISTORY).reset_index(drop=True)
         def gch(key):
             idx=cols.get(key,-1)
@@ -611,7 +620,8 @@ def read_disag_sheet(xl_d, name):
             return to_num(cdf.iloc[:,idx])
         mm_w=gcc('mm_net');pm_w=gcc('pm_net');sd_w=gcc('sd_net')
         oi_w=to_num(cdf.iloc[:,oi_idx]) if oi_idx<cdf.shape[1] else [0.0]*N
-        chart={'dates':cdf['_dt'].dt.strftime('%d.%m.%Y').tolist(),'mm':mm_w,'pm':pm_w,'sd':sd_w,'oi':oi_w,'mm_d':compute_delta(mm_w),'pm_d':compute_delta(pm_w),'sd_d':compute_delta(sd_w)}
+        # v61: 'oi_d' — тижнева зміна OI, для бару в картці OPEN INTEREST
+        chart={'dates':cdf['_dt'].dt.strftime('%d.%m.%Y').tolist(),'mm':mm_w,'pm':pm_w,'sd':sd_w,'oi':oi_w,'mm_d':compute_delta(mm_w),'pm_d':compute_delta(pm_w),'sd_d':compute_delta(sd_w),'oi_d':compute_delta(oi_w)}
         hdf=df.tail(HISTORY).reset_index(drop=True)
         def gch(key):
             idx=DISAG_COL.get(key,-1)
@@ -645,10 +655,10 @@ def load_disag_data():
 # ================================================================
 def make_tff_metric_cards(tff,s):
     c=tff['cur']
-    mc_lev=make_metric_card('LEV MONEY (NETTO)',c['lev_net'],c['lev_chg'],c['lev_chg_pct'],tff['spark']['lev'],TFF_COLOR_LEV,gauge_val=tff['cot_idx']['lev']['all'],sub_text="",lbl_color=TFF_COLOR_LEV,bar_id=f'mcbar_tff_lev_{s}')
-    mc_am =make_metric_card('ASSET MGR (NETTO)',c['am_net'],c['am_chg'],c['am_chg_pct'],tff['spark']['am'],TFF_COLOR_AM,gauge_val=tff['cot_idx']['am']['all'],sub_text="",lbl_color=TFF_COLOR_AM,bar_id=f'mcbar_tff_am_{s}')
-    mc_dl =make_metric_card('DEALER (NETTO)',c['dl_net'],c['dl_chg'],c['dl_chg_pct'],tff['spark']['dl'],TFF_COLOR_DL,gauge_val=tff['cot_idx']['dl']['all'],sub_text="",lbl_color=TFF_COLOR_DL,bar_id=f'mcbar_tff_dl_{s}')
-    mc_oi =make_metric_card('OPEN INTEREST',c['oi'],c['oi_chg'],c['oi_chg_pct'],tff['spark']['oi'],'#a0aac0',oi=True,gauge_val=tff.get('oi_capacity',50.0),sub_text=f"зміна: {fv(int(c['oi_chg']),True,sign=True)}")
+    mc_lev=make_metric_card('LEV MONEY (NETTO)',c['lev_net'],c['lev_chg'],c['lev_chg_pct'],tff['spark']['lev'],TFF_COLOR_LEV,gauge_val=tff['cot_idx']['lev']['all'],sub_text="",lbl_color=TFF_COLOR_LEV,bar_id=f'mcbar_tff_lev_{s}',border_color=TFF_COLOR_LEV+'66')
+    mc_am =make_metric_card('ASSET MGR (NETTO)',c['am_net'],c['am_chg'],c['am_chg_pct'],tff['spark']['am'],TFF_COLOR_AM,gauge_val=tff['cot_idx']['am']['all'],sub_text="",lbl_color=TFF_COLOR_AM,bar_id=f'mcbar_tff_am_{s}',border_color=TFF_COLOR_AM+'66')
+    mc_dl =make_metric_card('DEALER (NETTO)',c['dl_net'],c['dl_chg'],c['dl_chg_pct'],tff['spark']['dl'],TFF_COLOR_DL,gauge_val=tff['cot_idx']['dl']['all'],sub_text="",lbl_color=TFF_COLOR_DL,bar_id=f'mcbar_tff_dl_{s}',border_color=TFF_COLOR_DL+'66')
+    mc_oi =make_metric_card('OPEN INTEREST',c['oi'],c['oi_chg'],c['oi_chg_pct'],tff['spark']['oi'],'#a0aac0',oi=True,gauge_val=tff.get('oi_capacity',50.0),sub_text=f"зміна: {fv(int(c['oi_chg']),True,sign=True)}",bar_id=f'mcbar_tff_oi_{s}')
     return f'<div class="mcards">{mc_am}{mc_lev}{mc_dl}{mc_oi}</div>'
 
 def make_tff_analysis(tff):
@@ -661,7 +671,8 @@ def make_tff_analysis(tff):
         gauge_all=make_gauge_svg(g_all,col_all,size=62,label='COT ALL')
         gauge_3y =make_gauge_svg(g_3y, col_3y, size=62,label='COT 3Y')
         gauge_1y =make_gauge_svg(g_1y, col_1y, size=62,label='COT 1Y')
-        return(f'<div class="tff-a-row">'
+        # v60: лівий кольоровий акцент рядка за групою
+        return(f'<div class="tff-a-row" style="border-left:2px solid {color}">'
                f'<div class="tff-a-left">'
                f'<div class="tff-a-name" style="color:{color}">{label}</div>'
                f'<div class="tff-a-metrics">'
@@ -779,10 +790,229 @@ def make_tff_hist_table(tff,table_id):
     data_tbody=f'<tbody class="data-tbody">{"".join(rows)}</tbody>'
     return f'<table class="ht" id="{table_id}">'+colgroup+thead+mm_tbody+data_tbody+'</table>'
 
+# ================================================================
+# v60: СЕЗОННІСТЬ (тільки EUR)
+# Числа беремо з output/seasonality_test.json (його створює test_seasonality.py)
+# і вбудовуємо прямо в HTML. Немає файлу / немає символа → блок не рендериться,
+# решта дашборду працює як є.
+# ================================================================
+MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+_SEASON_CACHE = None
+
+SEASON_DAYS = 365   # довжина денних кривих у presets/current
+
+def _season_curve(v):
+    """Валідує денну криву: список рівно на SEASON_DAYS точок (числа або None).
+    Усе інше → None (крива просто не потрапляє у графік)."""
+    if not (isinstance(v, list) and len(v) == SEASON_DAYS): return None
+    out = []
+    for x in v:
+        if x is None: out.append(None)
+        elif isinstance(x, (int, float)) and not (isinstance(x, float) and math.isnan(x)):
+            out.append(round(float(x), 4))
+        else: out.append(None)
+    return out
+
+def _is_preset_key(k):
+    """Ключ пресету має вигляд '<N>y' — 'current'/'all_years' сюди не потрапляють."""
+    k = str(k)
+    return len(k) > 1 and k[-1] == 'y' and k[:-1].isdigit()
+
+def _preset_sort(k):
+    return int(str(k)[:-1])
+
+def load_seasonality():
+    """Читає SEASON_FILE → {symbol: {...}} з такими ключами:
+      'periods'     — {'<N>y': {'avg':[12],'prob':[12],'from':<рік>}} для кожного пресету;
+      'default'     — ключ пресету за замовчуванням ('10y', якщо є);
+      'months'      — {рік: [12]} по ВСІХ роках (monthly.all_years або об'єднання пресетів);
+      'current'     — місячні дані поточного року (monthly.current);
+      'pre_daily'   — {'<N>y': [365]} денні криві середніх (блок presets) для лінії «Сер. NY»;
+      'cur_daily'   — денна крива поточного року;
+      'years_curves'— денні криві по кожному завершеному року.
+    Будь-яка проблема (немає файлу, битий JSON, неповні дані) → символ просто
+    не потрапляє у словник. Результат кешується на час запуску."""
+    global _SEASON_CACHE
+    if _SEASON_CACHE is not None: return _SEASON_CACHE
+    _SEASON_CACHE = {}
+    try:
+        raw = json.loads(SEASON_FILE.read_text(encoding='utf-8'))
+    except (OSError, ValueError) as e:
+        print(f"ℹ️   Сезонність: {SEASON_FILE.name} недоступний ({e.__class__.__name__}) — блок пропущено")
+        return _SEASON_CACHE
+    for it in (raw if isinstance(raw, list) else [raw]):
+        if not isinstance(it, dict): continue
+        sym = it.get('symbol'); mon = it.get('monthly')
+        if not sym or not isinstance(mon, dict): continue
+        # ── місячні пресети: avg/prob + межа вибірки ──
+        periods = {}; months = {}
+        for pk in sorted((k for k in mon if _is_preset_key(k)), key=_preset_sort):
+            blk = mon[pk]
+            if not isinstance(blk, dict): continue
+            avg = blk.get('avg'); prob = blk.get('prob')
+            if not (isinstance(avg,list) and len(avg)==12 and isinstance(prob,list) and len(prob)==12):
+                continue
+            yrs = blk.get('years') if isinstance(blk.get('years'), dict) else {}
+            ylist = sorted((int(y) for y in yrs if str(y).isdigit()))
+            if not ylist: continue
+            periods[str(pk)] = {'avg': avg, 'prob': prob, 'from': ylist[0]}
+            for y, vals in yrs.items():
+                if str(y).isdigit() and isinstance(vals, list) and len(vals) == 12:
+                    months.setdefault(str(y), vals)
+        if not periods: continue
+        # всі роки помісячно; якщо блока немає — лишається об'єднання пресетів
+        allm = mon.get('all_years')
+        if isinstance(allm, dict):
+            for y, vals in allm.items():
+                if str(y).isdigit() and isinstance(vals, list) and len(vals) == 12:
+                    months[str(y)] = vals
+        default = '10y' if '10y' in periods else sorted(periods, key=_preset_sort)[0]
+        # ── денні криві для графіка ──
+        pre_daily = {}
+        raw_pre = it.get('presets')
+        if isinstance(raw_pre, dict):
+            for pk, pv in raw_pre.items():
+                if not _is_preset_key(pk): continue
+                cur = _season_curve(pv)
+                if cur is not None: pre_daily[str(pk)] = cur
+        cur_d = it.get('current') if isinstance(it.get('current'), dict) else {}
+        cur_daily = None
+        cd_series = _season_curve(cur_d.get('data'))
+        if cd_series is not None:
+            cur_daily = {'year': cur_d.get('year'), 'data': cd_series}
+        ycurves = {}
+        raw_yc = it.get('years_curves')
+        if isinstance(raw_yc, dict):
+            for yk, yv in raw_yc.items():
+                if not str(yk).isdigit(): continue
+                c = _season_curve(yv)
+                if c is not None: ycurves[str(yk)] = c
+        _SEASON_CACHE[sym] = {
+            'periods': periods, 'default': default, 'months': months,
+            'current': mon.get('current') if isinstance(mon.get('current'), dict) else {},
+            'pre_daily': pre_daily, 'cur_daily': cur_daily, 'years_curves': ycurves,
+        }
+    if _SEASON_CACHE:
+        for sym, v in sorted(_SEASON_CACHE.items()):
+            print(f"📅  Сезонність {sym}: пресети {', '.join(sorted(v['periods'], key=_preset_sort))} "
+                  f"(типовий {v['default']}), років у таблиці {len(v['months'])}, "
+                  f"денних кривих по роках {len(v['years_curves'])}")
+    return _SEASON_CACHE
+
+def _sn_ret(v, star=False):
+    """Клітинка дохідності: фон/текст за знаком, None → '--'."""
+    if v is None or (isinstance(v,float) and math.isnan(v)):
+        return '<td class="sn-na">--</td>'
+    mark = '*' if star else ''
+    if v > 0:   return f'<td class="sn-p">+{v:.2f}{mark}</td>'
+    if v < 0:   return f'<td class="sn-n">{v:.2f}{mark}</td>'
+    return f'<td class="sn-z">0.00{mark}</td>'
+
+def _sn_prob(v):
+    """Клітинка ймовірності: >60% зелена, <40% червона, 40–60% нейтральна."""
+    if v is None or (isinstance(v,float) and math.isnan(v)):
+        return '<td class="sn-na">--</td>'
+    cls = 'sn-p' if v > 60 else ('sn-n' if v < 40 else 'sn-z')
+    return f'<td class="{cls}">{round(v):.0f}%</td>'
+
+def _preset_lbl(pk):
+    """'10y' → '10Y' для кнопки, '10 РОКІВ' для заголовка."""
+    n = _preset_sort(pk)
+    return f'{n}Y', f'{n} РОКІВ'
+
+def make_season_box(s, prefix=''):
+    """Блок сезонності: [Таблиця|Графік] + перемикач періоду + таблиця + Chart.js-графік.
+    prefix ('' | 'tff_' | 'dg_') робить id унікальними між секціями одного інструмента.
+    Рядки Probability/Average return, заголовок, мітка межі вибірки і приглушення
+    рядків перемикаються на клієнті — дані всіх пресетів вбудовані одразу.
+    '' — якщо даних немає."""
+    d = load_seasonality().get(s) if s in SEASON_SIDS else None
+    if not d: return ''
+    key = f'{prefix}{s}'
+    periods = d['periods']; dflt = d['default']
+    cur = d['current']; cur_year = cur.get('year')
+    cur_data = cur.get('data') if isinstance(cur.get('data'), list) else []
+    inc = cur.get('incomplete_month')   # номер місяця 1..12
+    head = ''.join(f'<th>{m}</th>' for m in MONTHS_SHORT)
+    p0 = periods[dflt]
+    # sn-stat — два підсумкові рядки; їх вміст переписує JS при зміні періоду
+    rows = ['<tr class="sn-stat" id="snprobr_%s"><td class="sn-y">Probability %%</td>%s</tr>'
+            % (key, ''.join(_sn_prob(v) for v in p0['prob'])),
+            '<tr class="sn-stat" id="snavgr_%s"><td class="sn-y">Average return%%</td>%s</tr>'
+            % (key, ''.join(_sn_ret(v) for v in p0['avg'])),
+            '<tr class="sn-sep"><td colspan="13"></td></tr>']
+    has_star = False
+    if cur_year and len(cur_data) == 12:
+        cells = []
+        for i, v in enumerate(cur_data):
+            star = (inc is not None and i == inc-1 and v is not None)
+            has_star = has_star or star
+            cells.append(_sn_ret(v, star))
+        # поточний рік — поза пресетом, показуємо завжди (data-y="0" виводить його
+        # з-під фільтра пресету: він не приглушується і не ховається у згорнутому стані)
+        rows.append(f'<tr class="sn-cur" data-y="0"><td class="sn-y">{cur_year}</td>'
+                    + ''.join(cells) + '</tr>')
+    # Початковий стан (типовий пресет, згорнуто) рендеримо одразу в HTML — без спалаху
+    # всіх 27 рядків до першого snApply(). Далі стан перемикає тільки JS.
+    months = d['months']; y_from = p0['from']
+    for y in sorted((int(y) for y in months), reverse=True):
+        vals = months[str(y)]
+        in_pre = y >= y_from
+        cls = ('' if in_pre else ' class="sn-out"') if y != y_from else ' class="sn-brd"'
+        hide = '' if in_pre else ' style="display:none"'
+        rows.append(f'<tr data-y="{y}"{cls}{hide}><td class="sn-y">{y}'
+                    f'<span class="sn-mark">◄ від цього року рахується середнє</span></td>'
+                    + ''.join(_sn_ret(v) for v in vals) + '</tr>')
+    note = '<div class="sn-note">* місяць незавершений</div>' if has_star else ''
+    more = (f'<button class="sn-more" id="snmore_{key}" '
+            f'onclick="snToggleAll(this,\'{key}\')">Показати всі роки ▼</button>')
+    table_pane = (f'<div class="sn-pane sn-pane-t" id="snpane_tbl_{key}">'
+                  f'<table class="sn" id="sntbl_{key}"><thead><tr><th class="sn-y">Year</th>{head}</tr></thead>'
+                  f'<tbody>{"".join(rows)}</tbody></table>{note}{more}</div>')
+    # Перемикач періоду середнього — окремий рядок під [Таблиця][Графік]
+    pbtns = ''.join(
+        f'<button class="psel{" active" if pk==dflt else ""}" data-p="{pk}" '
+        f'onclick="snSetPeriod(this,\'{key}\',\'{s}\')">{_preset_lbl(pk)[0]}</button>'
+        for pk in sorted(periods, key=_preset_sort))
+    per_row = (f'<div class="sn-per"><span class="sn-per-lbl">ПЕРІОД:</span>'
+               f'<div class="psel-group" id="snper_{key}">{pbtns}</div></div>')
+    title = (f'<div class="plbl" id="sntitle_{key}" style="margin:0">'
+             f'СЕЗОННІСТЬ ({_preset_lbl(dflt)[1]})</div>')
+    # v61: графік малюється ліниво — при першому перемиканні на вкладку «Графік».
+    # Рядок кнопок ліній (snlines_) наповнює JS у момент ініціалізації графіка,
+    # щоб порядок кнопок гарантовано збігався з порядком datasets.
+    pre_daily = d.get('pre_daily') or {}
+    cur_daily = d.get('cur_daily')
+    if not (pre_daily or cur_daily):
+        return f'<div class="sn-hdr">{title}</div>{per_row}{table_pane}'
+    chart_pane = (f'<div class="sn-pane sn-chart" id="snpane_chart_{key}" style="display:none">'
+                  f'<div class="sn-lines" id="snlines_{key}"></div>'
+                  f'<div class="sn-cw"><canvas id="sncv_{key}"></canvas></div></div>')
+    sel = (f'<div class="sn-sel psel-group">'
+           f'<button class="psel active" data-sv="tbl" onclick="seasonView(this,\'{key}\',\'{s}\',\'tbl\')">Таблиця</button>'
+           f'<button class="psel" data-sv="chart" onclick="seasonView(this,\'{key}\',\'{s}\',\'chart\')">Графік</button>'
+           f'</div>')
+    # Дані вбудовуємо один раз — у Legacy-секції (вона рендериться завжди),
+    # TFF/DISAG беруть той самий _season[sid]. Патерн той самий, що у _cd / _ci.
+    data_js = ''
+    if prefix == '':
+        payload = {'per': {pk: {'prob': v['prob'], 'avg': v['avg'], 'from': v['from']}
+                           for pk, v in periods.items()},
+                   'dflt': dflt,
+                   'pre': pre_daily,
+                   'cur_year': (cur_daily or {}).get('year'),
+                   'cur': (cur_daily or {}).get('data'),
+                   'years': d.get('years_curves') or {}}
+        data_js = f'<script>_season["{s}"]={json.dumps(payload,ensure_ascii=False)};</script>'
+    return (f'<div class="sn-hdr">{title}{sel}</div>{per_row}'
+            f'{table_pane}{chart_pane}{data_js}')
+
 def make_tv_col(s,prefix=''):
-    """v58: блок TradingView на всю ширину (.tv-full) зверху секції — віджет або заглушка.
+    """v58: блок TradingView зверху секції — віджет або заглушка.
     prefix: '' | 'tff_' | 'dg_' — щоб id контейнерів не конфліктували між секціями.
-    Заглушка не має data-tvsym, тому лінива ініціалізація її не чіпає."""
+    Заглушка не має data-tvsym, тому лінива ініціалізація її не чіпає.
+    v60: якщо для інструмента є сезонність — верх ділиться навпіл
+    (таблиця сезонності | TradingView), інакше графік лишається на всю ширину."""
     box_id=f'tv_{prefix}{s}'
     tv_sym=TV_SYMBOL.get(s)
     if tv_sym:
@@ -795,7 +1025,11 @@ def make_tv_col(s,prefix=''):
                'для цього інструмента</div>'
                f'<button class="tv-pick-btn" onclick="tvPick(\'{box_id}\')">Вибрати символ</button>'
                '</div></div>')
-    return f'<div class="tv-full">{inner}</div>'
+    season=make_season_box(s,prefix)
+    if season:
+        return (f'<div class="top-split"><div class="season-box">{season}</div>'
+                f'<div class="tv-half">{inner}</div></div>')
+    return f'<div class="top-split one-col"><div class="tv-half">{inner}</div></div>'
 
 def make_tff_view(tff,s,reports_panel_html):
     cards=make_tff_metric_cards(tff,s);analysis=make_tff_analysis(tff)
@@ -822,10 +1056,10 @@ def make_tff_view(tff,s,reports_panel_html):
 # ================================================================
 def make_disag_metric_cards(dg,s):
     c=dg['cur']
-    mc_mm=make_metric_card('MAN MONEY (NETTO)',c['mm_net'],c['mm_chg'],c['mm_chg_pct'],dg['spark']['mm'],DISAG_COLOR_MM,gauge_val=dg['cot_idx']['mm']['all'],sub_text="",lbl_color=DISAG_COLOR_MM,bar_id=f'mcbar_dg_mm_{s}')
-    mc_pm=make_metric_card('PROD/MERCH (NETTO)',c['pm_net'],c['pm_chg'],c['pm_chg_pct'],dg['spark']['pm'],DISAG_COLOR_PM,gauge_val=dg['cot_idx']['pm']['all'],sub_text="",lbl_color=DISAG_COLOR_PM,bar_id=f'mcbar_dg_pm_{s}')
-    mc_sd=make_metric_card('SWAP DEALERS (NETTO)',c['sd_net'],c['sd_chg'],c['sd_chg_pct'],dg['spark']['sd'],DISAG_COLOR_SD,gauge_val=dg['cot_idx']['sd']['all'],sub_text="",lbl_color=DISAG_COLOR_SD,bar_id=f'mcbar_dg_sd_{s}')
-    mc_oi=make_metric_card('OPEN INTEREST',c['oi'],c['oi_chg'],c['oi_chg_pct'],dg['spark']['oi'],'#a0aac0',oi=True,gauge_val=dg.get('oi_capacity',50.0),sub_text=f"зміна: {fv(int(c['oi_chg']),True,sign=True)}")
+    mc_mm=make_metric_card('MAN MONEY (NETTO)',c['mm_net'],c['mm_chg'],c['mm_chg_pct'],dg['spark']['mm'],DISAG_COLOR_MM,gauge_val=dg['cot_idx']['mm']['all'],sub_text="",lbl_color=DISAG_COLOR_MM,bar_id=f'mcbar_dg_mm_{s}',border_color=DISAG_COLOR_MM+'66')
+    mc_pm=make_metric_card('PROD/MERCH (NETTO)',c['pm_net'],c['pm_chg'],c['pm_chg_pct'],dg['spark']['pm'],DISAG_COLOR_PM,gauge_val=dg['cot_idx']['pm']['all'],sub_text="",lbl_color=DISAG_COLOR_PM,bar_id=f'mcbar_dg_pm_{s}',border_color=DISAG_COLOR_PM+'66')
+    mc_sd=make_metric_card('SWAP DEALERS (NETTO)',c['sd_net'],c['sd_chg'],c['sd_chg_pct'],dg['spark']['sd'],DISAG_COLOR_SD,gauge_val=dg['cot_idx']['sd']['all'],sub_text="",lbl_color=DISAG_COLOR_SD,bar_id=f'mcbar_dg_sd_{s}',border_color=DISAG_COLOR_SD+'66')
+    mc_oi=make_metric_card('OPEN INTEREST',c['oi'],c['oi_chg'],c['oi_chg_pct'],dg['spark']['oi'],'#a0aac0',oi=True,gauge_val=dg.get('oi_capacity',50.0),sub_text=f"зміна: {fv(int(c['oi_chg']),True,sign=True)}",bar_id=f'mcbar_dg_oi_{s}')
     return f'<div class="mcards">{mc_mm}{mc_pm}{mc_sd}{mc_oi}</div>'
 
 def make_disag_analysis(dg):
@@ -838,7 +1072,8 @@ def make_disag_analysis(dg):
         gauge_all=make_gauge_svg(g_all,col_all,size=62,label='COT ALL')
         gauge_3y =make_gauge_svg(g_3y, col_3y, size=62,label='COT 3Y')
         gauge_1y =make_gauge_svg(g_1y, col_1y, size=62,label='COT 1Y')
-        return(f'<div class="tff-a-row">'
+        # v60: лівий кольоровий акцент рядка за групою
+        return(f'<div class="tff-a-row" style="border-left:2px solid {color}">'
                f'<div class="tff-a-left">'
                f'<div class="tff-a-name" style="color:{color}">{label}</div>'
                f'<div class="tff-a-metrics">'
@@ -1133,10 +1368,10 @@ def _make_ranked_block(s, cot_m, default_group='ls'):
 def make_instrument_view(d,tff=None,disag=None):
     c=d['cur'];s=d['sid'];sm=d['sm']
     has_tff=tff is not None;has_disag=disag is not None
-    mc_ls=make_metric_card('LARGE SPEC (NETTO)',c['ls_net'],c['ls_chg'],c['ls_chg_pct'],d['spark']['ls'],COLOR_LS,gauge_val=d['cot_idx']['ls']['all'],sub_text="",ranked_val=d.get('cot_idx_m',{}).get('ls',{}).get('all'),lbl_color=COLOR_LS,bar_id=f'mcbar_ls_{s}')
-    mc_cm=make_metric_card('COMMERCIALS (NETTO)',c['cm_net'],c['cm_chg'],c['cm_chg_pct'],d['spark']['cm'],COLOR_CM,gauge_val=d['cot_idx']['cm']['all'],sub_text="",ranked_val=d.get('cot_idx_m',{}).get('cm',{}).get('all'),lbl_color=COLOR_CM,bar_id=f'mcbar_cm_{s}')
-    mc_st=make_metric_card('SMALL TRADERS (NETTO)',c['st_net'],c['st_chg'],c['st_chg_pct'],d['spark']['st'],COLOR_ST,gauge_val=d['cot_idx']['st']['all'],sub_text="",ranked_val=d.get('cot_idx_m',{}).get('st',{}).get('all'),lbl_color=COLOR_ST,bar_id=f'mcbar_st_{s}')
-    mc_oi=make_metric_card('OPEN INTEREST',c['oi'],c['oi_chg'],c['oi_chg_pct'],d['spark']['oi'],'#a0aac0',oi=True,gauge_val=d.get('oi_capacity',50.0),sub_text=f"зміна: {fv(int(c['oi_chg']),True,sign=True)}")
+    mc_ls=make_metric_card('LARGE SPEC (NETTO)',c['ls_net'],c['ls_chg'],c['ls_chg_pct'],d['spark']['ls'],COLOR_LS,gauge_val=d['cot_idx']['ls']['all'],sub_text="",ranked_val=d.get('cot_idx_m',{}).get('ls',{}).get('all'),lbl_color=COLOR_LS,bar_id=f'mcbar_ls_{s}',border_color=COLOR_LS+'66')
+    mc_cm=make_metric_card('COMMERCIALS (NETTO)',c['cm_net'],c['cm_chg'],c['cm_chg_pct'],d['spark']['cm'],COLOR_CM,gauge_val=d['cot_idx']['cm']['all'],sub_text="",ranked_val=d.get('cot_idx_m',{}).get('cm',{}).get('all'),lbl_color=COLOR_CM,bar_id=f'mcbar_cm_{s}',border_color=COLOR_CM+'66')
+    mc_st=make_metric_card('SMALL TRADERS (NETTO)',c['st_net'],c['st_chg'],c['st_chg_pct'],d['spark']['st'],COLOR_ST,gauge_val=d['cot_idx']['st']['all'],sub_text="",ranked_val=d.get('cot_idx_m',{}).get('st',{}).get('all'),lbl_color=COLOR_ST,bar_id=f'mcbar_st_{s}',border_color=COLOR_ST+'66')
+    mc_oi=make_metric_card('OPEN INTEREST',c['oi'],c['oi_chg'],c['oi_chg_pct'],d['spark']['oi'],'#a0aac0',oi=True,gauge_val=d.get('oi_capacity',50.0),sub_text=f"зміна: {fv(int(c['oi_chg']),True,sign=True)}",bar_id=f'mcbar_oi_{s}')
     # v26 analysis calls — передаємо cot_idx для gauges, обгортка як у TFF
     _ci=d['cot_idx']
     analysis_panel=(f'<div class="panel tff-analysis-panel">'
@@ -1966,8 +2201,15 @@ def make_table_tab(data, tff_data=None, dg_data=None):
         '<button class="tb-zb tb-za" onclick="tblZoomAuto()" title="Підігнати під ширину екрана">АВТО</button>'
         '</div>'
         '<div class="tb-pers">' + per_btns + '</div>'
+        # v60: кнопки горизонтального гортання таблиці (миша/трекпад працюють як раніше)
+        '<div class="tb-hscroll">'
+        '<button class="tbl-scroll-btn" onclick="tblScroll(\'tblScrollBox\',-1)" '
+        'title="Гортати вліво">&#9664;</button>'
+        '<button class="tbl-scroll-btn" onclick="tblScroll(\'tblScrollBox\',1)" '
+        'title="Гортати вправо">&#9654;</button>'
         '</div>'
-        '<div class="tb-scroll"><table class="dt" id="dtTable">'
+        '</div>'
+        '<div class="tb-scroll" id="tblScrollBox"><table class="dt" id="dtTable">'
         + thead +
         '<tbody class="tb-stats" id="dtStats"></tbody>'
         '<tbody id="dtBody"></tbody>'
@@ -2012,6 +2254,11 @@ TBL_CSS = """
   color:#b0bcd4;font-family:var(--f);font-size:10px;cursor:pointer;}
 .tb-per:hover{border-color:var(--accent);color:#fff;}
 .tb-per.active{background:var(--bg3);color:var(--accent);border-color:var(--accent);font-weight:bold;}
+/* v60: кнопки горизонтального гортання таблиці */
+.tb-hscroll{display:flex;gap:3px;margin-left:10px;}
+.tbl-scroll-btn{padding:3px 12px;border:1px solid var(--bd);border-radius:3px;background:transparent;
+  color:#b0bcd4;font-family:var(--f);font-size:11px;cursor:pointer;}
+.tbl-scroll-btn:hover{border-color:var(--accent);color:#fff;}
 .tb-scroll{overflow:auto;max-height:calc(100vh - 210px);background:#07080c;
   border:1px solid var(--bd);border-radius:0 0 5px 5px;}
 /* v38: розмір шрифту виставляє JS (tblFit), відступи в em — масштабуються разом */
@@ -2379,6 +2626,12 @@ function tblZoom(step){
   try{localStorage.setItem('tbl_zoom',_tblZoom);}catch(e){}
   tblFit();
 }
+// v60: горизонтальне гортання таблиці кнопками (dir: -1 вліво, 1 вправо)
+function tblScroll(id,dir){
+  const el=document.getElementById(id);
+  if(!el)return;
+  el.scrollBy({left:dir*400,behavior:'smooth'});
+}
 function tblZoomAuto(){
   _tblZoom=null;
   try{localStorage.removeItem('tbl_zoom');}catch(e){}
@@ -2689,7 +2942,68 @@ html,body{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13p
 .mid-nopanel{grid-template-columns:1fr;}
 /* v58: TradingView на всю ширину зверху, під ним двоколонкова сітка
    (картки 2×2 ліворуч | analysis + перцентиль праворуч) */
-.tv-full{height:470px;position:relative;margin-bottom:10px;}
+/* v60: верх секції — сітка навпіл (сезонність | TradingView).
+   Без даних сезонності .one-col робить графік на всю ширину, як було. */
+.top-split{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;}
+.top-split.one-col{grid-template-columns:1fr;}
+.season-box{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:12px 14px;overflow:auto;overflow-x:auto;display:flex;flex-direction:column;}
+/* v61: заголовок + перемикач [Таблиця|Графік] в один рядок; панелі ділять решту висоти */
+.sn-hdr{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px;}
+.sn-pane{flex:1 1 auto;min-height:0;}
+/* прокрутка живе у панелі таблиці — заголовок і перемикачі лишаються на місці */
+.sn-pane-t{overflow-x:auto;min-width:0;}
+/* v63: рядок вибору періоду середнього */
+.sn-per{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;}
+.sn-per-lbl{font-size:10px;color:var(--d);letter-spacing:.5px;}
+/* v63: розгортання таблиці — у розгорнутому стані блок не росте, а скролиться */
+.season-box.sn-open{max-height:520px;overflow-y:auto;}
+.sn-more{margin-top:8px;padding:3px 10px;border:1px solid var(--bd);border-radius:3px;background:transparent;
+         color:#b0bcd4;font-family:var(--f);font-size:10px;cursor:pointer;}
+.sn-more:hover{border-color:var(--accent);color:#fff;}
+.sn-chart{display:flex;flex-direction:column;min-height:300px;}
+.sn-lines{display:flex;flex-wrap:wrap;gap:3px;margin-bottom:6px;}
+.sn-cw{position:relative;flex:1 1 auto;min-height:240px;}
+/* кнопка-тумблер лінії: кольорова крапка + рік; неактивна — приглушена */
+.snl{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border:1px solid var(--bd);border-radius:3px;
+     cursor:pointer;color:#8090b0;font-family:var(--f);font-size:9px;background:transparent;opacity:.55;}
+.snl:hover{color:#fff;}
+.snl.active{opacity:1;color:#dde2ee;background:var(--bg3);}
+.snl-dot{width:9px;height:2px;border-radius:1px;flex-shrink:0;}
+.tv-half{position:relative;min-height:470px;}
+/* v60: таблиця сезонності — 13 компактних колонок, кольори як у Legacy-таблиці */
+/* v62: крупніша й контрастніша, за зразком table.ht — колір несе фон, текст білий */
+/* min-width 740px = 78px (Year) + 12×55px: 6 символів Courier@12px ("+0.35*") + падінги.
+   Вужче за це — прокрутка у .sn-pane-t, замість обрізаних значень. */
+table.sn{width:100%;min-width:740px;border-collapse:collapse;font-size:12px;table-layout:fixed;white-space:nowrap;}
+table.sn th,table.sn td{padding:4px 6px;text-align:center;border-bottom:1px solid var(--bd);
+                        border-right:1px solid rgba(128,144,176,.13);overflow:hidden;}
+table.sn th{font-size:11px;font-weight:normal;color:var(--d);}
+table.sn td{color:#fff;}
+/* перша колонка: фон як у .date-col легасі-таблиці; довгі підписи переносяться, а не обрізаються */
+table.sn .sn-y{width:78px;text-align:left;font-size:11px;color:#b0bcd4;background:var(--bg3);
+               border-right:1px solid var(--bd);white-space:normal;word-break:break-word;line-height:1.25;}
+table.sn td.sn-p{background:rgba(32,212,131,.22);}
+table.sn td.sn-n{background:rgba(240,81,90,.22);}
+table.sn td.sn-z,table.sn td.sn-na{color:var(--d);}
+table.sn tr.sn-stat{background:rgba(128,144,176,.10);}
+table.sn tr.sn-sep td{height:3px;padding:0;border-bottom:2px solid var(--bd);border-right:none;}
+table.sn tr.sn-cur{background:rgba(245,148,32,.07);}
+table.sn tr.sn-cur td.sn-y{border-left:2px solid var(--accent);color:#fff;}
+/* v63: рік поза поточним пресетом — приглушений (видно, хто входить у середнє) */
+table.sn tbody tr.sn-out{opacity:.55;}
+/* v63: межа вибірки — акцентний бордер на рядку + підпис праворуч від номера року.
+   Підпис абсолютний, щоб 78px колонка не розсувалась і сітка не їхала. */
+table.sn tbody tr.sn-brd td.sn-y{border-left:2px solid var(--accent);color:#fff;}
+table.sn td.sn-y{position:relative;}
+.sn-mark{display:none;position:absolute;left:100%;top:50%;transform:translateY(-50%);
+         margin-left:6px;white-space:nowrap;font-size:9px;line-height:1.4;padding:1px 6px;
+         border:1px solid var(--accent);border-radius:3px;background:var(--bg3);
+         color:var(--accent);pointer-events:none;z-index:3;}
+table.sn tbody tr.sn-brd .sn-mark{display:inline-block;}
+/* hover рядка — той самий патерн, що у table.ht (фон клітинок не чіпаємо) */
+table.sn tbody tr:hover td{box-shadow:inset 0 1px 0 rgba(255,255,255,.25),inset 0 -1px 0 rgba(255,255,255,.25);}
+table.sn tbody tr.sn-sep:hover td{box-shadow:none;}
+.sn-note{font-size:10px;color:var(--d);margin-top:6px;}
 .lg-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;align-items:stretch;}
 .lg-cards{min-width:0;}
 .lg-cards .mcards{grid-template-columns:repeat(2,1fr);margin-bottom:0;}
@@ -2836,7 +3150,7 @@ table.ht tbody.mm-tbody .mm-val{text-align:right;font-size:10px;}
 table.ht tbody.mm-tbody tr.mm-yr td{opacity:.78;}
 .ov-meta{padding:10px 0 8px;font-size:11px;color:var(--d);}.ov-meta b{color:var(--t);}
 .ov-scroll{overflow-x:auto;}.ov-table{width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap;}
-.ov-table th{padding:6px 10px;background:var(--bg3);border-bottom:1px solid var(--bd);color:var(--d);font-weight:normal;font-size:9px;letter-spacing:.5px;text-align:right;}
+.ov-table th{padding:6px 10px;background:var(--bg3);border-bottom:1px solid var(--bd);color:var(--d);font-weight:normal;font-size:9px;letter-spacing:.5px;text-align:center;}
 .ov-table th:first-child{text-align:left;}.ov-table td{padding:5px 10px;border-bottom:1px solid var(--bg3);text-align:right;}
 .ov-table .ov-asset{text-align:left;color:var(--t);font-weight:bold;}
 .ov-table .ov-group td{background:var(--bg3);color:var(--d);font-size:8px;letter-spacing:1px;padding:4px 10px;text-align:left;}
@@ -2944,7 +3258,9 @@ table.ht tbody.mm-tbody tr.mm-yr td{opacity:.78;}
   .mcards{grid-template-columns:1fr 1fr;gap:8px;}.mid{grid-template-columns:1fr 1fr;gap:8px;}
   .mid>div:first-child{grid-column:1/-1;}.tff-mid{grid-template-columns:1fr;}
   /* v58: на вузькому екрані сітка розпадається в одну колонку */
-  .lg-grid{grid-template-columns:1fr;}.tv-full{height:320px;}
+  .lg-grid{grid-template-columns:1fr;}
+  /* v60: на вузькому екрані сезонність і графік ідуть один під одним */
+  .top-split{grid-template-columns:1fr;}.tv-half{min-height:320px;}
   /* v24 mobile */
   .tff-a-row{flex-direction:column;align-items:stretch;gap:10px;}
   .tff-a-gauges{border-left:none;border-top:1px solid var(--bd);padding-left:0;padding-top:10px;justify-content:center;}
@@ -2955,7 +3271,7 @@ table.ht tbody.mm-tbody tr.mm-yr td{opacity:.78;}
 </style>
 </head>
 <body>
-<script>const _cd={};const _ci={};const _ci_m={};const _tff={};const _ci_tff={};const _dg={};const _ci_dg={};const _cpData={};const Charts={};const BarChts={};const TffCharts={};const TffBarChts={};const DgCharts={};const DgBarChts={};</script>
+<script>const _cd={};const _ci={};const _ci_m={};const _tff={};const _ci_tff={};const _dg={};const _ci_dg={};const _cpData={};const _season={};const SeasonCharts={};const Charts={};const BarChts={};const TffCharts={};const TffBarChts={};const DgCharts={};const DgBarChts={};</script>
 """
 
 def generate_html(data, tff_data=None, disag_data=None, crop_data=None):
@@ -3028,6 +3344,7 @@ HTML_FOOT = """
 const CL_LS='#4a9eff',CL_CM='#20d483',CL_ST='#f0515a';
 const TFF_LEV='#e8a838',TFF_AM='#4a9eff',TFF_DL='#20d483';
 const DG_MM='#a78bfa',DG_PM='#20d483',DG_SD='#f0b429';
+const CL_OI='#a0aac0';   // v61: OPEN INTEREST — сірі бари тижневої зміни
 const CurPer={};
 let _loggedIn=false,_userEmail='';
 
@@ -3209,6 +3526,8 @@ function drawCardBars(sid){
   drawOneBar('mcbar_ls_'+sid,dates,d.ld.slice(-26),CL_LS,'rgba(240,81,90,.75)');
   drawOneBar('mcbar_cm_'+sid,dates,d.cd.slice(-26),CL_CM,'rgba(240,81,90,.75)');
   drawOneBar('mcbar_st_'+sid,dates,d.sd.slice(-26),CL_ST,'rgba(15,18,28,.9)');
+  // v61: OPEN INTEREST — сірий бар зростання, червоний спад
+  if(d.oid)drawOneBar('mcbar_oi_'+sid,dates,d.oid.slice(-26),CL_OI,'rgba(240,81,90,.75)');
 }
 function drawOneBar(cvId,dates,data,baseColor,negColor){
   const cv=document.getElementById(cvId);if(!cv)return;
@@ -3256,6 +3575,8 @@ function drawTffCardBars(sid){
   drawOneTffBar('mcbar_tff_lev_'+sid,dates,d.lev_d.slice(-26),TFF_LEV);
   drawOneTffBar('mcbar_tff_am_'+sid, dates,d.am_d.slice(-26), TFF_AM);
   drawOneTffBar('mcbar_tff_dl_'+sid, dates,d.dl_d.slice(-26), TFF_DL);
+  // v61: OPEN INTEREST — сірий бар зростання, червоний спад
+  if(d.oi_d)drawOneTffBar('mcbar_tff_oi_'+sid,dates,d.oi_d.slice(-26),CL_OI);
 }
 function drawOneTffBar(cvId,dates,data,color){
   const cv=document.getElementById(cvId);if(!cv)return;
@@ -3303,6 +3624,8 @@ function drawDgCardBars(sid){
   drawOneDgBar('mcbar_dg_mm_'+sid,dates,d.mm_d.slice(-26),DG_MM);
   drawOneDgBar('mcbar_dg_pm_'+sid,dates,d.pm_d.slice(-26),DG_PM);
   drawOneDgBar('mcbar_dg_sd_'+sid,dates,d.sd_d.slice(-26),DG_SD);
+  // v61: OPEN INTEREST — сірий бар зростання, червоний спад
+  if(d.oi_d)drawOneDgBar('mcbar_dg_oi_'+sid,dates,d.oi_d.slice(-26),CL_OI);
 }
 function drawOneDgBar(cvId,dates,data,color){
   const cv=document.getElementById(cvId);if(!cv)return;
@@ -3735,6 +4058,199 @@ function ovSetPer(btn){
     cell.innerHTML='<div class="ov-bar-bg"><div class="ov-bar-fill" style="width:'+pct.toFixed(1)+'%;background:'+color+'"></div></div>'
       +'<span class="ov-cot-val '+cls+'">'+v.toFixed(0)+'%</span>';
   });
+}
+
+// ── v61: Сезонність — перемикач Таблиця/Графік + Chart.js line ──
+// Перші дні місяців у невисокосному році (індекси 0..364) — підписи осі X.
+const SN_MSTART=[0,31,59,90,120,151,181,212,243,273,304,334];
+const SN_MNAME=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const SN_LBL=(()=>{const a=new Array(365).fill('');SN_MSTART.forEach((d,i)=>{a[d]=SN_MNAME[i];});return a;})();
+function snToday(){
+  const t=new Date();
+  return Math.floor((Date.UTC(t.getFullYear(),t.getMonth(),t.getDate())-Date.UTC(t.getFullYear(),0,1))/864e5);
+}
+// ── v63: період середнього + розгортання таблиці ──
+const SnPer={};   // key → активний пресет ('10y'); SnOpen — чи розгорнута таблиця
+const SnOpen={};
+function snPerN(pk){return parseInt(pk,10)||0;}
+// Клітинки Probability/Average return — та сама розмітка, що й у Python (_sn_prob/_sn_ret)
+function snProbCell(v){
+  if(v==null)return '<td class="sn-na">--</td>';
+  const c=v>60?'sn-p':(v<40?'sn-n':'sn-z');
+  return '<td class="'+c+'">'+Math.round(v)+'%</td>';
+}
+function snRetCell(v){
+  if(v==null)return '<td class="sn-na">--</td>';
+  if(v>0)return '<td class="sn-p">+'+v.toFixed(2)+'</td>';
+  if(v<0)return '<td class="sn-n">'+v.toFixed(2)+'</td>';
+  return '<td class="sn-z">0.00</td>';
+}
+function snSetPeriod(btn,key,sid){
+  const grp=document.getElementById('snper_'+key);
+  if(grp)grp.querySelectorAll('.psel').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  SnPer[key]=btn.dataset.p;
+  snApply(key,sid);
+}
+function snToggleAll(btn,key){
+  SnOpen[key]=!SnOpen[key];
+  btn.textContent=SnOpen[key]?'Згорнути ▲':'Показати всі роки ▼';
+  const box=btn.closest('.season-box');
+  if(box)box.classList.toggle('sn-open',SnOpen[key]);
+  snApply(key,null);
+}
+// Єдина точка перемальовування таблиці: рядки статистики, заголовок, мітка межі,
+// приглушення та видимість рядків. Графік чіпаємо тільки якщо він уже побудований.
+function snApply(key,sid){
+  const sd=_season[key.replace(/^(tff_|dg_)/,'')];if(!sd)return;
+  const pk=SnPer[key]||sd.dflt;
+  const p=sd.per[pk];if(!p)return;
+  const open=!!SnOpen[key];
+  const pr=document.getElementById('snprobr_'+key);
+  const ar=document.getElementById('snavgr_'+key);
+  if(pr)pr.innerHTML='<td class="sn-y">Probability %</td>'+p.prob.map(snProbCell).join('');
+  if(ar)ar.innerHTML='<td class="sn-y">Average return%</td>'+p.avg.map(snRetCell).join('');
+  const ttl=document.getElementById('sntitle_'+key);
+  if(ttl)ttl.textContent='СЕЗОННІСТЬ ('+snPerN(pk)+' РОКІВ)';
+  const tbl=document.getElementById('sntbl_'+key);
+  if(tbl){
+    tbl.querySelectorAll('tbody tr[data-y]').forEach(tr=>{
+      const y=+tr.dataset.y;
+      if(y===0){tr.style.display='';tr.classList.remove('sn-out','sn-brd');return;}  // поточний рік
+      const inPre=y>=p.from;
+      tr.style.display=(open||inPre)?'':'none';
+      tr.classList.toggle('sn-out',!inPre);
+      tr.classList.toggle('sn-brd',y===p.from);
+    });
+  }
+  // лінія «Сер. NY» у графіку — якщо він уже намальований
+  const ch=SeasonCharts[key];
+  if(ch&&ch.data.datasets.length&&sd.pre&&sd.pre[pk]){
+    const ds=ch.data.datasets[0];
+    ds.data=sd.pre[pk];
+    ds.label='Сер. '+snPerN(pk)+'Y';
+    ch.update('none');
+    const row=document.getElementById('snlines_'+key);
+    const b0=row&&row.querySelector('.snl[data-di="0"]');
+    if(b0)b0.innerHTML='<span class="snl-dot" style="background:'+b0.dataset.col+'"></span>'+ds.label;
+  }
+}
+function seasonView(btn,key,sid,mode){
+  const grp=btn.closest('.sn-sel');
+  if(grp)grp.querySelectorAll('.psel').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  const tp=document.getElementById('snpane_tbl_'+key);
+  const cp=document.getElementById('snpane_chart_'+key);
+  if(tp)tp.style.display=(mode==='tbl')?'':'none';
+  if(cp){
+    cp.style.display=(mode==='chart')?'':'none';
+    // лінива ініціалізація: графік будується тільки при першому показі
+    if(mode==='chart'&&!cp.dataset.loaded){
+      cp.dataset.loaded='1';
+      setTimeout(()=>drawSeasonChart(key,sid),30);
+    }
+  }
+}
+// Палітра тонких ліній окремих років — по колу; у лінію йде з суфіксом '99' (напівпрозоро)
+const SN_YCOL=['#20d483','#f0b429','#a78bfa','#22d3ee','#f59420','#e8a838','#8090b0','#4a9eff','#f0515a','#20d483'];
+// Кнопки-тумблери ліній: порядок збігається з порядком datasets (обидва будуються тут).
+// Активна кнопка підсвічена кольором своєї лінії (без прозорості).
+function snBuildBtns(key,ds){
+  const row=document.getElementById('snlines_'+key);if(!row)return;
+  row.innerHTML='';
+  ds.forEach((s,i)=>{
+    const col=s._snCol||s.borderColor;
+    const b=document.createElement('button');
+    b.className='snl'+(s.hidden?'':' active');
+    b.dataset.di=i;
+    b.dataset.col=col;
+    b.onclick=function(){seasonLine(this,key);};
+    b.innerHTML='<span class="snl-dot" style="background:'+col+'"></span>'+s.label;
+    snBtnPaint(b,!s.hidden);
+    row.appendChild(b);
+  });
+}
+function snBtnPaint(btn,on){
+  const col=btn.dataset.col||'#8090b0';
+  btn.style.borderColor=on?col:'';
+  btn.style.color=on?col:'';
+}
+// Перемикання однієї лінії — без повного перемальовування ('none' = без анімації)
+function seasonLine(btn,key){
+  const ch=SeasonCharts[key];if(!ch)return;
+  const s=ch.data.datasets[+btn.dataset.di];if(!s)return;
+  s.hidden=!s.hidden;
+  btn.classList.toggle('active',!s.hidden);
+  snBtnPaint(btn,!s.hidden);
+  ch.update('none');
+}
+function drawSeasonChart(key,sid){
+  const cv=document.getElementById('sncv_'+key);if(!cv)return;
+  const d=_season[sid];if(!d)return;
+  if(SeasonCharts[key]){SeasonCharts[key].destroy();delete SeasonCharts[key];}
+  const pk=SnPer[key]||d.dflt;
+  const p10=(d.pre&&d.pre[pk])||null;   // крива середнього за активний період
+  const cur=d.cur||null;
+  if(!p10&&!cur)return;
+  const today=snToday();
+  // Порядок: Сер. 10Y → поточний рік → решта років (новіші зверху).
+  // Увімкнені за замовчуванням лише перші дві лінії.
+  const ds=[];
+  if(p10)ds.push({label:'Сер. '+snPerN(pk)+'Y',data:p10,borderColor:'#4a9eff',backgroundColor:'transparent',
+                  borderWidth:2.5,pointRadius:0,tension:.2,spanGaps:true,hidden:false,_snCol:'#4a9eff'});
+  if(cur)ds.push({label:(d.cur_year||'')+'',data:cur,borderColor:'#f0515a',backgroundColor:'transparent',
+                  borderWidth:2,pointRadius:0,tension:.2,spanGaps:false,hidden:false,_snCol:'#f0515a'});
+  // _snCol — «чистий» колір для кнопки; у лінії він же, але напівпрозорий ('99')
+  const yrs=Object.keys(d.years||{}).filter(y=>y!==String(d.cur_year)).sort((a,b)=>b-a);
+  yrs.forEach((y,i)=>{
+    const col=SN_YCOL[i%SN_YCOL.length];
+    ds.push({label:y,data:d.years[y],borderColor:col+'99',backgroundColor:'transparent',
+             borderWidth:1,pointRadius:0,tension:.2,spanGaps:true,hidden:true,_snCol:col});
+  });
+  // нульова горизонталь + пунктирна вертикаль на сьогоднішньому дні (патерн smThresholdLines)
+  const snGuides={
+    id:'snGuides',
+    beforeDatasetsDraw(chart){
+      const {ctx,chartArea,scales}=chart;
+      if(!chartArea||!scales.y||!scales.x)return;
+      ctx.save();
+      ctx.lineWidth=1;
+      ctx.setLineDash([]);
+      ctx.strokeStyle='rgba(221,226,238,.28)';
+      const y0=scales.y.getPixelForValue(0);
+      ctx.beginPath();ctx.moveTo(chartArea.left,y0);ctx.lineTo(chartArea.right,y0);ctx.stroke();
+      if(today>=0&&today<365){
+        ctx.setLineDash([4,4]);
+        ctx.strokeStyle='rgba(221,226,238,.35)';
+        const x=scales.x.getPixelForValue(today);
+        ctx.beginPath();ctx.moveTo(x,chartArea.top);ctx.lineTo(x,chartArea.bottom);ctx.stroke();
+      }
+      ctx.restore();
+    }
+  };
+  SeasonCharts[key]=new Chart(cv.getContext('2d'),{
+    type:'line',
+    data:{labels:SN_LBL.map((_,i)=>i),datasets:ds},
+    plugins:[snGuides],
+    options:{responsive:true,maintainAspectRatio:false,animation:false,
+      interaction:{mode:'index',intersect:false},
+      plugins:{legend:{display:false},
+        tooltip:{backgroundColor:'#21263a',borderColor:'#343d5a',borderWidth:1,titleColor:'#dde2ee',bodyColor:'#dde2ee',
+          titleFont:{family:'Courier New',size:10},bodyFont:{family:'Courier New',size:10},
+          // тільки видимі лінії: вимкнені кнопкою у тултип не потрапляють
+          filter:item=>item.chart.isDatasetVisible(item.datasetIndex),
+          callbacks:{title:items=>{const i=items[0].dataIndex;
+                       let m=0;for(let k=0;k<12;k++){if(i>=SN_MSTART[k])m=k;}
+                       return SN_MNAME[m]+' '+(i-SN_MSTART[m]+1);},
+                     label:ctx=>' '+ctx.dataset.label+': '+(ctx.parsed.y==null?'--':ctx.parsed.y.toFixed(2)+'%')}}},
+      scales:{
+        x:{ticks:{color:'#8090b0',font:{family:'Courier New',size:8},autoSkip:false,maxRotation:0,
+                  callback:(v,i)=>SN_LBL[i]||''},
+           grid:{display:false},border:{display:false}},
+        y:{grid:{color:'rgba(52,61,90,.6)',lineWidth:.5},
+           ticks:{color:'#8090b0',font:{family:'Courier New',size:9},callback:v=>v.toFixed(1)+'%'},
+           border:{display:false}}}}});
+  snBuildBtns(key,ds);
 }
 
 // ── Overview SM DIV bar chart ──
