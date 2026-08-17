@@ -13,7 +13,15 @@ DISAG_FILE  = BASE_DIR / "data" / "COT_DISAGRAGATE_REPORTS.xlsx"
 OUTPUT_FILE = BASE_DIR / "output" / "cot_dashboard.html"
 # v60: сезонність — читається локально при генерації, жодних мережевих запитів
 SEASON_FILE = BASE_DIR / "output" / "seasonality_test.json"
-SEASON_SIDS = {'EUR'}   # блок сезонності показуємо ТІЛЬКИ для цих інструментів
+# Блок сезонності показуємо для всіх інструментів, які є у SEASON_FILE —
+# перелік не дублюється тут, а береться з самого JSON (див. season_sids()).
+# Джерела в test_seasonality.py два: FRED (валюти/енергія) і Yahoo (метали,
+# індекси, агро, крипто); дашборду різниця важлива лише для примітки під
+# таблицею — див. SEASON_FUT_NOTE.
+SEASON_FUT_NOTE = 'дані по ф\'ючерсах, континуальний ряд без коригування ролу'
+# v64: у таблиці сезонності показуємо роки не раніше цього. Стосується ЛИШЕ показу —
+# пресети (зокрема 25Y) рахуються у test_seasonality.py по всій історії з 1999.
+SEASON_MIN_SHOW_YEAR = 2010
 
 SKIP_SHEETS      = {'overview', 'info'}
 TFF_SKIP_SHEETS  = {'tff', 'info', 'lkup'}
@@ -40,6 +48,10 @@ TFF_COLOR_LEV='#f0b429'; TFF_COLOR_AM='#4a9eff'; TFF_COLOR_DL='#20d483'
 DISAG_COLOR_MM ='#a78bfa'  # Managed Money    — фіолетовий
 DISAG_COLOR_PM ='#20d483'  # Prod/Merchant    — зелений
 DISAG_COLOR_SD ='#f0b429'  # Swap Dealers     — жовтий
+
+# v62: рамка картки OPEN INTEREST — напівпрозорий білий, щоб виділялась
+# серед кольорових карток учасників (Legacy / TFF / DISAG)
+COLOR_OI_BD='#ffffff66'
 
 TFF_COL={'date':1,'am_cl':11,'am_cs':12,'am_net':15,'dl_cl':4,'dl_cs':5,'dl_net':8,'lev_cl':18,'lev_cs':19,'lev_net':22,'oi':34}
 TFF_DATA_START = 19  # перший рядок даних TFF = pandas індекс 19
@@ -94,8 +106,8 @@ TV_SYMBOL={
  'DXY':'CAPITALCOM:DXY','EUR':'FX:EURUSD','GBP':'FX:GBPUSD',
  'JPY':'FX_IDC:JPYUSD','AUD':'FX:AUDUSD','CAD':'FX_IDC:CADUSD',
  'CHF':'FX_IDC:CHFUSD','NZD':'FX:NZDUSD',
- 'GOLD':'TVC:GOLD','SILVER':'TVC:SILVER','COPPER':'TVC:COPPER',
- 'PLATINUM':'TVC:PLATINUM','PALLADIUM':'TVC:PALLADIUM',
+ 'GOLD':'TVC:GOLD','SILVER':'TVC:SILVER','COPPER':'CAPITALCOM:COPPER',
+ 'PLATINUM':'CAPITALCOM:PLATINUM','PALLADIUM':'CAPITALCOM:PALLADIUM',
  'SP500':'AMEX:SPY','NASDAQ':'NASDAQ:QQQ','DOW_30':'AMEX:DIA',
  'RUSSELL2K':'AMEX:IWM','VIX':'CAPITALCOM:VIX',
  'WTI_CRUDE':'TVC:USOIL','BRENT':'TVC:UKOIL','NAT_GAS':'TVC:NATURALGAS',
@@ -329,6 +341,30 @@ def sm_bar(val,label):
     return(f'<div class="sm-row"><div class="sm-lbl">{label}</div>'
            f'<div class="sm-bar-bg"><div class="sm-mk" style="left:{pct:.0f}%;background:{color}"></div></div>'
            f'<div class="sm-val {cls}">{v:+.2f}</div></div>')
+
+def make_sm_div_badge(sm):
+    # v62: SM DIVERGENCE повернуто у компактному вигляді — бейдж поруч
+    # із перемикачем типу звіту. Три значення: ALL / 6M / 3M.
+    # Фон динамічний: що більший модуль — то насиченіший (0.10 + min(|v|,1)*0.35).
+    if not sm: return ''
+    items=[]
+    for key,lbl in (('div','ALL'),('div_6m','6M'),('div_3m','3M')):
+        raw=sm.get(key)
+        try: v=float(raw) if raw is not None else 0.0
+        except (TypeError,ValueError): v=0.0
+        if v>0:   rgb='32,212,131'
+        elif v<0: rgb='240,81,90'
+        else:     rgb=None
+        if rgb:
+            op=0.10+min(abs(v),1.0)*0.35
+            st=f'background:rgba({rgb},{op:.3f});border:1px solid rgba({rgb},.55)'
+        else:
+            st='border:1px solid var(--bd)'
+        items.append(f'<span class="smdiv-item" style="{st}">'
+                     f'<span class="smdiv-k">{lbl}</span>'
+                     f'<span class="smdiv-v">{v:+.2f}</span></span>')
+    return(f'<div class="smdiv-badge"><span class="smdiv-ttl">SM DIV</span>'
+           +''.join(items)+'</div>')
 
 def intensity_bg(val,max_abs):
     if max_abs==0: return ''
@@ -658,7 +694,7 @@ def make_tff_metric_cards(tff,s):
     mc_lev=make_metric_card('LEV MONEY (NETTO)',c['lev_net'],c['lev_chg'],c['lev_chg_pct'],tff['spark']['lev'],TFF_COLOR_LEV,gauge_val=tff['cot_idx']['lev']['all'],sub_text="",lbl_color=TFF_COLOR_LEV,bar_id=f'mcbar_tff_lev_{s}',border_color=TFF_COLOR_LEV+'66')
     mc_am =make_metric_card('ASSET MGR (NETTO)',c['am_net'],c['am_chg'],c['am_chg_pct'],tff['spark']['am'],TFF_COLOR_AM,gauge_val=tff['cot_idx']['am']['all'],sub_text="",lbl_color=TFF_COLOR_AM,bar_id=f'mcbar_tff_am_{s}',border_color=TFF_COLOR_AM+'66')
     mc_dl =make_metric_card('DEALER (NETTO)',c['dl_net'],c['dl_chg'],c['dl_chg_pct'],tff['spark']['dl'],TFF_COLOR_DL,gauge_val=tff['cot_idx']['dl']['all'],sub_text="",lbl_color=TFF_COLOR_DL,bar_id=f'mcbar_tff_dl_{s}',border_color=TFF_COLOR_DL+'66')
-    mc_oi =make_metric_card('OPEN INTEREST',c['oi'],c['oi_chg'],c['oi_chg_pct'],tff['spark']['oi'],'#a0aac0',oi=True,gauge_val=tff.get('oi_capacity',50.0),sub_text=f"зміна: {fv(int(c['oi_chg']),True,sign=True)}",bar_id=f'mcbar_tff_oi_{s}')
+    mc_oi =make_metric_card('OPEN INTEREST',c['oi'],c['oi_chg'],c['oi_chg_pct'],tff['spark']['oi'],'#a0aac0',oi=True,gauge_val=tff.get('oi_capacity',50.0),sub_text=f"зміна: {fv(int(c['oi_chg']),True,sign=True)}",bar_id=f'mcbar_tff_oi_{s}',border_color=COLOR_OI_BD)
     return f'<div class="mcards">{mc_am}{mc_lev}{mc_dl}{mc_oi}</div>'
 
 def make_tff_analysis(tff):
@@ -829,7 +865,9 @@ def load_seasonality():
       'current'     — місячні дані поточного року (monthly.current);
       'pre_daily'   — {'<N>y': [365]} денні криві середніх (блок presets) для лінії «Сер. NY»;
       'cur_daily'   — денна крива поточного року;
-      'years_curves'— денні криві по кожному завершеному року.
+      'years_curves'— денні криві по кожному завершеному року;
+      'source'      — 'fred' | 'yahoo', звідки взято ціни;
+      'ticker'      — серія FRED або тікер Yahoo (з нього видно ф'ючерс: '...=F').
     Будь-яка проблема (немає файлу, битий JSON, неповні дані) → символ просто
     не потрапляє у словник. Результат кешується на час запуску."""
     global _SEASON_CACHE
@@ -891,13 +929,28 @@ def load_seasonality():
             'periods': periods, 'default': default, 'months': months,
             'current': mon.get('current') if isinstance(mon.get('current'), dict) else {},
             'pre_daily': pre_daily, 'cur_daily': cur_daily, 'years_curves': ycurves,
+            # старий JSON (до двох джерел) цих полів не має — тоді просто ''
+            'source': str(it.get('source') or ''), 'ticker': str(it.get('ticker') or ''),
         }
     if _SEASON_CACHE:
         for sym, v in sorted(_SEASON_CACHE.items()):
-            print(f"📅  Сезонність {sym}: пресети {', '.join(sorted(v['periods'], key=_preset_sort))} "
+            src = f" [{v['source']}{' ' + v['ticker'] if v['ticker'] else ''}]" if v['source'] else ''
+            print(f"📅  Сезонність {sym}{src}: пресети {', '.join(sorted(v['periods'], key=_preset_sort))} "
                   f"(типовий {v['default']}), років у таблиці {len(v['months'])}, "
                   f"денних кривих по роках {len(v['years_curves'])}")
     return _SEASON_CACHE
+
+
+def season_sids():
+    """Множина SID-ів, для яких є придатні дані сезонності.
+    Береться з самого JSON — окремого хардкодженого переліку немає, тому
+    новий інструмент у test_seasonality.py з'являється в дашборді сам."""
+    return set(load_seasonality())
+
+
+def _is_futures(d):
+    """Чи це ф'ючерсний ряд Yahoo (тікер виду 'CT=F') — для примітки про рол."""
+    return d.get('source') == 'yahoo' and d.get('ticker', '').endswith('=F')
 
 def _sn_ret(v, star=False):
     """Клітинка дохідності: фон/текст за знаком, None → '--'."""
@@ -915,6 +968,32 @@ def _sn_prob(v):
     cls = 'sn-p' if v > 60 else ('sn-n' if v < 40 else 'sn-z')
     return f'<td class="{cls}">{round(v):.0f}%</td>'
 
+_SEASON_CSS_DONE = False
+
+def _season_month_css():
+    """v64: підсвітка колонки поточного місяця по всій висоті таблиці.
+    Правило однакове для всіх інструментів, тому віддається лише при першому
+    виклику — інакше блок дублювався б стільки разів, скільки інструментів
+    із сезонністю (див. season_sids()).
+    Номер місяця береться з datetime.now() у момент генерації, тому правило
+    будується динамічно (HTML_HEAD — звичайний рядок, туди не підставиш).
+    nth-child, а не клас на клітинках: рядки Probability/Average return
+    JS переписує через innerHTML, і селектор переживає це без додаткової логіки."""
+    global _SEASON_CSS_DONE
+    if _SEASON_CSS_DONE: return ''
+    _SEASON_CSS_DONE = True
+    n = datetime.now().month + 1        # +1 — перша колонка це Year
+    fill = 'inset 0 0 0 999px rgba(245,148,32,.06)'
+    hov  = 'inset 0 1px 0 rgba(255,255,255,.25),inset 0 -1px 0 rgba(255,255,255,.25)'
+    return ('<style>'
+            f'table.sn th:nth-child({n}),table.sn td:nth-child({n})'
+            '{border-left:2px solid var(--accent);border-right:2px solid var(--accent);}'
+            f'table.sn th:nth-child({n}){{color:var(--accent);font-weight:bold;}}'
+            f'table.sn td:nth-child({n}){{box-shadow:{fill};}}'
+            # hover не має гасити підсвітку: обидві тіні разом, лінії рядка — зверху
+            f'table.sn tbody tr:hover td:nth-child({n}){{box-shadow:{hov},{fill};}}'
+            '</style>')
+
 def _preset_lbl(pk):
     """'10y' → '10Y' для кнопки, '10 РОКІВ' для заголовка."""
     n = _preset_sort(pk)
@@ -926,7 +1005,7 @@ def make_season_box(s, prefix=''):
     Рядки Probability/Average return, заголовок, мітка межі вибірки і приглушення
     рядків перемикаються на клієнті — дані всіх пресетів вбудовані одразу.
     '' — якщо даних немає."""
-    d = load_seasonality().get(s) if s in SEASON_SIDS else None
+    d = load_seasonality().get(s)
     if not d: return ''
     key = f'{prefix}{s}'
     periods = d['periods']; dflt = d['default']
@@ -956,6 +1035,7 @@ def make_season_box(s, prefix=''):
     # всіх 27 рядків до першого snApply(). Далі стан перемикає тільки JS.
     months = d['months']; y_from = p0['from']
     for y in sorted((int(y) for y in months), reverse=True):
+        if y < SEASON_MIN_SHOW_YEAR: continue   # глибина показу; на розрахунок не впливає
         vals = months[str(y)]
         in_pre = y >= y_from
         cls = ('' if in_pre else ' class="sn-out"') if y != y_from else ' class="sn-brd"'
@@ -964,6 +1044,11 @@ def make_season_box(s, prefix=''):
                     f'<span class="sn-mark">◄ від цього року рахується середнє</span></td>'
                     + ''.join(_sn_ret(v) for v in vals) + '</tr>')
     note = '<div class="sn-note">* місяць незавершений</div>' if has_star else ''
+    # Ф'ючерсний ряд Yahoo склеєний з фронт-контрактів без коригування ролу:
+    # на місяцях ролу приріст відрізняється від скоригованих серій, і про це
+    # має бути видно прямо під таблицею.
+    if _is_futures(d):
+        note += f'<div class="sn-note">{SEASON_FUT_NOTE}</div>'
     more = (f'<button class="sn-more" id="snmore_{key}" '
             f'onclick="snToggleAll(this,\'{key}\')">Показати всі роки ▼</button>')
     table_pane = (f'<div class="sn-pane sn-pane-t" id="snpane_tbl_{key}">'
@@ -996,6 +1081,7 @@ def make_season_box(s, prefix=''):
     # TFF/DISAG беруть той самий _season[sid]. Патерн той самий, що у _cd / _ci.
     data_js = ''
     if prefix == '':
+        data_js += _season_month_css()
         payload = {'per': {pk: {'prob': v['prob'], 'avg': v['avg'], 'from': v['from']}
                            for pk, v in periods.items()},
                    'dflt': dflt,
@@ -1003,7 +1089,7 @@ def make_season_box(s, prefix=''):
                    'cur_year': (cur_daily or {}).get('year'),
                    'cur': (cur_daily or {}).get('data'),
                    'years': d.get('years_curves') or {}}
-        data_js = f'<script>_season["{s}"]={json.dumps(payload,ensure_ascii=False)};</script>'
+        data_js += f'<script>_season["{s}"]={json.dumps(payload,ensure_ascii=False)};</script>'
     return (f'<div class="sn-hdr">{title}{sel}</div>{per_row}'
             f'{table_pane}{chart_pane}{data_js}')
 
@@ -1038,6 +1124,8 @@ def make_tff_view(tff,s,reports_panel_html):
     # v52: верстка вкладки TABLE, обрізана по OPEN INTEREST
     table_block=(f'<div class="htable-wrap"><div class="htable-hdr"><span>ТИЖНЕВА СТАТИСТИКА ПОЗИЦІЙ</span>'
                  f'<div class="hsel">'
+                 f'<button class="tbl-scroll-btn" onclick="tblScroll(\'mini_tff_{s}\',-1)">◀</button>'
+                 f'<button class="tbl-scroll-btn" onclick="tblScroll(\'mini_tff_{s}\',1)">▶</button>'
                  f'<button class="hbtn active" data-n="10" onclick="setMiniHistT(this,\'{s}\')">10</button>'
                  f'<button class="hbtn" data-n="26" onclick="setMiniHistT(this,\'{s}\')">26</button>'
                  f'<button class="hbtn" data-n="52" onclick="setMiniHistT(this,\'{s}\')">52</button>'
@@ -1059,7 +1147,7 @@ def make_disag_metric_cards(dg,s):
     mc_mm=make_metric_card('MAN MONEY (NETTO)',c['mm_net'],c['mm_chg'],c['mm_chg_pct'],dg['spark']['mm'],DISAG_COLOR_MM,gauge_val=dg['cot_idx']['mm']['all'],sub_text="",lbl_color=DISAG_COLOR_MM,bar_id=f'mcbar_dg_mm_{s}',border_color=DISAG_COLOR_MM+'66')
     mc_pm=make_metric_card('PROD/MERCH (NETTO)',c['pm_net'],c['pm_chg'],c['pm_chg_pct'],dg['spark']['pm'],DISAG_COLOR_PM,gauge_val=dg['cot_idx']['pm']['all'],sub_text="",lbl_color=DISAG_COLOR_PM,bar_id=f'mcbar_dg_pm_{s}',border_color=DISAG_COLOR_PM+'66')
     mc_sd=make_metric_card('SWAP DEALERS (NETTO)',c['sd_net'],c['sd_chg'],c['sd_chg_pct'],dg['spark']['sd'],DISAG_COLOR_SD,gauge_val=dg['cot_idx']['sd']['all'],sub_text="",lbl_color=DISAG_COLOR_SD,bar_id=f'mcbar_dg_sd_{s}',border_color=DISAG_COLOR_SD+'66')
-    mc_oi=make_metric_card('OPEN INTEREST',c['oi'],c['oi_chg'],c['oi_chg_pct'],dg['spark']['oi'],'#a0aac0',oi=True,gauge_val=dg.get('oi_capacity',50.0),sub_text=f"зміна: {fv(int(c['oi_chg']),True,sign=True)}",bar_id=f'mcbar_dg_oi_{s}')
+    mc_oi=make_metric_card('OPEN INTEREST',c['oi'],c['oi_chg'],c['oi_chg_pct'],dg['spark']['oi'],'#a0aac0',oi=True,gauge_val=dg.get('oi_capacity',50.0),sub_text=f"зміна: {fv(int(c['oi_chg']),True,sign=True)}",bar_id=f'mcbar_dg_oi_{s}',border_color=COLOR_OI_BD)
     return f'<div class="mcards">{mc_mm}{mc_pm}{mc_sd}{mc_oi}</div>'
 
 def make_disag_analysis(dg):
@@ -1198,6 +1286,8 @@ def make_disag_view(dg,s,reports_panel_html):
     # v53: верстка вкладки TABLE, обрізана по OPEN INTEREST
     table_block=(f'<div class="htable-wrap"><div class="htable-hdr"><span>ТИЖНЕВА СТАТИСТИКА ПОЗИЦІЙ</span>'
                  f'<div class="hsel">'
+                 f'<button class="tbl-scroll-btn" onclick="tblScroll(\'mini_dg_{s}\',-1)">◀</button>'
+                 f'<button class="tbl-scroll-btn" onclick="tblScroll(\'mini_dg_{s}\',1)">▶</button>'
                  f'<button class="hbtn active" data-n="10" onclick="setMiniHistG(this,\'{s}\')">10</button>'
                  f'<button class="hbtn" data-n="26" onclick="setMiniHistG(this,\'{s}\')">26</button>'
                  f'<button class="hbtn" data-n="52" onclick="setMiniHistG(this,\'{s}\')">52</button>'
@@ -1371,7 +1461,7 @@ def make_instrument_view(d,tff=None,disag=None):
     mc_ls=make_metric_card('LARGE SPEC (NETTO)',c['ls_net'],c['ls_chg'],c['ls_chg_pct'],d['spark']['ls'],COLOR_LS,gauge_val=d['cot_idx']['ls']['all'],sub_text="",ranked_val=d.get('cot_idx_m',{}).get('ls',{}).get('all'),lbl_color=COLOR_LS,bar_id=f'mcbar_ls_{s}',border_color=COLOR_LS+'66')
     mc_cm=make_metric_card('COMMERCIALS (NETTO)',c['cm_net'],c['cm_chg'],c['cm_chg_pct'],d['spark']['cm'],COLOR_CM,gauge_val=d['cot_idx']['cm']['all'],sub_text="",ranked_val=d.get('cot_idx_m',{}).get('cm',{}).get('all'),lbl_color=COLOR_CM,bar_id=f'mcbar_cm_{s}',border_color=COLOR_CM+'66')
     mc_st=make_metric_card('SMALL TRADERS (NETTO)',c['st_net'],c['st_chg'],c['st_chg_pct'],d['spark']['st'],COLOR_ST,gauge_val=d['cot_idx']['st']['all'],sub_text="",ranked_val=d.get('cot_idx_m',{}).get('st',{}).get('all'),lbl_color=COLOR_ST,bar_id=f'mcbar_st_{s}',border_color=COLOR_ST+'66')
-    mc_oi=make_metric_card('OPEN INTEREST',c['oi'],c['oi_chg'],c['oi_chg_pct'],d['spark']['oi'],'#a0aac0',oi=True,gauge_val=d.get('oi_capacity',50.0),sub_text=f"зміна: {fv(int(c['oi_chg']),True,sign=True)}",bar_id=f'mcbar_oi_{s}')
+    mc_oi=make_metric_card('OPEN INTEREST',c['oi'],c['oi_chg'],c['oi_chg_pct'],d['spark']['oi'],'#a0aac0',oi=True,gauge_val=d.get('oi_capacity',50.0),sub_text=f"зміна: {fv(int(c['oi_chg']),True,sign=True)}",bar_id=f'mcbar_oi_{s}',border_color=COLOR_OI_BD)
     # v26 analysis calls — передаємо cot_idx для gauges, обгортка як у TFF
     _ci=d['cot_idx']
     analysis_panel=(f'<div class="panel tff-analysis-panel">'
@@ -1427,6 +1517,8 @@ def make_instrument_view(d,tff=None,disag=None):
     # v44: та сама верстка, що й на вкладці TABLE, обрізана по OPEN INTEREST
     table_block=(f'<div class="htable-wrap"><div class="htable-hdr"><span>ТИЖНЕВА СТАТИСТИКА ПОЗИЦІЙ</span>'
                  f'<div class="hsel">'
+                 f'<button class="tbl-scroll-btn" onclick="tblScroll(\'mini_tbl_{s}\',-1)">◀</button>'
+                 f'<button class="tbl-scroll-btn" onclick="tblScroll(\'mini_tbl_{s}\',1)">▶</button>'
                  f'<button class="hbtn active" data-n="10" onclick="setMiniHist(this,\'{s}\')">10</button>'
                  f'<button class="hbtn" data-n="26" onclick="setMiniHist(this,\'{s}\')">26</button>'
                  f'<button class="hbtn" data-n="52" onclick="setMiniHist(this,\'{s}\')">52</button>'
@@ -1469,7 +1561,7 @@ def make_instrument_view(d,tff=None,disag=None):
     return(f'<div class="iview" id="iv_{s}" data-sid="{s}">'
            f'<div class="report-tabs"><span class="rtab-lbl">ТИП ЗВІТУ:</span>'
            f'<button class="rtab active" data-rtype="legacy" onclick="switchReport(\'{s}\',\'legacy\')">Legacy Report</button>'
-           +tff_btn+dg_btn+crop_btn+
+           +tff_btn+dg_btn+crop_btn+make_sm_div_badge(sm)+
            f'</div>'+legacy_sec+tff_sec+disag_sec+crop_sec+'</div>')
 
 # ================================================================
@@ -1711,11 +1803,12 @@ def make_overview_tab():
 # v54 — Overview для TFF і Disaggregated
 # ================================================================
 # (файл, аркуш, кольори трьох груп)
+# v62: DISAGGREGATED більше не читається з аркуша Overview — секція будується
+# з disag_data (див. make_overview_dg_tab), бо там є cot_idx з усіма періодами,
+# потрібними для перемикача COT INDEX ПЕРІОД.
 OV2_SOURCES = [
     ('tff', 'TFF',           lambda: TFF_FILE,   'Overview',
      [TFF_COLOR_LEV, TFF_COLOR_AM, TFF_COLOR_DL]),
-    ('dg',  'DISAGGREGATED', lambda: DISAG_FILE, 'OVERVIEW',
-     [DISAG_COLOR_MM, DISAG_COLOR_PM, DISAG_COLOR_SD]),
 ]
 OV2_HDR_ROW  = 3    # рядок із підписами колонок (0-based)
 OV2_DATA_ROW = 4    # перший рядок даних
@@ -1856,12 +1949,121 @@ function ovSrcSet(src,btn){
   if(window.ovApplyZoom)ovApplyZoom();
   if(window.ovRenumber)ovRenumber();
   if(window.ovLoadFavs)ovLoadFavs();
+  if(window.ovApplyPer)ovApplyPer();
 }
 </script>
 """
 
 
-def make_overview_all():
+def _ov_cot_td(per, grp):
+    """Клітинка COT з data-атрибутами всіх періодів — та сама розмітка, що й
+    у Legacy-overview, тож глобальний ovSetPer() перемикає її без змін."""
+    per = per or {}
+    def _f(x):
+        try: return f'{float(x):.0f}'
+        except (TypeError, ValueError): return ''
+    init_raw = per.get('all')
+    try: init = float(init_raw)
+    except (TypeError, ValueError): init = 0.0
+    pct = min(max(init, 0), 100)
+    color = '#20d483' if init < 20 else ('#f0515a' if init > 80 else '#4a9eff')
+    cls = 'ov-cot-lo' if init > 80 else ('ov-cot-hi' if init < 20 else '')
+    return (f'<td class="ov-cot-cell-td" data-cotgrp="{grp}" '
+            f'data-all="{_f(init_raw)}" data-3y="{_f(per.get("3y"))}" '
+            f'data-1y="{_f(per.get("1y"))}" data-6m="{_f(per.get("6m"))}" '
+            f'data-3m="{_f(per.get("3m"))}">'
+            f'<div class="ov-cot-cell">'
+            f'<div class="ov-bar-bg"><div class="ov-bar-fill" '
+            f'style="width:{pct:.1f}%;background:{color}"></div></div>'
+            f'<span class="ov-cot-val {cls}">{init:.0f}%</span></div></td>')
+
+
+DG_OV_COLS = 10   # # / ASSET / NET MM / NET PM / COT MM / COT PM / COT SD / CHG MM / CHG PM / %OI CHG
+
+
+def make_overview_dg_tab(disag_data):
+    """Overview-секція DISAGGREGATED. Джерело — disag_data (per-instrument),
+    а не аркуш Overview: лише там є cot_idx з усіма періодами для перемикача.
+    Інструменти без DISAG-даних у цю секцію не потрапляють взагалі."""
+    if not disag_data:
+        return ''
+    # порядок як у решті дашборда: за категоріями, решта — в кінці
+    ordered = []
+    seen = set()
+    for cat, instruments in CATEGORIES.items():
+        avail = [i for i in instruments if i in disag_data]
+        if not avail: continue
+        ordered.append(('_group', cat))
+        for i in avail:
+            ordered.append(('_row', i)); seen.add(i)
+    rest = sorted(k for k in disag_data if k not in seen)
+    if rest:
+        ordered.append(('_group', 'Інше'))
+        ordered += [('_row', k) for k in rest]
+
+    rows_html = []
+    for kind, key in ordered:
+        if kind == '_group':
+            rows_html.append(f'<tr class="ov-group"><td colspan="{DG_OV_COLS}">{key}</td></tr>')
+            continue
+        dg = disag_data[key]
+        c = dg.get('cur', {}); ci = dg.get('cot_idx', {})
+        # %OI CHG: у cur лежить уже відформатований рядок, тож рахуємо частку заново
+        try:
+            _oi = float(c.get('oi', 0)); _oic = float(c.get('oi_chg', 0)); _prev = _oi - _oic
+            oi_frac = (_oic / abs(_prev)) if abs(_prev) > 1 else None
+        except (TypeError, ValueError):
+            oi_frac = None
+        rows_html.append(
+            f'<tr class="ov-row">'
+            f'<td class="ov-idx"></td>'
+            f'<td class="ov-asset"><span class="ov-fav" data-fav="{key}" '
+            f'onclick="event.stopPropagation();ovToggleFav(this)">☆</span>'
+            f'<span class="ov-asset-link" onclick="ovGoTable(\'{key}\')">{disp(key)}</span></td>'
+            f'{fnum_td(c.get("mm_net"))}'
+            f'{fnum_td(c.get("pm_net"))}'
+            f'{_ov_cot_td(ci.get("mm"), "mm")}'
+            f'{_ov_cot_td(ci.get("pm"), "pm")}'
+            f'{_ov_cot_td(ci.get("sd"), "sd")}'
+            f'{fnum_td(c.get("mm_chg"))}'
+            f'{fnum_td(c.get("pm_chg"))}'
+            f'{_ov2_pct(oi_frac)}'
+            f'</tr>')
+
+    thead = (f'<thead><tr>'
+             f'<th class="ov-idx-th">#</th>'
+             f'<th class="ov-asset ov-sortable" data-col="1" data-stype="reset" '
+             f'onclick="ovSort(this)" title="Скинути сортування">ASSET</th>'
+             f'<th class="ov-sortable" data-col="2" onclick="ovSort(this)">NET MM</th>'
+             f'<th class="ov-sortable" data-col="3" onclick="ovSort(this)">NET PM</th>'
+             f'<th class="ov-sortable" data-col="4" data-stype="cot" onclick="ovSort(this)" '
+             f'style="color:{DISAG_COLOR_MM}">COT MM</th>'
+             f'<th class="ov-sortable" data-col="5" data-stype="cot" onclick="ovSort(this)" '
+             f'style="color:{DISAG_COLOR_PM}">COT PM</th>'
+             f'<th class="ov-sortable" data-col="6" data-stype="cot" onclick="ovSort(this)" '
+             f'style="color:{DISAG_COLOR_SD}">COT SD</th>'
+             f'<th class="ov-sortable" data-col="7" onclick="ovSort(this)">CHG MM</th>'
+             f'<th class="ov-sortable" data-col="8" onclick="ovSort(this)">CHG PM</th>'
+             f'<th class="ov-sortable" data-col="9" onclick="ovSort(this)">%OI CHG</th>'
+             f'</tr></thead>')
+
+    dates = [d.get('cur', {}).get('date') for d in disag_data.values()]
+    dates = [x for x in dates if x]
+    rep_date = max(dates, key=lambda x: (x[6:], x[3:5], x[:2])) if dates else '—'
+    per_row = ('<div class="ov-per-row"><span class="ov-per-lbl">COT INDEX ПЕРІОД:</span>'
+               '<button class="ov-per active" data-per="all" onclick="ovSetPer(this)">Весь час</button>'
+               '<button class="ov-per" data-per="3y" onclick="ovSetPer(this)">3 роки</button>'
+               '<button class="ov-per" data-per="1y" onclick="ovSetPer(this)">1 рік</button>'
+               '<button class="ov-per" data-per="6m" onclick="ovSetPer(this)">6 міс</button>'
+               '<button class="ov-per" data-per="3m" onclick="ovSetPer(this)">3 міс</button>'
+               '</div>')
+    return ('<div class="ov-meta">Звіт: <b>' + rep_date + '</b></div>'
+            + per_row
+            + '<div class="ov-scroll"><table class="ov-table">' + thead
+            + '<tbody>' + ''.join(rows_html) + '</tbody></table></div>')
+
+
+def make_overview_all(disag_data=None):
     """Перемикач LEGACY / TFF / DISAGGREGATED + три секції."""
     secs = [('leg', 'LEGACY', make_overview_tab())]
     for key, title, getf, sheet, colors in OV2_SOURCES:
@@ -1871,6 +2073,12 @@ def make_overview_all():
         if not rows: continue
         print(f"  ✓  Overview {title}: {len(rows)} активів")
         secs.append((key, title, make_overview2_tab(labels, rows, colors)))
+
+    # v62: DISAGGREGATED — з disag_data, а не з аркуша Overview
+    dg_html = make_overview_dg_tab(disag_data)
+    if dg_html:
+        print(f"  ✓  Overview DISAGGREGATED: {len(disag_data)} активів")
+        secs.append(('dg', 'DISAGGREGATED', dg_html))
 
     if len(secs) == 1:
         return secs[0][2]
@@ -2046,21 +2254,46 @@ def _tbl_assets_bar(dataset):
     return '<div class="tb-assets">' + ''.join(sel_parts) + '</div>', first_sid
 
 
-def _tbl_heads(groups):
-    """Шапка таблиці + скорочена шапка до OPEN INTEREST + spec колонок."""
+def _tbl_heads(groups, extra=None, inject=None):
+    """Шапка таблиці + скорочена шапка до OPEN INTEREST + spec колонок.
+
+    extra — [(назва групи, колір, [(група-джерело, підпис, підпис у шапці), ...])]:
+    групи колонок з правої частини таблиці, які треба доклеїти до міні-шапки
+    ПІСЛЯ OPEN INTEREST, у поданому порядку (v62: SM DIV; v63: COT 5Y..3M).
+    Джерело задаємо парою (група, підпис), бо підписи LS/CM/ST повторюються
+    у кожній COT-групі й пошук лише за підписом дав би завжди COT INDEX (ALL).
+
+    inject — [(група-приймач, група-джерело, підпис у джерелі, підпис у шапці)]:
+    колонки, які треба вставити ВСЕРЕДИНУ групи міні-шапки, останніми
+    (v63: COT INDEX (ALL) після NET у кожній групі учасників).
+
+    Повертає також mini_idx — індекси колонок payload для міні-рендера,
+    бо набір уже не є суцільним префіксом.
+    """
     r1 = '<th class="tb-corner" rowspan="2">ДАТА</th>'
     r2 = ''
     m1 = r1; m2 = ''
     mini_cols = 0
+    mini_idx = []
     MINI_LAST = 'OPEN INTEREST'
     in_mini = True
+    # плоский список (група, підпис) — індекс тут збігається з індексом колонки payload
+    flat = [(g, lbl) for g, _c, cols in groups for _ci, lbl, _k in cols]
+    inj = {}
+    for tgt_g, src_g, src_lbl, head_lbl in (inject or []):
+        ix = next((i for i, (g, l) in enumerate(flat) if g == src_g and l == src_lbl), None)
+        if ix is not None:
+            inj.setdefault(tgt_g, []).append((ix, head_lbl))
+    gi = 0
     for gname, gcol, cols in groups:
         r_, g_, b_ = int(gcol[1:3],16), int(gcol[3:5],16), int(gcol[5:7],16)
-        gh = (f'<th colspan="{len(cols)}" class="tb-g" '
-              f'style="background:rgba({r_},{g_},{b_},.18);color:#fff;'
-              f'border-left:2px solid {gcol}99">{gname}</th>')
-        r1 += gh
-        if in_mini: m1 += gh
+        gstyle = (f'style="background:rgba({r_},{g_},{b_},.18);color:#fff;'
+                  f'border-left:2px solid {gcol}99"')
+        r1 += f'<th colspan="{len(cols)}" class="tb-g" {gstyle}>{gname}</th>'
+        add = inj.get(gname, []) if in_mini else []
+        if in_mini:
+            m1 += (f'<th colspan="{len(cols) + len(add)}" class="tb-g" '
+                   f'{gstyle}>{gname}</th>')
         for k, (_ci, lbl, kind) in enumerate(cols):
             bl = f'border-left:2px solid {gcol}55;' if k == 0 else ''
             if kind == 'net':   # NET-колонка обведена рамкою кольору групи
@@ -2068,10 +2301,13 @@ def _tbl_heads(groups):
             th = f'<th class="tb-s" style="{bl}">{lbl}</th>'
             r2 += th
             if in_mini:
-                m2 += th; mini_cols += 1
+                m2 += th; mini_cols += 1; mini_idx.append(gi)
+            gi += 1
+        for ix, head_lbl in add:   # вставлені колонки — в кінці своєї групи
+            m2 += f'<th class="tb-s" style="">{head_lbl}</th>'
+            mini_cols += 1; mini_idx.append(ix)
         if gname == MINI_LAST: in_mini = False
     thead = f'<thead><tr class="tb-r1">{r1}</tr><tr class="tb-r2">{r2}</tr></thead>'
-    mini_thead = f'<thead><tr class="tb-r1">{m1}</tr><tr class="tb-r2">{m2}</tr></thead>'
     spec = []
     for _g, gcol, cols in groups:
         for k, (_ci, _lbl, kind) in enumerate(cols):
@@ -2080,7 +2316,23 @@ def _tbl_heads(groups):
                          'n': 1 if _lbl == '%NET/OI' else 0,
                          'l': _lbl,
                          'ct': 1 if _g.startswith('COT') else 0})
-    return thead, mini_thead, mini_cols, spec
+    for ex_name, ex_col, ex_cols in (extra or []):
+        found = []
+        for src_g, src_lbl, head_lbl in ex_cols:
+            ix = next((i for i, (g, l) in enumerate(flat)
+                       if g == src_g and l == src_lbl), None)
+            if ix is not None: found.append((ix, head_lbl))
+        if not found: continue
+        r_, g_, b_ = int(ex_col[1:3],16), int(ex_col[3:5],16), int(ex_col[5:7],16)
+        m1 += (f'<th colspan="{len(found)}" class="tb-g" '
+               f'style="background:rgba({r_},{g_},{b_},.18);color:#fff;'
+               f'border-left:2px solid {ex_col}99">{ex_name}</th>')
+        for k, (ix, head_lbl) in enumerate(found):
+            bl = f'border-left:2px solid {ex_col}55;' if k == 0 else ''
+            m2 += f'<th class="tb-s" style="{bl}">{head_lbl}</th>'
+            mini_idx.append(ix)
+    mini_thead = f'<thead><tr class="tb-r1">{m1}</tr><tr class="tb-r2">{m2}</tr></thead>'
+    return thead, mini_thead, mini_cols, spec, mini_idx
 
 
 # ================================================================
@@ -2116,9 +2368,41 @@ def make_table_tab(data, tff_data=None, dg_data=None):
     asset_barT, first_sidT = _tbl_assets_bar(tff_data)
     asset_barG, first_sidG = _tbl_assets_bar(dg_data)
 
-    thead,  mini_thead, mini_cols, spec  = _tbl_heads(TBL_GROUPS)
-    theadT, mini_theadT, mini_colsT, specT = _tbl_heads(TFF_TBL_GROUPS)
-    theadG, mini_theadG, mini_colsG, specG = _tbl_heads(DISAG_TBL_GROUPS)
+    # v62: у Legacy-міні-таблиці після OPEN INTEREST доклеюємо блок SM DIV
+    MINI_EXTRA_SM = ('SM DIV', '#a78bfa',
+                     [('SM / FLOW / CYCLE', 'SM DIV',    'SM DIV'),
+                      ('SM / FLOW / CYCLE', 'SM DIV 6M', 'SM 6M'),
+                      ('SM / FLOW / CYCLE', 'SM DIV 3M', 'SM 3M')])
+
+    # v63: групи COT 5Y..3M — доклеюємо як є, з підписами й кольором вкладки Table
+    COT_PERIOD_GROUPS = ['COT 5Y', 'COT 3Y', 'COT 1Y', 'COT 6M', 'COT 3M']
+    def _mini_cot_tail(groups):
+        out = []
+        for name in COT_PERIOD_GROUPS:
+            for gname, gcol, cols in groups:
+                if gname == name:
+                    out.append((gname, gcol,
+                                [(gname, lbl, lbl) for _ci, lbl, _k in cols]))
+                    break
+        return out
+    # v63: COT INDEX (ALL) — по одній колонці в кінці кожної групи учасників.
+    # Колонки ті самі, що на вкладці Table (читаються з Excel), рендер теж її.
+    _CI = 'COT INDEX (ALL)'
+    INJ_L = [('LARGE SPECULATORS', _CI, 'LS', 'COT LS'),
+             ('COMMERCIALS',       _CI, 'CM', 'COT CM'),
+             ('SMALL TRADERS',     _CI, 'ST', 'COT ST')]
+    INJ_T = [('LEV MONEY', _CI, 'LEV', 'COT LEV'),
+             ('ASSET MGR', _CI, 'AM',  'COT AM'),
+             ('DEALER',    _CI, 'DL',  'COT DL')]
+    INJ_G = [('MAN MONEY',    _CI, 'MM', 'COT MM'),
+             ('PROD/MERCH',   _CI, 'PM', 'COT PM'),
+             ('SWAP DEALERS', _CI, 'SD', 'COT SD')]
+    EXTRA_L = [MINI_EXTRA_SM] + _mini_cot_tail(TBL_GROUPS)
+    EXTRA_T = _mini_cot_tail(TFF_TBL_GROUPS)
+    EXTRA_G = _mini_cot_tail(DISAG_TBL_GROUPS)
+    thead,  mini_thead,  mini_cols,  spec,  mini_idx  = _tbl_heads(TBL_GROUPS, EXTRA_L, INJ_L)
+    theadT, mini_theadT, mini_colsT, specT, mini_idxT = _tbl_heads(TFF_TBL_GROUPS, EXTRA_T, INJ_T)
+    theadG, mini_theadG, mini_colsG, specG, mini_idxG = _tbl_heads(DISAG_TBL_GROUPS, EXTRA_G, INJ_G)
 
     def _fit_cols(groups):
         n = 1
@@ -2153,6 +2437,7 @@ def make_table_tab(data, tff_data=None, dg_data=None):
                'window._TBL_FITCOLS_G=' + str(_fit_cols(DISAG_TBL_GROUPS)) + ';'
                'window._TBL_MINI_THEAD_G=' + json.dumps(mini_theadG, ensure_ascii=False) + ';'
                'window._TBL_MINI_COLS_G=' + str(mini_colsG) + ';'
+               'window._TBL_MINI_IDX_G=' + json.dumps(mini_idxG, separators=(',', ':')) + ';'
                'window._TBL_FIRST_G=' + json.dumps(first_sidG or '') + ';'
                'window._TBL_SPEC_L=' + json.dumps(spec, separators=(',', ':')) + ';'
                'window._TBL_SPEC_T=' + json.dumps(specT, separators=(',', ':')) + ';'
@@ -2164,8 +2449,10 @@ def make_table_tab(data, tff_data=None, dg_data=None):
                'window._TBL_FITCOLS_T=' + str(_fit_cols(TFF_TBL_GROUPS)) + ';'
                'window._TBL_MINI_THEAD=' + json.dumps(mini_thead, ensure_ascii=False) + ';'
                'window._TBL_MINI_COLS=' + str(mini_cols) + ';'
+               'window._TBL_MINI_IDX=' + json.dumps(mini_idx, separators=(',', ':')) + ';'
                'window._TBL_MINI_THEAD_T=' + json.dumps(mini_theadT, ensure_ascii=False) + ';'
                'window._TBL_MINI_COLS_T=' + str(mini_colsT) + ';'
+               'window._TBL_MINI_IDX_T=' + json.dumps(mini_idxT, separators=(',', ':')) + ';'
                'window._TBL_FIRST_L=' + json.dumps(first_sid or '') + ';'
                'window._TBL_FIRST_T=' + json.dumps(first_sidT or '') + ';'
                'window._TBL_FIRST=' + json.dumps(first_sid or '') + ';</script>')
@@ -2547,22 +2834,30 @@ const TB_STAT_ROWS=[['MAX (ALL)',0,'max','#20d483'],
                     ['MIN (ALL)',0,'min','#f0515a'],
                     ['MAX (5Y)',260,'max','#7abba6'],
                     ['MIN (5Y)',260,'min','#c47884']];
+// v62: LIM може бути числом (перші N колонок) або масивом індексів колонок —
+// міні-таблиця бере префікс до OPEN INTEREST плюс окремі колонки SM DIV.
+function tblIdxList(LIM,S){
+  if(Array.isArray(LIM))return LIM;
+  const n=(LIM==null)?S.length:LIM,a=[];
+  for(let i=0;i<n;i++)a.push(i);
+  return a;
+}
 function tblStatsRows(d,LIM,S){
   if(!S)S=tblSpec();
   const N=d.d.length;
-  if(LIM==null)LIM=S.length;
+  const IDX=tblIdxList(LIM,S);
   let html='';
   for(const[lbl,win,mode,rcol]of TB_STAT_ROWS){
     const lim=win?Math.min(win,N):N;
     let tds='<td class="tb-date" style="color:'+rcol+'">'+lbl+'</td>';
-    for(let ci=0;ci<LIM;ci++){
-      const k=S[ci].k,sep=S[ci].s?' tb-sep':'';
+    for(let p=0;p<IDX.length;p++){
+      const ci=IDX[p],k=S[ci].k,sep=S[ci].s?' tb-sep':'';
       const brd=(k==='net')?'border-left:2px solid '+S[ci].c
                 +';border-right:2px solid '+S[ci].c+';':'';
       if(k==='txt'){
         tds+='<td class="'+sep.trim()+'" style="'+brd+'color:'+rcol+'">—</td>';continue;
       }
-      const col=d.c[ci];let acc=null;
+      const col=d.c[ci]||[];let acc=null;
       for(let i=0;i<lim;i++){
         const v=col[i];if(v==null)continue;
         if(mode==='max')acc=(acc==null||v>acc)?v:acc;
@@ -2627,10 +2922,12 @@ function tblZoom(step){
   tblFit();
 }
 // v60: горизонтальне гортання таблиці кнопками (dir: -1 вліво, 1 вправо)
+// v62: цю ж функцію використовують кнопки ◀ ▶ у шапках міні-таблиць
+// (id — контейнер .tb-scroll). Прокрутка мишею працює як і раніше.
 function tblScroll(id,dir){
   const el=document.getElementById(id);
   if(!el)return;
-  el.scrollBy({left:dir*400,behavior:'smooth'});
+  el.scrollBy({left:dir*420,behavior:'smooth'});
 }
 function tblZoomAuto(){
   _tblZoom=null;
@@ -2645,9 +2942,10 @@ window.addEventListener('resize',function(){
 // Розрахунок діапазонів по колонках. Спільний для повної таблиці й міні-версії.
 function tblCalc(d,n,LIM,S){
   if(!S)S=tblSpec();
+  const IDX=tblIdxList(LIM,S);
   const N=d.d.length,mx=[],rg=[];
-  for(let ci=0;ci<LIM;ci++){
-    const sp=S[ci],col=d.c[ci];
+  for(let p=0;p<IDX.length;p++){
+    const ci=IDX[p],sp=S[ci],col=d.c[ci]||[];
     let m=0;
     if(sp.k==='chg'){for(let i=0;i<n;i++){const v=col[i];if(v!=null&&Math.abs(v)>m)m=Math.abs(v);}}
     mx.push(m||1);
@@ -2668,11 +2966,14 @@ function tblCalc(d,n,LIM,S){
 }
 function tblRowsHtml(d,n,LIM,c,S){
   if(!S)S=tblSpec();
+  const IDX=tblIdxList(LIM,S);
   const parts=[];
   for(let i=0;i<n;i++){
     parts.push('<tr><td class="tb-date">'+d.d[i]+'</td>');
-    for(let ci=0;ci<LIM;ci++)
-      parts.push(tblCell(S[ci].k,d.c[ci][i],c.mx[ci],S[ci].s,c.rg[ci],S[ci].c,S[ci].i,S[ci].n,S[ci].ct));
+    for(let p=0;p<IDX.length;p++){
+      const ci=IDX[p],col=d.c[ci]||[];
+      parts.push(tblCell(S[ci].k,col[i],c.mx[p],S[ci].s,c.rg[p],S[ci].c,S[ci].i,S[ci].n,S[ci].ct));
+    }
     parts.push('</tr>');
   }
   return parts.join('');
@@ -2734,7 +3035,10 @@ const _miniN={};
 function tblMiniRender(sid,n){
   const box=document.getElementById('mini_tbl_'+sid),d=_tbl[sid];
   if(!box||!d)return;
-  const LIM=window._TBL_MINI_COLS||21,N=d.d.length;
+  // FIT — префікс до OPEN INTEREST: колонки SM DIV навмисно лишаються
+  // за краєм, до них доїжджають кнопками ◀ ▶ або горизонтальним скролом.
+  const FIT=window._TBL_MINI_COLS||21,N=d.d.length;
+  const LIM=window._TBL_MINI_IDX||FIT;
   n=Math.min(n||10,N);
   _miniN[sid]=n;
   const SL=window._TBL_SPEC_L;
@@ -2742,7 +3046,7 @@ function tblMiniRender(sid,n){
   box.innerHTML='<table class="dt">'+(window._TBL_MINI_THEAD||'')
     +'<tbody class="tb-stats">'+tblStatsRows(d,LIM,SL)+'</tbody>'
     +'<tbody>'+tblRowsHtml(d,n,LIM,c,SL)+'</tbody></table>';
-  requestAnimationFrame(function(){tblFitEl(box.querySelector('table'),box,LIM+1);});
+  requestAnimationFrame(function(){tblFitEl(box.querySelector('table'),box,FIT+1);});
 }
 // ── Міні-таблиця TFF (LEV MONEY / ASSET MGR / DEALER / OPEN INTEREST) ──
 const _miniNT={};
@@ -2751,14 +3055,15 @@ function tblMiniRenderT(sid,n){
   if(!box||!d)return;
   const ST=window._TBL_SPEC_T;
   if(!ST)return;
-  const LIM=window._TBL_MINI_COLS_T||23,N=d.d.length;
+  const FIT=window._TBL_MINI_COLS_T||23,N=d.d.length;
+  const LIM=window._TBL_MINI_IDX_T||FIT;
   n=Math.min(n||10,N);
   _miniNT[sid]=n;
   const c=tblCalc(d,n,LIM,ST);
   box.innerHTML='<table class="dt">'+(window._TBL_MINI_THEAD_T||'')
     +'<tbody class="tb-stats">'+tblStatsRows(d,LIM,ST)+'</tbody>'
     +'<tbody>'+tblRowsHtml(d,n,LIM,c,ST)+'</tbody></table>';
-  requestAnimationFrame(function(){tblFitEl(box.querySelector('table'),box,LIM+1);});
+  requestAnimationFrame(function(){tblFitEl(box.querySelector('table'),box,FIT+1);});
 }
 // ── Міні-таблиця Disaggregated ──
 const _miniNG={};
@@ -2767,14 +3072,15 @@ function tblMiniRenderG(sid,n){
   if(!box||!d)return;
   const SG=window._TBL_SPEC_G;
   if(!SG)return;
-  const LIM=window._TBL_MINI_COLS_G||23,N=d.d.length;
+  const FIT=window._TBL_MINI_COLS_G||23,N=d.d.length;
+  const LIM=window._TBL_MINI_IDX_G||FIT;
   n=Math.min(n||10,N);
   _miniNG[sid]=n;
   const c=tblCalc(d,n,LIM,SG);
   box.innerHTML='<table class="dt">'+(window._TBL_MINI_THEAD_G||'')
     +'<tbody class="tb-stats">'+tblStatsRows(d,LIM,SG)+'</tbody>'
     +'<tbody>'+tblRowsHtml(d,n,LIM,c,SG)+'</tbody></table>';
-  requestAnimationFrame(function(){tblFitEl(box.querySelector('table'),box,LIM+1);});
+  requestAnimationFrame(function(){tblFitEl(box.querySelector('table'),box,FIT+1);});
 }
 function setMiniHistG(btn,sid){
   btn.parentNode.querySelectorAll('.hbtn').forEach(function(b){b.classList.remove('active');});
@@ -2927,6 +3233,12 @@ html,body{background:var(--bg);color:var(--t);font-family:var(--f);font-size:13p
 .rtab-lbl{font-size:9px;color:var(--d);letter-spacing:1px;}
 .rtab{padding:4px 12px;border:1px solid var(--bd);border-radius:3px;cursor:pointer;color:#b0bcd4;font-family:var(--f);font-size:11px;background:transparent;transition:all .15s;}
 .rtab:hover:not(.disabled){border-color:var(--accent);color:#fff;}.rtab.active{background:var(--accent);color:#000;border-color:var(--accent);font-weight:bold;}.rtab.disabled{opacity:.3;cursor:not-allowed;}
+/* v62: компактний бейдж SM DIVERGENCE праворуч від перемикача типу звіту */
+.smdiv-badge{display:flex;align-items:center;gap:4px;margin-left:10px;}
+.smdiv-ttl{font-size:9px;color:var(--d);letter-spacing:1px;margin-right:2px;}
+.smdiv-item{display:inline-flex;align-items:baseline;gap:4px;padding:3px 7px;border-radius:3px;color:#fff;}
+.smdiv-k{font-size:8px;letter-spacing:.5px;opacity:.65;}
+.smdiv-v{font-size:11px;font-weight:bold;color:#fff;}
 .mcards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px;}
 .mc{background:var(--bg2);border:1px solid var(--bd);border-radius:5px;padding:10px 14px 12px;overflow:hidden;min-width:0;display:flex;flex-direction:column;}
 .mc-lbl{font-size:9px;color:#fff;letter-spacing:.6px;margin-bottom:0;line-height:1.1;opacity:.85;}
@@ -3094,6 +3406,11 @@ table.sn tbody tr.sn-sep:hover td{box-shadow:none;}
 .htable-hdr{padding:7px 14px;border-bottom:1px solid var(--bd);font-size:10px;color:#fff;letter-spacing:.5px;display:flex;align-items:center;justify-content:space-between;}
 .hsel{display:flex;gap:4px;}.hbtn{padding:2px 10px;border:1px solid var(--bd);border-radius:3px;cursor:pointer;color:#b0bcd4;font-family:var(--f);font-size:11px;background:transparent;}
 .hbtn.active{background:var(--bg3);color:var(--accent);border-color:var(--accent);}.htable-scroll{overflow-x:auto;}
+/* v62: кнопки горизонтальної прокрутки міні-таблиці */
+.tbl-scroll-btn{padding:2px 10px;border:1px solid var(--bd);
+  border-radius:3px;background:transparent;color:#b0bcd4;
+  font-family:var(--f);font-size:11px;cursor:pointer;margin-right:3px;}
+.tbl-scroll-btn:hover{border-color:var(--accent);color:#fff;}
 table.ht{width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap;table-layout:fixed;}
 table.ht th{padding:4px 8px;border-bottom:1px solid var(--bd);font-weight:normal;font-size:9px;letter-spacing:.5px;text-align:right;overflow:hidden;}
 table.ht .th-corner{text-align:left;background:var(--bg3);}.th-date{text-align:left;background:var(--bg3);}.th-left{text-align:left;}.th-group{text-align:center;}.th-oi{text-align:center;}.sm-th{text-align:center;font-size:8px;color:var(--d);}.sm-th-group{font-size:8px;}
@@ -3312,7 +3629,7 @@ def generate_html(data, tff_data=None, disag_data=None, crop_data=None):
         views=''.join(make_instrument_view(data[i], tff_data.get(i), disag_data.get(i)) for i in available)
         cat_sects.append(f'<div class="catsec{act}" id="cs_{cat}"><div class="itabs" id="itabs_{cat}">{inst_btns}</div><div class="iviews" id="iv_{cat}">{views}</div></div>')
         first_cat=False
-    ov_html=make_overview_all()
+    ov_html=make_overview_all(disag_data)
     tbl_html=make_table_tab(data, tff_data, disag_data)
     db='<span class="dash-b">DAS</span><span class="dash-g">HBO</span><span class="dash-r">ARD</span>'
     badge=f' <span class="tff-badge">{len(tff_data)} TFF</span>' if tff_data else ''
@@ -4039,10 +4356,14 @@ setTimeout(ovApplyZoom,80);
 
 // ── v21: Overview COT period switcher ──
 let _ovCotPer='all';
+// v62: рядків .ov-per-row тепер два (LEGACY і DISAGGREGATED) — тримаємо їх
+// синхронними й перемальовуємо COT-клітинки в обох секціях.
 function ovSetPer(btn){
-  document.querySelectorAll('.ov-per').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
   _ovCotPer=btn.dataset.per;
+  ovApplyPer();
+}
+function ovApplyPer(){
+  document.querySelectorAll('.ov-per').forEach(b=>b.classList.toggle('active',b.dataset.per===_ovCotPer));
   document.querySelectorAll('.ov-cot-cell-td').forEach(td=>{
     const raw=td.dataset[_ovCotPer];
     const cell=td.querySelector('.ov-cot-cell');
@@ -4982,6 +5303,14 @@ def main():
     tff_data=load_tff_data()
     disag_data=load_disag_data()
     crop_data=load_crop_data()
+    # Зведення по сезонності: скільки інструментів дашборда її отримали.
+    # Перелік іде з JSON, тому це і є перевірка, що test_seasonality.py
+    # відпрацював по всіх потрібних SID-ах.
+    sids_all=[s for lst in CATEGORIES.values() for s in lst]
+    have=season_sids()
+    miss=[s for s in sids_all if s not in have]
+    print(f"📅  Сезонність: {len(have & set(sids_all))} з {len(sids_all)} інструментів"
+          + (f"; без даних: {', '.join(miss)}" if miss else ""))
     print("🔧  Генеруємо HTML...")
     html=generate_html(data, tff_data, disag_data, crop_data)
     OUTPUT_FILE.write_text(html, encoding='utf-8')
